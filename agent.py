@@ -14,6 +14,7 @@
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
+from pathlib import Path
 import threading
 import time
 import json
@@ -45,6 +46,18 @@ import ollama
 
 # --- WEB SEARCH (Using your working import) ---
 from duckduckgo_search import DDGS 
+
+# =========================================================================
+# 0. Development Functions
+# =========================================================================
+
+def get_piper_command() -> list[str]:
+    local_binary = Path("./piper/piper")
+
+    if local_binary.exists():
+        return [str(local_binary)]
+
+    return [sys.executable, "-m", "piper"]
 
 # =========================================================================
 # 1. CONFIGURATION & CONSTANTS
@@ -967,11 +980,24 @@ class BotGUI:
         voice_model = CURRENT_CONFIG.get("voice_model", "piper/en_GB-semaine-medium.onnx")
         
         try:
+            # Development for Mac
+            # self.current_audio_process = subprocess.Popen(
+            #     ["./piper/piper", "--model", voice_model, "--output-raw"],
+            #     stdin=subprocess.PIPE,
+            #     stdout=subprocess.PIPE,
+            #     stderr=subprocess.DEVNULL
+            # )
+
             self.current_audio_process = subprocess.Popen(
-                ["./piper/piper", "--model", voice_model, "--output-raw"], 
-                stdin=subprocess.PIPE, 
+                [
+                    *get_piper_command(),
+                    "--model",
+                    voice_model,
+                    "--output-raw",
+                ],
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.PIPE,
             )
             
             self.current_audio_process.stdin.write(clean.encode() + b'\n')
