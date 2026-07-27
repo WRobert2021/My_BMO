@@ -24,7 +24,12 @@ class ToolRouter:
 
     @staticmethod
     def match_direct_action(user_text: str) -> dict[str, str] | None:
-        """Route unambiguous built-in requests without probabilistic LLM output."""
+        """Route unambiguous built-in requests without probabilistic LLM output.
+
+        Only explicit command-shaped phrases are matched here. Ambiguous requests
+        still go through the language model so ordinary conversation is not
+        accidentally treated as a tool invocation.
+        """
         normalized = " ".join(user_text.lower().strip().rstrip("?.!").split())
         time_requests = {
             "what time is it",
@@ -36,6 +41,32 @@ class ToolRouter:
         }
         if normalized in time_requests:
             return {"action": "get_time"}
+
+        search_prefixes = (
+            "search the web for ",
+            "search online for ",
+            "search for ",
+            "look up ",
+            "google ",
+        )
+        for prefix in search_prefixes:
+            if normalized.startswith(prefix):
+                query = normalized[len(prefix):].strip()
+                if query:
+                    return {"action": "search_web", "query": query}
+
+        camera_requests = {
+            "take a photo",
+            "take a picture",
+            "capture a photo",
+            "capture a picture",
+            "what do you see",
+            "what can you see",
+            "look around",
+        }
+        if normalized in camera_requests:
+            return {"action": "capture_image"}
+
         return None
 
     def execute(self, action_data: dict[str, Any]) -> str | None:

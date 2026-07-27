@@ -558,12 +558,56 @@ class BotGUI:
         user_text: str,
         action_data: dict[str, str],
     ) -> None:
+        """Execute a clearly requested tool without asking the LLM to route it."""
         self.set_state(BotStates.THINKING, "Thinking...")
+        action_name = self.tool_router.normalize_action(action_data)
         tool_result = self.tool_router.execute(action_data)
-        if not tool_result:
+
+        if tool_result == "IMAGE_CAPTURE_TRIGGERED":
+            image_path = self.capture_image()
+            if image_path:
+                self.chat_and_respond(user_text, image_path=image_path)
+            else:
+                fallback = "I could not use the camera right now."
+                self._speak_complete_response(fallback, None)
+                self._remember_turn(user_text, fallback)
             return
-        self._speak_complete_response(tool_result, None)
-        self._remember_turn(user_text, tool_result)
+
+        fallbacks = {
+            "INVALID_ACTION": "I am not sure how to do that.",
+            "SEARCH_EMPTY": "I searched, but I couldn't find anything about that.",
+            "SEARCH_ERROR": "I cannot reach the internet right now.",
+        }
+        if tool_result in fallbacks:
+            response_text = fallbacks[tool_result]
+        elif action_name == "search_web" and tool_result:
+            self.set_state(BotStates.THINKING, "Reading...")
+            summary_prompt = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Answer the user's question in one or two short sentences "
+                        "using only the supplied search result. Do not mention that "
+                        "you are summarizing a result."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"RESULT: {tool_result}\nUser Question: {user_text}",
+                },
+            ]
+            final_response = ollama.chat(
+                model=self.text_model,
+                messages=summary_prompt,
+                stream=False,
+                options=OLLAMA_OPTIONS,
+            )
+            response_text = final_response["message"]["content"].strip()
+        else:
+            response_text = tool_result or "I could not complete that request."
+
+        self._speak_complete_response(response_text, None)
+        self._remember_turn(user_text, response_text)
         self.wait_for_tts()
         self.set_state(BotStates.IDLE, "Ready")
 
