@@ -44,6 +44,9 @@ class ToolRouter:
 
         search_prefixes = (
             "search the web for ",
+            "do a web search for ",
+            "run a web search for ",
+            "perform a web search for ",
             "search online for ",
             "search for ",
             "look up ",
@@ -99,12 +102,12 @@ class ToolRouter:
 
         print(f"Searching web for: {query}...", flush=True)
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
 
             with DDGS() as ddgs:
                 results = []
                 try:
-                    results = list(ddgs.news(query, region="us-en", max_results=1))
+                    results = list(ddgs.news(query, region="us-en", max_results=3))
                     if results:
                         print(f"[DEBUG] Found News: {results[0].get('title')}", flush=True)
                 except Exception as exc:
@@ -123,13 +126,25 @@ class ToolRouter:
                     print("[DEBUG] Search returned 0 results.", flush=True)
                     return "SEARCH_EMPTY"
 
-                result = results[0]
-                title = result.get("title", "No Title")
-                body = result.get("body", result.get("snippet", "No Body"))
+                formatted_results = []
+
+                for index, result in enumerate(results[:3], start=1):
+                    title = result.get("title", "No title")
+                    body = result.get("body", result.get("snippet", ""))
+                    source = result.get("source", "")
+                    url = result.get("url", result.get("href", ""))
+
+                    formatted_results.append(
+                        f"Result {index}:\n"
+                        f"Title: {title}\n"
+                        f"Source: {source}\n"
+                        f"Snippet: {body[:500]}\n"
+                        f"URL: {url}"
+                    )
+
                 return (
-                    f"SEARCH RESULTS for '{query}':\n"
-                    f"Title: {title}\n"
-                    f"Snippet: {body[:300]}"
+                        f"SEARCH RESULTS for '{query}':\n\n"
+                        + "\n\n".join(formatted_results)
                 )
         except Exception as exc:
             print(f"[DEBUG] Connection/Library Error: {exc}", flush=True)

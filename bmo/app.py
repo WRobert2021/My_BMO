@@ -586,14 +586,21 @@ class BotGUI:
                 {
                     "role": "system",
                     "content": (
-                        "Answer the user's question in one or two short sentences "
-                        "using only the supplied search result. Do not mention that "
-                        "you are summarizing a result."
+                        "You are reading current web-search results for the user. "
+                        "Briefly report the useful information contained in the results. "
+                        "The user's words may be a search command rather than a question. "
+                        "Do not claim the results are irrelevant when their titles or "
+                        "snippets clearly concern the requested subject. "
+                        "Use only the supplied results. Answer in one or two short sentences."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"RESULT: {tool_result}\nUser Question: {user_text}",
+                    "content": (
+                        f"Search request: {user_text}\n\n"
+                        f"Web-search results:\n{tool_result}\n\n"
+                        "Report what these results say."
+                    ),
                 },
             ]
             final_response = ollama.chat(
