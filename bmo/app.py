@@ -72,7 +72,7 @@ class BotGUI:
             preferred_rate,
         )
         self.speaker = PiperSpeaker(str(self.config["voice_model"]))
-        self.tool_router = ToolRouter()
+        self.tool_router = ToolRouter(self.config)
 
         master.title("Pi Assistant")
         master.attributes("-fullscreen", True)
