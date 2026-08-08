@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from bmo.config import load_config
+from bmo.features import ToolContract, ToolRegistry, ToolRequest
 from bmo.location import LocationError, LocationNotConfigured, LocationService
 from bmo.weather import WeatherError, WeatherService
 
@@ -55,11 +56,34 @@ class ToolRouter:
             units=str(effective_config.get("weather_units", "imperial")),
         )
         self.last_tool_details: dict[str, Any] | None = None
+        self.registry = ToolRegistry(
+            (
+                ToolContract(
+                    action="get_time",
+                    aliases=("check_time",),
+                    handler=self._execute_get_time,
+                ),
+                ToolContract(
+                    action="get_location",
+                    aliases=("location", "where_am_i"),
+                    handler=self._execute_get_location,
+                ),
+                ToolContract(
+                    action="get_weather",
+                    aliases=("weather", "forecast", "check_weather"),
+                    handler=self._execute_get_weather,
+                ),
+                ToolContract(
+                    action="search_web",
+                    aliases=("google", "browser", "news", "search_news"),
+                    handler=self._execute_search_web,
+                ),
+            )
+        )
 
     @classmethod
     def normalize_action(cls, action_data: dict[str, Any]) -> str:
-        raw_action = str(action_data.get("action", "")).lower().strip()
-        return cls.ALIASES.get(raw_action, raw_action)
+        return ToolRegistry.resolve_action(action_data, cls.ALIASES)
 
     @staticmethod
     def clean_weather_location(place_name: str) -> str:
@@ -192,51 +216,55 @@ class ToolRouter:
                 return f"CHAT_FALLBACK::{value}"
             return "INVALID_ACTION"
 
-        if action == "get_time":
-            now = datetime.datetime.now().strftime("%I:%M %p")
-            return f"The current time is {now}."
-
-        if action == "get_location":
-            try:
-                location = self.location_service.resolve()
-                return f"Your configured location is {location.name}."
-            except LocationNotConfigured:
-                return (
-                    "I do not have a home location configured yet. "
-                    "Add one in config.json."
-                )
-            except (LocationError, OSError, TimeoutError) as exc:
-                print(f"[LOCATION] Lookup failed: {exc}", flush=True)
-                return "I cannot check the configured location right now."
-
-        if action == "get_weather":
-            place_name = self.clean_weather_location(
-                str(action_data.get("location") or value or "")
-            )
-            try:
-                return self.weather_service.current_report(place_name or None)
-            except LocationNotConfigured:
-                return (
-                    "I need a home location in config.json, or you can ask "
-                    "for the weather in a named city."
-                )
-            except LocationError as exc:
-                print(f"[LOCATION] Weather place lookup failed: {exc}", flush=True)
-                return str(exc)
-            except (WeatherError, OSError, TimeoutError) as exc:
-                print(f"[WEATHER] Lookup failed: {exc}", flush=True)
-                return "I cannot reach the weather service right now."
-            except Exception as exc:
-                print(f"[WEATHER] Unexpected lookup error: {exc}", flush=True)
-                return "I cannot reach the weather service right now."
-
-        if action == "search_web":
-            return self._search_web(str(value or "").strip())
-
+        # Camera capture remains owned by BotGUI; this symbolic response keeps
+        # its existing ToolRouter boundary until that feature is migrated.
         if action == "capture_image":
             return "IMAGE_CAPTURE_TRIGGERED"
 
-        return None
+        return self.registry.execute(action_data)
+
+    def _execute_get_time(self, action_data: ToolRequest) -> str:
+        now = datetime.datetime.now().strftime("%I:%M %p")
+        return f"The current time is {now}."
+
+    def _execute_get_location(self, action_data: ToolRequest) -> str:
+        try:
+            location = self.location_service.resolve()
+            return f"Your configured location is {location.name}."
+        except LocationNotConfigured:
+            return (
+                "I do not have a home location configured yet. "
+                "Add one in config.json."
+            )
+        except (LocationError, OSError, TimeoutError) as exc:
+            print(f"[LOCATION] Lookup failed: {exc}", flush=True)
+            return "I cannot check the configured location right now."
+
+    def _execute_get_weather(self, action_data: ToolRequest) -> str:
+        value = action_data.get("value") or action_data.get("query")
+        place_name = self.clean_weather_location(
+            str(action_data.get("location") or value or "")
+        )
+        try:
+            return self.weather_service.current_report(place_name or None)
+        except LocationNotConfigured:
+            return (
+                "I need a home location in config.json, or you can ask "
+                "for the weather in a named city."
+            )
+        except LocationError as exc:
+            print(f"[LOCATION] Weather place lookup failed: {exc}", flush=True)
+            return str(exc)
+        except (WeatherError, OSError, TimeoutError) as exc:
+            print(f"[WEATHER] Lookup failed: {exc}", flush=True)
+            return "I cannot reach the weather service right now."
+        except Exception as exc:
+            print(f"[WEATHER] Unexpected lookup error: {exc}", flush=True)
+            return "I cannot reach the weather service right now."
+
+    def _execute_search_web(self, action_data: ToolRequest) -> str:
+        value = action_data.get("value") or action_data.get("query")
+        return self._search_web(str(value or "").strip())
 
     def _search_web(self, query: str) -> str:
         if not query:

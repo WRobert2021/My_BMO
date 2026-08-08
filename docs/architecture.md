@@ -7,7 +7,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.app` — Tkinter UI and top-level interaction workflow.
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
-- `bmo.tools` — allowlisted tool routing for time, web search, and camera requests.
+- `bmo.tools` — stable compatibility router for tool callers and camera requests.
+- `bmo.features` — typed tool contracts and registry-backed dispatch for time,
+  location, weather, and web search.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
