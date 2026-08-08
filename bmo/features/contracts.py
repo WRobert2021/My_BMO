@@ -9,6 +9,13 @@ from typing import Any, Callable, Mapping, Protocol, TypeAlias
 ToolRequest: TypeAlias = Mapping[str, Any]
 ToolResponse: TypeAlias = str | None
 ToolHandler: TypeAlias = Callable[[ToolRequest], ToolResponse]
+DirectAction: TypeAlias = dict[str, str]
+DirectMatcher: TypeAlias = Callable[[str], DirectAction | None]
+
+
+def normalize_direct_text(user_text: str) -> str:
+    """Normalize spoken text for deterministic direct-action matching."""
+    return " ".join(user_text.lower().strip().rstrip("?.!").split())
 
 
 class Tool(Protocol):
@@ -20,6 +27,9 @@ class Tool(Protocol):
     def execute(self, request: ToolRequest) -> ToolResponse:
         """Execute the tool for a normalized action request."""
 
+    def match_direct_action(self, user_text: str) -> DirectAction | None:
+        """Return action JSON for an unambiguous direct phrase, if any."""
+
 
 @dataclass(frozen=True)
 class ToolContract:
@@ -28,6 +38,12 @@ class ToolContract:
     action: str
     handler: ToolHandler
     aliases: tuple[str, ...] = ()
+    direct_matcher: DirectMatcher | None = None
 
     def execute(self, request: ToolRequest) -> ToolResponse:
         return self.handler(request)
+
+    def match_direct_action(self, user_text: str) -> DirectAction | None:
+        if self.direct_matcher is None:
+            return None
+        return self.direct_matcher(user_text)

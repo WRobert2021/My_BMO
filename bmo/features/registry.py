@@ -5,7 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from bmo.features.contracts import Tool, ToolRequest, ToolResponse
+from bmo.features.contracts import (
+    DirectAction,
+    Tool,
+    ToolRequest,
+    ToolResponse,
+)
 
 
 class DuplicateToolError(ValueError):
@@ -97,6 +102,17 @@ class ToolRegistry:
         normalized_request = dict(request)
         normalized_request["action"] = action
         return tool.execute(normalized_request)
+
+    def match_direct_action(self, user_text: str) -> DirectAction | None:
+        """Return the first direct phrase match from registered tools."""
+        for tool in self._tools.values():
+            matcher = getattr(tool, "match_direct_action", None)
+            if not callable(matcher):
+                continue
+            action_data = matcher(user_text)
+            if action_data is not None:
+                return action_data
+        return None
 
     @staticmethod
     def resolve_action(

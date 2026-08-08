@@ -8,8 +8,11 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — stable compatibility router for tool callers and camera requests.
-- `bmo.features` — typed tool contracts and registry-backed dispatch for time,
-  location, weather, and web search.
+- `bmo.features` — typed tool contracts and registry-backed dispatch.
+- `bmo.features.get_time` — current-time action, alias, and direct phrases.
+- `bmo.features.get_location` — configured-location action and failure handling.
+- `bmo.features.get_weather` — weather action, place cleanup, and failures.
+- `bmo.features.search_web` — web-search action, formatting, and archive details.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
