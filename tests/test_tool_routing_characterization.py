@@ -9,8 +9,9 @@ from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
 from bmo.config import OLLAMA_OPTIONS
-from bmo.intent import ROUTER_PROMPT, infer_tool_action
+from bmo.intent import infer_tool_action
 from bmo.location import Location, LocationError, LocationNotConfigured
+from bmo.prompts import build_routing_prompt
 from bmo.tools import ToolRouter
 from bmo.weather import WeatherError
 
@@ -438,6 +439,7 @@ class PromptCharacterizationTests(unittest.TestCase):
 
     def test_router_model_receives_the_current_generated_prompt(self) -> None:
         captured = {}
+        router = ToolRouter({"online_timeout_seconds": 6})
 
         def fake_chat(**kwargs):
             captured.update(kwargs)
@@ -448,6 +450,7 @@ class PromptCharacterizationTests(unittest.TestCase):
                 "router-model",
                 "Could you tell me the time?",
                 fake_chat,
+                router,
             ),
             {"action": "get_time"},
         )
@@ -456,7 +459,10 @@ class PromptCharacterizationTests(unittest.TestCase):
             {
                 "model": "router-model",
                 "messages": [
-                    {"role": "system", "content": ROUTER_PROMPT},
+                    {
+                        "role": "system",
+                        "content": build_routing_prompt(router.registry),
+                    },
                     {
                         "role": "user",
                         "content": "Could you tell me the time?",

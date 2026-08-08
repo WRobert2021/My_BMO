@@ -9,9 +9,40 @@ from bmo.intent import (
     infer_game_candidates,
     infer_tool_action,
 )
+from bmo.tools import ToolRouter
 
 
 class IntentRoutingTests(unittest.TestCase):
+    def test_disabled_action_is_absent_from_prompt_and_rejected(self) -> None:
+        router = ToolRouter(
+            {
+                "features": [
+                    {
+                        "module": "bmo.features.get_time",
+                        "enabled": True,
+                        "settings": {},
+                    }
+                ]
+            }
+        )
+        captured = {}
+
+        def fake_chat(**kwargs):
+            captured.update(kwargs)
+            return {"message": {"content": '{"action":"get_weather"}'}}
+
+        self.assertIsNone(
+            infer_tool_action(
+                "gemma:2b",
+                "What's the weather?",
+                fake_chat,
+                router,
+            )
+        )
+        routing_prompt = captured["messages"][0]["content"]
+        self.assertIn("get_time", routing_prompt)
+        self.assertNotIn("get_weather", routing_prompt)
+
     def test_natural_weather_wording_uses_model_location(self) -> None:
         def fake_chat(**kwargs):
             self.assertEqual(kwargs["format"], "json")

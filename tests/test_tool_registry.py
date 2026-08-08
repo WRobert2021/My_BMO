@@ -199,14 +199,20 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             {"action": "check_time"}
         )
 
-    def test_router_registry_contains_only_the_four_migrated_features(
+    def test_router_registry_contains_all_default_features(
         self,
     ) -> None:
         router = self.make_router()
 
         self.assertEqual(
             router.registry.actions,
-            {"get_time", "get_location", "get_weather", "search_web"},
+            {
+                "get_time",
+                "get_location",
+                "get_weather",
+                "search_web",
+                "capture_image",
+            },
         )
         self.assertEqual(
             router.registry.aliases,
@@ -221,6 +227,8 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
                 "browser": "search_web",
                 "news": "search_web",
                 "search_news": "search_web",
+                "look": "capture_image",
+                "see": "capture_image",
             },
         )
 
@@ -247,15 +255,16 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             {"name": "Austin, Texas"},
         )
 
-    def test_camera_trigger_remains_outside_registry(self) -> None:
+    def test_camera_trigger_executes_through_registry(self) -> None:
         router = self.make_router()
         router.registry = Mock()
+        router.registry.execute.return_value = "IMAGE_CAPTURE_TRIGGERED"
 
         self.assertEqual(
             router.execute({"action": "look"}),
             "IMAGE_CAPTURE_TRIGGERED",
         )
-        router.registry.execute.assert_not_called()
+        router.registry.execute.assert_called_once_with({"action": "look"})
 
 
 if __name__ == "__main__":

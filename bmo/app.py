@@ -63,7 +63,11 @@ class BotGUI:
         self.config = load_config()
         self.text_model = str(self.config["text_model"])
         self.vision_model = str(self.config["vision_model"])
-        self.system_prompt = build_system_prompt(self.config)
+        self.tool_router = ToolRouter(self.config)
+        self.system_prompt = build_system_prompt(
+            self.config,
+            self.tool_router.registry,
+        )
         self.shutdown_event = threading.Event()
         self.archive_manager = InteractionArchiveManager(
             self.config.get("interaction_log_directory", "interaction_logs"),
@@ -88,7 +92,6 @@ class BotGUI:
             preferred_rate,
         )
         self.speaker = PiperSpeaker(str(self.config["voice_model"]))
-        self.tool_router = ToolRouter(self.config)
         self.twenty_questions = TwentyQuestionsGame(
             debug=bool(self.config.get("twenty_questions_debug", False))
         )
@@ -741,6 +744,7 @@ class BotGUI:
                         self.text_model,
                         text,
                         self._logged_chat,
+                        self.tool_router,
                     )
                     print(
                         f"[ROUTER] Local model inferred: "

@@ -7,6 +7,7 @@ import re
 from typing import Any, Callable
 
 from bmo.config import OLLAMA_OPTIONS
+from bmo.prompts import build_routing_prompt
 from bmo.speech import extract_json_from_text
 from bmo.tools import ToolRouter
 
@@ -14,35 +15,25 @@ from bmo.tools import ToolRouter
 ChatRequest = Callable[..., dict[str, Any]]
 
 
-ROUTER_PROMPT = """Classify the user's intent for a robot assistant.
-Return exactly one JSON object and no explanation.
-
-Available actions:
-- {"action":"get_time"}
-- {"action":"get_location"}
-- {"action":"get_weather"}
-- {"action":"get_weather","location":"city, state or country"}
-- {"action":"search_web","query":"search terms"}
-- {"action":"capture_image"}
-- {"action":"chat"}
-
-Use get_weather for current weather or today's forecast. Preserve a location
-named by the user, but exclude words such as "today" and "right now" from it.
-Infer the likely intended request when speech-to-text produces similar-sounding
-words. For example, "where they like in Dallas, Texas" likely means weather in
-Dallas, Texas. Use chat only when no tool is appropriate."""
+ROUTER_PROMPT = """Routing prompts are generated from the enabled tool registry.
+Use build_routing_prompt(registry) to obtain the effective prompt."""
 
 
 def infer_tool_action(
     model: str,
     user_text: str,
     chat_request: ChatRequest,
+    tool_router: ToolRouter | None = None,
 ) -> dict[str, str] | None:
     """Ask the local model to classify an utterance without conversation bias."""
+    effective_router = tool_router or ToolRouter(
+        {"online_timeout_seconds": 6}
+    )
+    routing_prompt = build_routing_prompt(effective_router.registry)
     response = chat_request(
         model=model,
         messages=[
-            {"role": "system", "content": ROUTER_PROMPT},
+            {"role": "system", "content": routing_prompt},
             {"role": "user", "content": user_text},
         ],
         stream=False,
@@ -56,20 +47,22 @@ def infer_tool_action(
     if not action_data:
         return None
 
-    action = ToolRouter.normalize_action(action_data)
-    if action not in ToolRouter.VALID_TOOLS:
+    normalized_data = effective_router.normalize_request(action_data)
+    action = str(normalized_data["action"])
+    valid_tools = effective_router.VALID_TOOLS
+    if action not in valid_tools:
         return None
 
     result = {"action": action}
     if action == "get_weather":
-        location = ToolRouter.clean_weather_location(
-            str(action_data.get("location") or "")
-        )
+        location = str(normalized_data.get("location") or "")
         if location:
             result["location"] = location
     elif action == "search_web":
         query = str(
-            action_data.get("query") or action_data.get("value") or ""
+            normalized_data.get("query")
+            or normalized_data.get("value")
+            or ""
         ).strip()
         if not query:
             return None

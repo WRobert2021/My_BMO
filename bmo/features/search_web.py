@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from bmo.features.contracts import (
@@ -29,6 +29,18 @@ class SearchWebTool:
 
     action = "search_web"
     aliases = ("google", "browser", "news", "search_news")
+    description = "Search the web for current information."
+    schemas = ('{"action":"search_web","query":"search terms"}',)
+    prompt_guidance = (
+        "Use search_web when the user explicitly asks for a web search or "
+        "current online information.",
+    )
+    prompt_examples = (
+        (
+            "Search for news about robots.",
+            '{"action":"search_web","query":"robots news"}',
+        ),
+    )
     direct_prefixes = SEARCH_PREFIXES
 
     def __init__(
@@ -124,3 +136,9 @@ class SearchWebTool:
             print(f"[DEBUG] Connection/Library Error: {exc}", flush=True)
             self.last_details = {"query": query, "error": str(exc)}
             return "SEARCH_ERROR"
+
+
+def register(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Register web search."""
+    del settings
+    registry.register(SearchWebTool())

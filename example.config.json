@@ -13,5 +13,32 @@
   "game_answer_wait_seconds": 12,
   "twenty_questions_debug": false,
   "interaction_logging": true,
-  "interaction_log_directory": "interaction_logs"
+  "interaction_log_directory": "interaction_logs",
+  "features": [
+    {
+      "module": "bmo.features.get_time",
+      "enabled": true,
+      "settings": {}
+    },
+    {
+      "module": "bmo.features.get_location",
+      "enabled": true,
+      "settings": {}
+    },
+    {
+      "module": "bmo.features.get_weather",
+      "enabled": true,
+      "settings": {}
+    },
+    {
+      "module": "bmo.features.search_web",
+      "enabled": true,
+      "settings": {}
+    },
+    {
+      "module": "bmo.features.capture_image",
+      "enabled": true,
+      "settings": {}
+    }
+  ]
 }

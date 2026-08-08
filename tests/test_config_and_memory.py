@@ -30,10 +30,15 @@ class ConfigTests(unittest.TestCase):
         prompt = build_system_prompt(
             {"system_prompt": "Base", "system_prompt_extras": "Extra"}
         )
-        self.assertEqual(prompt, "Base\n\nExtra")
+        self.assertTrue(prompt.startswith("Base\n\nCAPABILITIES:"))
+        self.assertIn("get_time", prompt)
+        self.assertTrue(prompt.endswith("\n\nExtra"))
 
     def test_default_prompt_is_used_when_override_missing(self):
-        self.assertEqual(build_system_prompt({}), BASE_SYSTEM_PROMPT.strip())
+        prompt = build_system_prompt({})
+        self.assertTrue(prompt.startswith(BASE_SYSTEM_PROMPT.strip()))
+        self.assertIn("CAPABILITIES:", prompt)
+        self.assertIn("capture_image", prompt)
 
 
 class MemoryTests(unittest.TestCase):

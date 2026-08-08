@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from typing import Any
 
 from bmo.features.contracts import (
     DirectAction,
     ToolRequest,
     normalize_direct_text,
 )
-from bmo.location import LocationError, LocationNotConfigured
+from bmo.location import LocationError, LocationNotConfigured, LocationService
 from bmo.weather import WeatherError, WeatherService
 
 
@@ -73,6 +75,23 @@ class GetWeatherTool:
 
     action = "get_weather"
     aliases = ("weather", "forecast", "check_weather")
+    description = "Report current weather for a named or configured place."
+    schemas = (
+        '{"action":"get_weather"}',
+        '{"action":"get_weather","location":"city, state or country"}',
+    )
+    prompt_guidance = (
+        "Use get_weather for current weather or today's forecast.",
+        "Include location only when the user names a place, excluding time "
+        "words such as today and right now.",
+    )
+    prompt_examples = (
+        ("What's the weather?", '{"action":"get_weather"}'),
+        (
+            "What's the weather in Austin?",
+            '{"action":"get_weather","location":"Austin, Texas"}',
+        ),
+    )
     direct_phrases = WEATHER_AT_HOME
     direct_prefixes = WEATHER_PREFIXES
 
@@ -101,6 +120,19 @@ class GetWeatherTool:
             print(f"[WEATHER] Unexpected lookup error: {exc}", flush=True)
             return "I cannot reach the weather service right now."
 
+    @staticmethod
+    def normalize_request(request: ToolRequest) -> dict[str, Any]:
+        """Normalize a model-supplied place without changing other fields."""
+        normalized = dict(request)
+        location = clean_weather_location(
+            str(request.get("location") or "")
+        )
+        if location:
+            normalized["location"] = location
+        else:
+            normalized.pop("location", None)
+        return normalized
+
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:
         normalized = normalize_direct_text(user_text)
@@ -116,3 +148,30 @@ class GetWeatherTool:
                         "location": clean_weather_location(place_name),
                     }
         return None
+
+
+def _online_timeout(settings: Mapping[str, Any]) -> float:
+    try:
+        timeout = float(settings.get("online_timeout_seconds", 6))
+    except (TypeError, ValueError):
+        print(
+            "[CONFIG] online_timeout_seconds must be numeric; using 6.",
+            flush=True,
+        )
+        timeout = 6.0
+    return min(max(timeout, 1.0), 30.0)
+
+
+def register(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Register current-weather lookup with configured dependencies."""
+    timeout = _online_timeout(settings)
+    location_service = LocationService(
+        settings.get("location"),
+        timeout=timeout,
+    )
+    weather_service = WeatherService(
+        location_service,
+        timeout=timeout,
+        units=str(settings.get("weather_units", "imperial")),
+    )
+    registry.register(GetWeatherTool(weather_service))

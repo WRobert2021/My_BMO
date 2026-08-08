@@ -1,4 +1,4 @@
-"""Compatibility facade for registered BMO features and camera routing."""
+"""Compatibility facade for configuration-driven BMO features."""
 
 from __future__ import annotations
 
@@ -6,138 +6,142 @@ import datetime
 from typing import Any
 
 from bmo.config import load_config
-from bmo.features import (
-    GetLocationTool,
-    GetTimeTool,
-    GetWeatherTool,
-    SearchWebTool,
-    ToolRegistry,
-    ToolRequest,
-    clean_weather_location,
-    normalize_direct_text,
-)
-from bmo.location import LocationService
-from bmo.weather import WeatherService
+from bmo.features.loader import FeatureLoadFailure, load_feature_registry
+from bmo.features.registry import ToolRegistry
 
 
-_FEATURE_TOOL_TYPES = (
-    GetTimeTool,
-    GetLocationTool,
-    GetWeatherTool,
-    SearchWebTool,
-)
-_FEATURE_ACTIONS = {tool_type.action for tool_type in _FEATURE_TOOL_TYPES}
-_FEATURE_ALIASES = {
-    alias: tool_type.action
-    for tool_type in _FEATURE_TOOL_TYPES
-    for alias in tool_type.aliases
+_DEFAULT_ACTIONS = {
+    "get_time",
+    "get_location",
+    "get_weather",
+    "search_web",
+    "capture_image",
 }
+_DEFAULT_ALIASES = {
+    "check_time": "get_time",
+    "location": "get_location",
+    "where_am_i": "get_location",
+    "weather": "get_weather",
+    "forecast": "get_weather",
+    "check_weather": "get_weather",
+    "google": "search_web",
+    "browser": "search_web",
+    "news": "search_web",
+    "search_news": "search_web",
+    "look": "capture_image",
+    "see": "capture_image",
+}
+_default_router: ToolRouter | None = None
 
 
 class ToolRouter:
-    """Preserve the legacy routing API while features own tool behavior."""
+    """Preserve the routing API while loading tools from configuration."""
 
-    VALID_TOOLS = {*_FEATURE_ACTIONS, "capture_image"}
-    ALIASES = {
-        **_FEATURE_ALIASES,
-        "look": "capture_image",
-        "see": "capture_image",
-    }
+    # Class-level defaults preserve the historical introspection API. Each
+    # instance shadows these with the actions it actually loaded.
+    VALID_TOOLS = set(_DEFAULT_ACTIONS)
+    ALIASES = dict(_DEFAULT_ALIASES)
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
-        effective_config = config or load_config()
-        try:
-            timeout = float(effective_config.get("online_timeout_seconds", 6))
-        except (TypeError, ValueError):
-            print(
-                "[CONFIG] online_timeout_seconds must be numeric; using 6.",
-                flush=True,
-            )
-            timeout = 6.0
-        timeout = min(max(timeout, 1.0), 30.0)
+        effective_config = load_config() if config is None else config
+        result = load_feature_registry(
+            effective_config,
+            shared_settings={
+                key: value
+                for key, value in effective_config.items()
+                if key != "features"
+            },
+        )
+        self.registry = result.registry
+        self.feature_failures: tuple[FeatureLoadFailure, ...] = result.failures
+        self.feature_modules = result.modules
+        self.VALID_TOOLS = self.registry.actions
+        self.ALIASES = self.registry.aliases
+        self._last_tool_details: dict[str, Any] | None = None
 
-        location_service = LocationService(
-            effective_config.get("location"),
-            timeout=timeout,
-        )
-        weather_service = WeatherService(
-            location_service,
-            timeout=timeout,
-            units=str(effective_config.get("weather_units", "imperial")),
-        )
-        self._get_time_tool = GetTimeTool(
-            now=lambda: datetime.datetime.now()
-        )
-        self._get_location_tool = GetLocationTool(location_service)
-        self._get_weather_tool = GetWeatherTool(weather_service)
-        self._search_web_tool = SearchWebTool(
-            searcher=lambda query: self._search_web(query)
-        )
-        self.registry = ToolRegistry(
-            (
-                self._get_time_tool,
-                self._get_location_tool,
-                self._get_weather_tool,
-                self._search_web_tool,
-            )
-        )
+        time_tool = self.registry.get("get_time")
+        if time_tool is not None and hasattr(time_tool, "_now"):
+            time_tool._now = lambda: datetime.datetime.now()
+
+        # Retain the patchable compatibility boundary used by archive and test
+        # callers while the feature continues to own the real search work.
+        search_tool = self.registry.get("search_web")
+        if search_tool is not None and hasattr(search_tool, "_searcher"):
+            search_tool._searcher = lambda query: self._search_web(query)
+
+    def _require_tool(self, action: str) -> Any:
+        tool = self.registry.get(action)
+        if tool is None:
+            raise AttributeError(f"Feature '{action}' is not enabled.")
+        return tool
 
     @property
-    def location_service(self) -> LocationService:
+    def location_service(self) -> Any:
         """Expose the location dependency retained by the legacy router API."""
-        return self._get_location_tool.location_service
+        return self._require_tool("get_location").location_service
 
     @location_service.setter
-    def location_service(self, service: LocationService) -> None:
-        self._get_location_tool.location_service = service
+    def location_service(self, service: Any) -> None:
+        self._require_tool("get_location").location_service = service
 
     @property
-    def weather_service(self) -> WeatherService:
+    def weather_service(self) -> Any:
         """Expose the weather dependency retained by the legacy router API."""
-        return self._get_weather_tool.weather_service
+        return self._require_tool("get_weather").weather_service
 
     @weather_service.setter
-    def weather_service(self, service: WeatherService) -> None:
-        self._get_weather_tool.weather_service = service
+    def weather_service(self, service: Any) -> None:
+        self._require_tool("get_weather").weather_service = service
 
     @property
     def last_tool_details(self) -> dict[str, Any] | None:
         """Expose web-search details for the existing archive workflow."""
-        return self._search_web_tool.last_details
+        search_tool = self.registry.get("search_web")
+        if search_tool is not None:
+            return getattr(search_tool, "last_details", self._last_tool_details)
+        return self._last_tool_details
 
     @last_tool_details.setter
     def last_tool_details(self, details: dict[str, Any] | None) -> None:
-        self._search_web_tool.last_details = details
+        self._last_tool_details = details
+        search_tool = self.registry.get("search_web")
+        if search_tool is not None and hasattr(search_tool, "last_details"):
+            search_tool.last_details = details
 
-    @classmethod
-    def normalize_action(cls, action_data: dict[str, Any]) -> str:
-        return ToolRegistry.resolve_action(action_data, cls.ALIASES)
+    def normalize_action(
+        self,
+        action_data: dict[str, Any] | None = None,
+    ) -> str:
+        """Normalize using instance actions, or defaults for a class call."""
+        if isinstance(self, ToolRouter):
+            request = action_data or {}
+            return ToolRegistry.resolve_action(request, self.ALIASES)
+
+        # Compatibility for ToolRouter.normalize_action(action_data).
+        request = self
+        return ToolRegistry.resolve_action(request, _DEFAULT_ALIASES)
+
+    def normalize_request(self, action_data: dict[str, Any]) -> dict[str, Any]:
+        """Apply action aliases and feature-specific request normalization."""
+        return self.registry.normalize_request(action_data)
 
     @staticmethod
     def clean_weather_location(place_name: str) -> str:
+        """Retain the old helper without importing weather during startup."""
+        from bmo.features.get_weather import clean_weather_location
+
         return clean_weather_location(place_name)
 
-    @staticmethod
-    def match_direct_action(user_text: str) -> dict[str, str] | None:
-        """Route unambiguous built-in requests without probabilistic output."""
-        for tool_type in _FEATURE_TOOL_TYPES:
-            action_data = tool_type.match_direct_action(user_text)
-            if action_data is not None:
-                return action_data
+    def match_direct_action(
+        self,
+        user_text: str | None = None,
+    ) -> dict[str, str] | None:
+        """Match direct phrases using only enabled feature modules."""
+        if isinstance(self, ToolRouter):
+            return self.registry.match_direct_action(str(user_text or ""))
 
-        normalized = normalize_direct_text(user_text)
-        camera_requests = {
-            "take a photo",
-            "take a picture",
-            "capture a photo",
-            "capture a picture",
-            "what do you see",
-            "what can you see",
-            "look around",
-        }
-        if normalized in camera_requests:
-            return {"action": "capture_image"}
-        return None
+        # Compatibility for ToolRouter.match_direct_action(user_text).
+        return _get_default_router().registry.match_direct_action(str(self))
 
     def execute(self, action_data: dict[str, Any]) -> str | None:
         self.last_tool_details = None
@@ -150,31 +154,34 @@ class ToolRouter:
             if value and isinstance(value, str) and len(value.split()) > 1:
                 return f"CHAT_FALLBACK::{value}"
             return "INVALID_ACTION"
-
-        # Camera capture remains owned by BotGUI; this symbolic response keeps
-        # its existing ToolRouter boundary until that feature is migrated.
-        if action == "capture_image":
-            return "IMAGE_CAPTURE_TRIGGERED"
-
         return self.registry.execute(action_data)
 
-    def _execute_get_time(self, action_data: ToolRequest) -> str:
-        """Compatibility wrapper for the migrated time feature."""
-        return self._get_time_tool.execute(action_data)
+    def _execute_get_time(self, action_data: dict[str, Any]) -> str | None:
+        """Compatibility wrapper for the time feature."""
+        return self.registry.execute(action_data)
 
-    def _execute_get_location(self, action_data: ToolRequest) -> str:
-        """Compatibility wrapper for the migrated location feature."""
-        return self._get_location_tool.execute(action_data)
+    def _execute_get_location(self, action_data: dict[str, Any]) -> str | None:
+        """Compatibility wrapper for the location feature."""
+        return self.registry.execute(action_data)
 
-    def _execute_get_weather(self, action_data: ToolRequest) -> str:
-        """Compatibility wrapper for the migrated weather feature."""
-        return self._get_weather_tool.execute(action_data)
+    def _execute_get_weather(self, action_data: dict[str, Any]) -> str | None:
+        """Compatibility wrapper for the weather feature."""
+        return self.registry.execute(action_data)
 
-    def _execute_search_web(self, action_data: ToolRequest) -> str:
-        """Compatibility wrapper for the migrated web-search feature."""
+    def _execute_search_web(self, action_data: dict[str, Any]) -> str:
+        """Compatibility wrapper retaining search results for archives."""
         value = action_data.get("value") or action_data.get("query")
         return self._search_web(str(value or "").strip())
 
     def _search_web(self, query: str) -> str:
         """Compatibility wrapper retaining search results for archives."""
-        return self._search_web_tool.search(query)
+        search_tool = self._require_tool("search_web")
+        return search_tool.search(query)
+
+
+def _get_default_router() -> ToolRouter:
+    """Lazily create a default router for legacy class-method-style calls."""
+    global _default_router
+    if _default_router is None:
+        _default_router = ToolRouter({"online_timeout_seconds": 6})
+    return _default_router

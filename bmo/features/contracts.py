@@ -11,6 +11,7 @@ ToolResponse: TypeAlias = str | None
 ToolHandler: TypeAlias = Callable[[ToolRequest], ToolResponse]
 DirectAction: TypeAlias = dict[str, str]
 DirectMatcher: TypeAlias = Callable[[str], DirectAction | None]
+PromptExample: TypeAlias = tuple[str, str]
 
 
 def normalize_direct_text(user_text: str) -> str:
@@ -23,6 +24,10 @@ class Tool(Protocol):
 
     action: str
     aliases: tuple[str, ...]
+    description: str
+    schemas: tuple[str, ...]
+    prompt_guidance: tuple[str, ...]
+    prompt_examples: tuple[PromptExample, ...]
 
     def execute(self, request: ToolRequest) -> ToolResponse:
         """Execute the tool for a normalized action request."""
@@ -39,6 +44,10 @@ class ToolContract:
     handler: ToolHandler
     aliases: tuple[str, ...] = ()
     direct_matcher: DirectMatcher | None = None
+    description: str = ""
+    schemas: tuple[str, ...] = ()
+    prompt_guidance: tuple[str, ...] = ()
+    prompt_examples: tuple[PromptExample, ...] = ()
 
     def execute(self, request: ToolRequest) -> ToolResponse:
         return self.handler(request)

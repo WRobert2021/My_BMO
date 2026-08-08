@@ -117,6 +117,11 @@ You can modify the hardware behavior and personality in `config.json`. The `agen
 }
 ```
 
+Feature modules are configured by the `features` list shown in
+`example.config.json`. Each entry has a Python `module`, an `enabled` boolean,
+and a module-specific `settings` object. Omitting `features` keeps all built-in
+capabilities enabled. Disabled modules are not imported.
+
 ## Interaction archives
 
 Interaction logging is enabled by default. BMO creates a new directory for every

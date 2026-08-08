@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from contextlib import contextmanager
+from dataclasses import dataclass
+import json
 from typing import Any
 
 from bmo.features.contracts import (
@@ -19,6 +22,17 @@ class DuplicateToolError(ValueError):
 
 class UnknownToolError(LookupError):
     """Raised when execution is requested for an unregistered action."""
+
+
+@dataclass(frozen=True)
+class ToolCapability:
+    """Prompt metadata for one registered tool."""
+
+    action: str
+    description: str
+    schemas: tuple[str, ...]
+    guidance: tuple[str, ...]
+    examples: tuple[tuple[str, str], ...]
 
 
 class ToolRegistry:
@@ -39,6 +53,43 @@ class ToolRegistry:
     def aliases(self) -> dict[str, str]:
         """Return a snapshot mapping registered aliases to their actions."""
         return dict(self._aliases)
+
+    @property
+    def capabilities(self) -> tuple[ToolCapability, ...]:
+        """Return prompt metadata in registration order."""
+        capabilities = []
+        for action, tool in self._tools.items():
+            schemas = tuple(getattr(tool, "schemas", ())) or (
+                json.dumps({"action": action}, separators=(",", ":")),
+            )
+            capabilities.append(
+                ToolCapability(
+                    action=action,
+                    description=str(getattr(tool, "description", "")).strip(),
+                    schemas=schemas,
+                    guidance=tuple(getattr(tool, "prompt_guidance", ())),
+                    examples=tuple(getattr(tool, "prompt_examples", ())),
+                )
+            )
+        return tuple(capabilities)
+
+    def get(self, action: str) -> Tool | None:
+        """Return a registered tool by canonical action name or alias."""
+        normalized = str(action).lower().strip()
+        normalized = self._aliases.get(normalized, normalized)
+        return self._tools.get(normalized)
+
+    @contextmanager
+    def registration(self):
+        """Roll back all registrations performed in a failing block."""
+        tools_before = self._tools.copy()
+        aliases_before = self._aliases.copy()
+        try:
+            yield
+        except Exception:
+            self._tools = tools_before
+            self._aliases = aliases_before
+            raise
 
     def register(self, tool: Tool) -> None:
         """Register one tool, rejecting all ambiguous identifiers."""
@@ -90,17 +141,28 @@ class ToolRegistry:
         """Return the canonical action for a request."""
         return self.resolve_action(request, self._aliases)
 
+    def normalize_request(self, request: ToolRequest) -> dict[str, Any]:
+        """Normalize an action and apply optional feature-owned cleanup."""
+        normalized_request = dict(request)
+        action = self.normalize_action(request)
+        normalized_request["action"] = action
+        tool = self._tools.get(action)
+        normalizer = getattr(tool, "normalize_request", None)
+        if callable(normalizer):
+            normalized_request = dict(normalizer(normalized_request))
+            normalized_request["action"] = action
+        return normalized_request
+
     def execute(self, request: ToolRequest) -> ToolResponse:
         """Dispatch a request or raise if its action is not registered."""
-        action = self.normalize_action(request)
+        normalized_request = self.normalize_request(request)
+        action = str(normalized_request["action"])
         try:
             tool = self._tools[action]
         except KeyError as exc:
             raise UnknownToolError(
                 f"No tool is registered for action '{action}'."
             ) from exc
-        normalized_request = dict(request)
-        normalized_request["action"] = action
         return tool.execute(normalized_request)
 
     def match_direct_action(self, user_text: str) -> DirectAction | None:

@@ -7,12 +7,14 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.app` — Tkinter UI and top-level interaction workflow.
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
-- `bmo.tools` — stable compatibility router for tool callers and camera requests.
-- `bmo.features` — typed tool contracts and registry-backed dispatch.
+- `bmo.tools` — stable compatibility router over the enabled feature registry.
+- `bmo.features` — typed contracts, lazy loading, and registry-backed dispatch.
+- `bmo.features.loader` — standard-library module loading from `features` config.
 - `bmo.features.get_time` — current-time action, alias, and direct phrases.
 - `bmo.features.get_location` — configured-location action and failure handling.
 - `bmo.features.get_weather` — weather action, place cleanup, and failures.
 - `bmo.features.search_web` — web-search action, formatting, and archive details.
+- `bmo.features.capture_image` — camera request metadata and UI capture signal.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
@@ -22,7 +24,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 ## Runtime flow
 
 1. `agent.py` creates Tkinter and `BotGUI`.
-2. `BotGUI` constructs the services using `config.json`.
+2. `BotGUI` loads enabled feature modules and constructs services using
+   `config.json`. A failed enabled module is reported and skipped.
 3. The wake-word service waits for wake word or push-to-talk.
 4. A unique dated interaction archive is created.
 5. The recorder captures a WAV directly into that archive.
@@ -39,7 +42,17 @@ The same Python entry point is used on macOS and Raspberry Pi.
 - Piper uses `./piper/piper` when the bundled Pi binary exists.
 - Otherwise Piper runs through the active environment with `python -m piper`.
 - Whisper paths can be overridden with `whisper_binary` and `whisper_model` in `config.json`.
-- Raspberry Pi camera capture remains isolated in `BotGUI.capture_image()` until the camera service grows enough to justify a dedicated module.
+- Raspberry Pi camera execution remains in `BotGUI.capture_image()`; its action,
+  aliases, matching, and prompt metadata live in `bmo.features.capture_image`.
+
+## Feature configuration
+
+`features` is an ordered list of objects with `module`, `enabled`, and
+`settings` fields. Each enabled module provides `register(registry, settings)`.
+Disabled entries are skipped before import. When `features` is omitted, all
+five built-in actions are enabled. Per-module registration is transactional, so
+an import error, hook error, or duplicate action cannot remove features that
+loaded successfully.
 
 ## Next extraction
 
