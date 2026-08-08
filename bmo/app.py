@@ -18,6 +18,7 @@ import tkinter as tk
 from PIL import Image, ImageTk
 from tkinter import ttk
 
+from bmo.archive import InteractionArchive, InteractionArchiveManager
 from bmo.audio import (
     AudioRecorder,
     PiperSpeaker,
@@ -34,11 +35,21 @@ from bmo.config import (
     WAKE_WORD_THRESHOLD,
     load_config,
 )
+from bmo.intent import (
+    infer_game_answer,
+    infer_game_candidates,
+    infer_tool_action,
+)
 from bmo.memory import load_chat_history, save_chat_history
+from bmo.matching_game import (
+    MatchingGameApp,
+    is_matching_game_start_request,
+)
 from bmo.prompts import build_system_prompt
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
+from bmo.twenty_questions import QUESTIONS, TwentyQuestionsGame
 
 
 class BotGUI:
@@ -54,6 +65,11 @@ class BotGUI:
         self.vision_model = str(self.config["vision_model"])
         self.system_prompt = build_system_prompt(self.config)
         self.shutdown_event = threading.Event()
+        self.archive_manager = InteractionArchiveManager(
+            self.config.get("interaction_log_directory", "interaction_logs"),
+            enabled=bool(self.config.get("interaction_logging", True)),
+        )
+        self.current_interaction: InteractionArchive | None = None
 
         input_device = resolve_input_device(self.config)
         describe_input_device(input_device)
@@ -73,6 +89,11 @@ class BotGUI:
         )
         self.speaker = PiperSpeaker(str(self.config["voice_model"]))
         self.tool_router = ToolRouter(self.config)
+        self.twenty_questions = TwentyQuestionsGame(
+            debug=bool(self.config.get("twenty_questions_debug", False))
+        )
+        self.matching_game_active = threading.Event()
+        self.matching_game_ui: MatchingGameApp | None = None
 
         master.title("Pi Assistant")
         master.attributes("-fullscreen", True)
@@ -96,7 +117,7 @@ class BotGUI:
         self.recording_active = threading.Event()
         self.interrupted = threading.Event()
 
-        self.tts_queue: list[str] = []
+        self.tts_queue: list[tuple[str, Path | None]] = []
         self.tts_queue_lock = threading.Lock()
         self.tts_thread: threading.Thread | None = None
         self.tts_active = threading.Event()
@@ -370,7 +391,18 @@ class BotGUI:
             self.tts_thread.start()
 
             while not self.exiting:
-                trigger_source = self.detect_wake_word_or_ptt()
+                while self.matching_game_active.is_set() and not self.exiting:
+                    time.sleep(0.1)
+                if self.exiting:
+                    return
+                if self.twenty_questions.active:
+                    trigger_source = "GAME"
+                    self.set_state(
+                        BotStates.LISTENING,
+                        "Take your time. I'm listening...",
+                    )
+                else:
+                    trigger_source = self.detect_wake_word_or_ptt()
                 if self.exiting:
                     return
                 if self.interrupted.is_set():
@@ -378,33 +410,92 @@ class BotGUI:
                     self.set_state(BotStates.IDLE, "Resetting...")
                     continue
 
-                self.set_state(BotStates.LISTENING, "I'm listening!")
+                if trigger_source != "GAME":
+                    self.set_state(BotStates.LISTENING, "I'm listening!")
                 if trigger_source == "STOP" or self.shutdown_event.is_set():
                     return
+                self._start_interaction(trigger_source)
+                audio_path = (
+                    str(self.current_interaction.audio_path)
+                    if self.current_interaction
+                    else "input.wav"
+                )
                 if trigger_source == "PTT":
                     audio_file = self.recorder.record_ptt(
                         self.recording_active,
+                        filename=audio_path,
                         shutdown_event=self.shutdown_event,
                     )
                 else:
+                    initial_silence_timeout = 1.5
+                    if trigger_source == "GAME":
+                        try:
+                            initial_silence_timeout = float(
+                                self.config.get(
+                                    "game_answer_wait_seconds",
+                                    12,
+                                )
+                            )
+                        except (TypeError, ValueError):
+                            initial_silence_timeout = 12
+                        initial_silence_timeout = min(
+                            max(initial_silence_timeout, 3),
+                            30,
+                        )
                     audio_file = self.recorder.record_adaptive(
+                        filename=audio_path,
                         shutdown_event=self.shutdown_event,
+                        initial_silence_timeout=initial_silence_timeout,
                     )
 
                 if not audio_file:
-                    self.set_state(BotStates.IDLE, "Heard nothing.")
+                    self._finish_interaction("no_speech")
+                    if self.twenty_questions.active:
+                        self.set_state(
+                            BotStates.LISTENING,
+                            "Still listening...",
+                        )
+                    else:
+                        self.set_state(BotStates.IDLE, "Heard nothing.")
                     continue
 
                 self.play_sound(self.random_sound("ack"))
-                user_text = self.transcriber.transcribe(audio_file)
+                user_text = self.transcriber.transcribe(
+                    audio_file,
+                    archive_directory=(
+                        self.current_interaction.path / "input"
+                        if self.current_interaction
+                        else None
+                    ),
+                )
                 if not user_text:
-                    self.set_state(BotStates.IDLE, "Transcription empty.")
+                    self._finish_interaction("transcription_empty")
+                    if self.twenty_questions.active:
+                        self.set_state(
+                            BotStates.LISTENING,
+                            "I didn't catch that. Try again...",
+                        )
+                    else:
+                        self.set_state(
+                            BotStates.IDLE,
+                            "Transcription empty.",
+                        )
                     continue
 
+                if self.current_interaction:
+                    self.current_interaction.write_text(
+                        "input", "transcript.txt", user_text + "\n"
+                    )
+                    self.current_interaction.event(
+                        "transcription_completed",
+                        {"text": user_text, "audio_file": str(audio_file)},
+                    )
                 self.append_to_text(f"YOU: {user_text}")
                 self.interrupted.clear()
                 self.chat_and_respond(user_text)
+                self._finish_interaction("completed")
         except Exception as exc:
+            self._finish_interaction("error", str(exc))
             if not self.exiting:
                 traceback.print_exc()
                 self.set_state(BotStates.ERROR, f"Fatal Error: {str(exc)[:40]}")
@@ -427,8 +518,156 @@ class BotGUI:
             self.shutdown_event,
         )
 
+    def _start_interaction(self, trigger: str) -> None:
+        """Create a fresh archive without letting disk errors stop BMO."""
+        try:
+            self.current_interaction = self.archive_manager.begin(trigger)
+            if self.current_interaction:
+                print(
+                    f"[ARCHIVE] {self.current_interaction.path}",
+                    flush=True,
+                )
+        except OSError as exc:
+            self.current_interaction = None
+            print(f"[ARCHIVE] Could not start interaction log: {exc}", flush=True)
+
+    def _finish_interaction(
+        self,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        interaction = self.current_interaction
+        self.current_interaction = None
+        if not interaction:
+            return
+        try:
+            interaction.finish(status, error)
+        except OSError as exc:
+            print(f"[ARCHIVE] Could not finish interaction log: {exc}", flush=True)
+
+    def _logged_chat(self, **kwargs: Any) -> Any:
+        """Call Ollama while retaining observable requests and responses."""
+        interaction = self.current_interaction
+        started = time.monotonic()
+        if interaction:
+            interaction.append_json(
+                "output",
+                "model_calls.jsonl",
+                {"phase": "request", "request": kwargs},
+            )
+        try:
+            response = ollama.chat(**kwargs)
+        except Exception as exc:
+            if interaction:
+                interaction.append_json(
+                    "output",
+                    "model_calls.jsonl",
+                    {
+                        "phase": "error",
+                        "error": str(exc),
+                        "duration_seconds": time.monotonic() - started,
+                    },
+                )
+            raise
+
+        if not kwargs.get("stream"):
+            if interaction:
+                interaction.append_json(
+                    "output",
+                    "model_calls.jsonl",
+                    {
+                        "phase": "response",
+                        "response": response,
+                        "duration_seconds": time.monotonic() - started,
+                    },
+                )
+            return response
+
+        def logged_stream():
+            content_parts: list[str] = []
+            try:
+                for chunk in response:
+                    try:
+                        content_parts.append(str(chunk["message"]["content"]))
+                    except (KeyError, TypeError):
+                        pass
+                    yield chunk
+            except Exception as exc:
+                if interaction:
+                    interaction.append_json(
+                        "output",
+                        "model_calls.jsonl",
+                        {
+                            "phase": "stream_error",
+                            "error": str(exc),
+                            "partial_content": "".join(content_parts),
+                            "duration_seconds": time.monotonic() - started,
+                        },
+                    )
+                raise
+            else:
+                if interaction:
+                    interaction.append_json(
+                        "output",
+                        "model_calls.jsonl",
+                        {
+                            "phase": "response",
+                            "response": {"content": "".join(content_parts)},
+                            "duration_seconds": time.monotonic() - started,
+                        },
+                    )
+
+        return logged_stream()
+
+    def _execute_tool(self, action_data: dict[str, Any]) -> str | None:
+        action_name = self.tool_router.normalize_action(action_data)
+        started = time.monotonic()
+        try:
+            result = self.tool_router.execute(action_data)
+        except Exception as exc:
+            if self.current_interaction:
+                self.current_interaction.append_json(
+                    "web" if action_name == "search_web" else "output",
+                    "searches.jsonl" if action_name == "search_web" else "tools.jsonl",
+                    {
+                        "action": action_name,
+                        "request": action_data,
+                        "error": str(exc),
+                        "duration_seconds": time.monotonic() - started,
+                    },
+                )
+            raise
+        if self.current_interaction:
+            self.current_interaction.append_json(
+                "web" if action_name == "search_web" else "output",
+                "searches.jsonl" if action_name == "search_web" else "tools.jsonl",
+                {
+                    "action": action_name,
+                    "request": action_data,
+                    "result": result,
+                    "details": self.tool_router.last_tool_details,
+                    "duration_seconds": time.monotonic() - started,
+                },
+            )
+        return result
+
+    def _archive_assistant_text(self, text: str) -> None:
+        if not self.current_interaction:
+            return
+        self.current_interaction.append_text(
+            "output", "assistant.txt", text
+        )
+        self.current_interaction.append_json(
+            "output", "responses.jsonl", {"text": text}
+        )
+
     def capture_image(self) -> str | None:
         self.set_state(BotStates.CAPTURING, "Watching...")
+        image_file = (
+            self.current_interaction.image_path()
+            if self.current_interaction
+            else BMO_IMAGE_FILE
+        )
         try:
             subprocess.run(
                 [
@@ -437,30 +676,47 @@ class BotGUI:
                     "500",
                     "-n",
                     "--width",
-                    "640",
+                    "4608",
                     "--height",
-                    "480",
+                    "2592",
                     "-o",
-                    str(BMO_IMAGE_FILE),
+                    str(image_file),
                 ],
                 check=True,
                 timeout=15,
             )
             rotation = int(self.config.get("camera_rotation", 0))
             if rotation:
-                image = Image.open(BMO_IMAGE_FILE)
-                image.rotate(rotation, expand=True).save(BMO_IMAGE_FILE)
-            return str(BMO_IMAGE_FILE)
+                with Image.open(image_file) as image:
+                    image.rotate(rotation, expand=True).save(image_file)
+            if self.current_interaction:
+                self.current_interaction.event(
+                    "image_captured", {"path": str(image_file), "rotation": rotation}
+                )
+            return str(image_file)
         except Exception as exc:
             print(f"Camera Error: {exc}", flush=True)
+            if self.current_interaction:
+                self.current_interaction.event(
+                    "image_capture_failed", {"error": str(exc)}
+                )
             return None
 
     def chat_and_respond(self, text: str, image_path: str | None = None) -> None:
-        if image_path is None:
-            direct_action = self.tool_router.match_direct_action(text)
-            if direct_action:
-                self._handle_direct_action(text, direct_action)
-                return
+        if image_path is None and self.twenty_questions.active:
+            self._handle_twenty_questions(text)
+            return
+
+        if image_path is None and is_matching_game_start_request(text):
+            self._handle_matching_game_start(text)
+            return
+
+        if (
+            image_path is None
+            and self.twenty_questions.is_start_request(text)
+        ):
+            self._handle_twenty_questions(text, start=True)
+            return
 
         if "forget everything" in text.lower() or "reset memory" in text.lower():
             self.session_memory = []
@@ -472,9 +728,36 @@ class BotGUI:
                 self.permanent_memory,
                 self.session_memory,
             )
+            self._archive_assistant_text("Okay. Memory wiped.")
             self.enqueue_speech("Okay. Memory wiped.")
             self.set_state(BotStates.IDLE, "Memory Wiped")
             return
+
+        if image_path is None:
+            action_data = self.tool_router.match_direct_action(text)
+            if not action_data:
+                try:
+                    action_data = infer_tool_action(
+                        self.text_model,
+                        text,
+                        self._logged_chat,
+                    )
+                    print(
+                        f"[ROUTER] Local model inferred: "
+                        f"{action_data or 'chat'}",
+                        flush=True,
+                    )
+                except Exception as exc:
+                    print(f"[ROUTER] Local intent lookup failed: {exc}", flush=True)
+            if action_data:
+                if self.current_interaction:
+                    self.current_interaction.append_json(
+                        "output",
+                        "routing.jsonl",
+                        {"user_text": text, "decision": action_data},
+                    )
+                self._handle_direct_action(text, action_data)
+                return
 
         model_to_use = self.vision_model if image_path else self.text_model
         self.set_state(BotStates.THINKING, "Thinking...", image_path)
@@ -494,7 +777,7 @@ class BotGUI:
         sentence_buffer = ""
 
         try:
-            stream = ollama.chat(
+            stream = self._logged_chat(
                 model=model_to_use,
                 messages=messages,
                 stream=True,
@@ -540,18 +823,181 @@ class BotGUI:
                 if remaining and re.search(r"[a-zA-Z0-9]", remaining):
                     self.enqueue_speech(remaining)
                 self.append_to_text("")
-                self.session_memory.append(
-                    {"role": "user", "content": text}
-                )
-                self.session_memory.append(
-                    {"role": "assistant", "content": full_response_buffer}
-                )
+                self._archive_assistant_text(full_response_buffer)
+                self._remember_turn(text, full_response_buffer)
 
             self.wait_for_tts()
             self.set_state(BotStates.IDLE, "Ready")
         except Exception as exc:
             print(f"LLM Error: {exc}", flush=True)
+            self._finish_interaction("error", str(exc))
             self.set_state(BotStates.ERROR, "Brain Freeze!")
+
+    def _handle_matching_game_start(self, user_text: str) -> None:
+        """Introduce and open the touch game on Tk's main thread."""
+        if self.matching_game_active.is_set():
+            return
+        self.matching_game_active.set()
+        response = "Pup Pairs! You go first. Tap two cards, then I'll take my turn."
+        self._speak_complete_response(response, None)
+        self._remember_turn(user_text, response)
+        self.wait_for_tts()
+        self.set_state(BotStates.IDLE, "Your turn.")
+
+        def open_game() -> None:
+            try:
+                self.matching_game_ui = MatchingGameApp(
+                    self.master,
+                    embedded=True,
+                    on_close=self._handle_matching_game_close,
+                    announce=self.enqueue_speech,
+                    face_provider=self._matching_game_face,
+                    on_player_change=self._handle_matching_game_player,
+                )
+            except Exception as exc:
+                print(f"[MATCHING GAME] Could not start: {exc}", flush=True)
+                self.matching_game_active.clear()
+                self.matching_game_ui = None
+                self.set_state(BotStates.ERROR, "Could not start Pup Pairs.")
+
+        self.master.after(0, open_game)
+
+    def _handle_matching_game_close(self) -> None:
+        self.matching_game_ui = None
+        self.matching_game_active.clear()
+        self.set_state(BotStates.IDLE, "Ready")
+
+    def _matching_game_face(self) -> Image.Image | None:
+        frames = self.animations.get(
+            self.current_state,
+            [],
+        ) or self.animations.get(BotStates.IDLE, [])
+        if not frames:
+            return None
+        frame_index = self.current_frame_index % len(frames)
+        return ImageTk.getimage(frames[frame_index]).copy()
+
+    def _handle_matching_game_player(self, player: str) -> None:
+        if player == "bmo":
+            self.set_state(BotStates.THINKING, "BMO's turn.")
+        else:
+            self.set_state(BotStates.IDLE, "Your turn.")
+
+    def _handle_twenty_questions(
+        self,
+        user_text: str,
+        start: bool = False,
+    ) -> None:
+        """Start or advance the deterministic Twenty Questions game."""
+        self.set_state(BotStates.THINKING, "Thinking...")
+        if start:
+            response = self.twenty_questions.start()
+            self._speak_complete_response(response, None)
+            self.wait_for_tts()
+            self.set_state(
+                BotStates.LISTENING,
+                "Take your time. I'm listening...",
+            )
+            return
+
+        if self.twenty_questions.awaiting_reveal:
+            response = self.twenty_questions.reveal_and_learn(user_text)
+            self._speak_complete_response(response, None)
+            self.wait_for_tts()
+            self.set_state(BotStates.IDLE, "Ready")
+            return
+
+        parsed_answer = self.twenty_questions.parse_answer(user_text)
+        if parsed_answer is None:
+            try:
+                parsed_answer = infer_game_answer(
+                    self.text_model,
+                    user_text,
+                    self._logged_chat,
+                )
+                if parsed_answer:
+                    print(
+                        f"[20 QUESTIONS] Local model interpreted: "
+                        f"{parsed_answer}",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(
+                    f"[20 QUESTIONS] Answer interpretation failed: {exc}",
+                    flush=True,
+                )
+
+        terminal = self.twenty_questions.accept_answer(
+            parsed_answer or user_text
+        )
+        if terminal is not None:
+            response = terminal
+            self._speak_complete_response(response, None)
+            self.wait_for_tts()
+            next_state = (
+                BotStates.LISTENING
+                if self.twenty_questions.active
+                else BotStates.IDLE
+            )
+            next_status = (
+                "Take your time. I'm listening..."
+                if self.twenty_questions.active
+                else "Ready"
+            )
+            self.set_state(next_state, next_status)
+            return
+
+        if self.twenty_questions.question_count in {5, 10, 15}:
+            try:
+                candidates: list[dict[str, Any]] = []
+                total_returned = 0
+                total_added = 0
+                for attempt in range(2):
+                    candidates = infer_game_candidates(
+                        self.text_model,
+                        self.twenty_questions.structured_history(),
+                        [question.key for question in QUESTIONS],
+                        self._logged_chat,
+                        excluded_names=(
+                            self.twenty_questions.expansion_exclusions()
+                        ),
+                        request_count=30 if attempt == 0 else 50,
+                        debug=self.twenty_questions.debug,
+                    )
+                    total_returned += len(candidates)
+                    added = (
+                        self.twenty_questions.add_provisional_candidates(
+                            candidates
+                        )
+                    )
+                    total_added += added
+                    if total_added >= 20:
+                        break
+                    if attempt == 0 and self.twenty_questions.debug:
+                        print(
+                            "[20 QUESTIONS DEBUG] Expansion produced fewer "
+                            "than 20 usable candidates; retrying once.",
+                            flush=True,
+                        )
+                print(
+                    "[20 QUESTIONS] Candidate expansion: "
+                    f"returned {total_returned}, "
+                    f"accepted {total_added}.",
+                    flush=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[20 QUESTIONS] Candidate expansion failed: {exc}",
+                    flush=True,
+                )
+
+        response = self.twenty_questions.next_move()
+        self._speak_complete_response(response, None)
+        self.wait_for_tts()
+        self.set_state(
+            BotStates.LISTENING,
+            "Take your time. I'm listening...",
+        )
 
     def _handle_direct_action(
         self,
@@ -561,7 +1007,7 @@ class BotGUI:
         """Execute a clearly requested tool without asking the LLM to route it."""
         self.set_state(BotStates.THINKING, "Thinking...")
         action_name = self.tool_router.normalize_action(action_data)
-        tool_result = self.tool_router.execute(action_data)
+        tool_result = self._execute_tool(action_data)
 
         if tool_result == "IMAGE_CAPTURE_TRIGGERED":
             image_path = self.capture_image()
@@ -603,7 +1049,7 @@ class BotGUI:
                     ),
                 },
             ]
-            final_response = ollama.chat(
+            final_response = self._logged_chat(
                 model=self.text_model,
                 messages=summary_prompt,
                 stream=False,
@@ -630,7 +1076,7 @@ class BotGUI:
             return
 
         action_name = self.tool_router.normalize_action(action_data)
-        tool_result = self.tool_router.execute(action_data)
+        tool_result = self._execute_tool(action_data)
         if action_name == "get_time" and tool_result:
             self._speak_complete_response(tool_result, image_path)
             self._remember_turn(text, tool_result)
@@ -673,7 +1119,7 @@ class BotGUI:
         ]
         self.set_state(BotStates.THINKING, "Reading...")
         self.thinking_sound_active.set()
-        final_response = ollama.chat(
+        final_response = self._logged_chat(
             model=model_to_use,
             messages=summary_prompt,
             stream=False,
@@ -692,6 +1138,7 @@ class BotGUI:
         self.set_state(BotStates.SPEAKING, "Speaking...", image_path)
         self.append_to_text("BOT: ", newline=False)
         self.append_to_text(text, newline=True)
+        self._archive_assistant_text(text)
         self.enqueue_speech(text)
 
     def _remember_turn(self, user_text: str, assistant_text: str) -> None:
@@ -701,8 +1148,13 @@ class BotGUI:
         )
 
     def enqueue_speech(self, text: str) -> None:
+        speech_path = (
+            self.current_interaction.speech_path()
+            if self.current_interaction
+            else None
+        )
         with self.tts_queue_lock:
-            self.tts_queue.append(text)
+            self.tts_queue.append((text, speech_path))
 
     def wait_for_tts(self) -> None:
         while self.tts_queue or self.tts_active.is_set():
@@ -712,16 +1164,18 @@ class BotGUI:
 
     def _tts_worker(self) -> None:
         while not self.exiting:
-            text = None
+            queued_speech: tuple[str, Path | None] | None = None
             with self.tts_queue_lock:
                 if self.tts_queue:
-                    text = self.tts_queue.pop(0)
+                    queued_speech = self.tts_queue.pop(0)
                     self.tts_active.set()
-            if text:
+            if queued_speech:
+                text, speech_path = queued_speech
                 self.speaker.speak(
                     text,
                     self.interrupted,
                     self.shutdown_event,
+                    archive_path=speech_path,
                 )
                 self.tts_active.clear()
             else:

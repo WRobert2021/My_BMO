@@ -37,6 +37,7 @@ be-more-agent/
 ├── wakeword.onnx              # OpenWakeWord model (The "Ear")
 ├── config.json                # User settings (Models, Prompt, Hardware)
 ├── chat_memory.json           # Conversation history
+├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
 ├── whisper.cpp/               # Speech-to-Text engine
 ├── piper/                     # Piper TTS engine & voice models
@@ -110,9 +111,35 @@ You can modify the hardware behavior and personality in `config.json`. The `agen
     "voice_model": "piper/en_GB-semaine-medium.onnx",
     "chat_memory": true,
     "camera_rotation": 0,
+    "interaction_logging": true,
+    "interaction_log_directory": "interaction_logs",
     "system_prompt_extras": "You are a helpful robot assistant. Keep responses short and cute."
 }
 ```
+
+## Interaction archives
+
+Interaction logging is enabled by default. BMO creates a new directory for every
+wake-word, push-to-talk, or game turn instead of reusing `input.wav` and
+`current_image.jpg`:
+
+```text
+interaction_logs/YYYY/MM/DD/<timestamp-and-id>/
+├── manifest.json              # Trigger, timestamps, and completion status
+├── events.jsonl               # Ordered lifecycle and camera events
+├── input/                     # Voice WAV, transcript, and Whisper output
+├── output/                    # Answers, model calls, routes, tools, and speech WAVs
+├── web/                       # Search query, raw results, summary input, and timing
+└── images/                    # Original camera captures used by the vision model
+```
+
+The model-call log stores the prompts and text actually emitted by Ollama. It
+does not invent or expose reasoning that the model did not return. Archives have
+no automatic deletion policy. They can contain voices, photos, location/search
+data, and full conversation context, so `interaction_logs/` is Git-ignored and
+should be protected like other private data. Set `interaction_logging` to
+`false` to disable it, or change `interaction_log_directory` to place it on a
+larger/private disk.
 
 ---
 

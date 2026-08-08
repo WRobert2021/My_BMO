@@ -119,6 +119,7 @@ class AudioRecorder:
         self,
         filename: str = "input.wav",
         shutdown_event: threading.Event | None = None,
+        initial_silence_timeout: float = 1.5,
     ) -> str | None:
         print("Recording (Adaptive)...", flush=True)
         time.sleep(0.5)
@@ -133,23 +134,31 @@ class AudioRecorder:
         chunk_size = int(sample_rate * chunk_duration)
         num_silent_chunks = int(silence_duration / chunk_duration)
         max_chunks = int(max_record_time / chunk_duration)
+        initial_silence_chunks = int(
+            max(initial_silence_timeout, silence_duration) / chunk_duration
+        )
         recorded_chunks = 0
         silence_started = False
+        speech_detected = False
 
         def callback(indata, frames, time_info, status) -> None:
             del frames, time_info, status
             nonlocal silent_chunks, recorded_chunks, silence_started
+            nonlocal speech_detected
             volume_norm = np.linalg.norm(indata) / np.sqrt(len(indata))
             buffer.append(indata.copy())
             recorded_chunks += 1
             if recorded_chunks < 5:
                 return
-            if volume_norm < silence_threshold:
+            if volume_norm >= silence_threshold:
+                speech_detected = True
+                silent_chunks = 0
+            elif speech_detected:
                 silent_chunks += 1
                 if silent_chunks >= num_silent_chunks:
                     silence_started = True
-            else:
-                silent_chunks = 0
+            elif recorded_chunks >= initial_silence_chunks:
+                silence_started = True
 
         try:
             sd.stop()
@@ -169,8 +178,13 @@ class AudioRecorder:
                     sd.sleep(int(chunk_duration * 1000))
         except Exception as exc:
             print(f"[AUDIO ERROR] Adaptive Recording Failed: {exc}", flush=True)
+            if buffer:
+                self.save_audio_buffer(buffer, filename, sample_rate)
             return None
 
+        if not speech_detected:
+            self.save_audio_buffer(buffer, filename, sample_rate)
+            return None
         return self.save_audio_buffer(buffer, filename, sample_rate)
 
     def record_ptt(
@@ -305,12 +319,14 @@ class PiperSpeaker:
         text: str,
         interrupted: threading.Event,
         shutdown_event: threading.Event | None = None,
+        archive_path: str | Path | None = None,
     ) -> None:
         clean = re.sub(r"[^\w\s,.!?:-]", "", text)
         if not clean.strip():
             return
 
         print(f"[PIPER SPEAKING] '{clean}'", flush=True)
+        archive_wave: wave.Wave_write | None = None
         try:
             self.current_process = subprocess.Popen(
                 [
@@ -328,6 +344,12 @@ class PiperSpeaker:
 
             self.current_process.stdin.write(clean.encode() + b"\n")
             self.current_process.stdin.close()
+
+            if archive_path:
+                archive_wave = wave.open(str(archive_path), "wb")
+                archive_wave.setnchannels(1)
+                archive_wave.setsampwidth(2)
+                archive_wave.setframerate(self.PIPER_RATE)
 
             try:
                 device_info = sd.query_devices(kind="output")
@@ -358,6 +380,8 @@ class PiperSpeaker:
                     data = self.current_process.stdout.read(4096)
                     if not data:
                         break
+                    if archive_wave:
+                        archive_wave.writeframes(data)
 
                     audio_chunk = np.frombuffer(data, dtype=np.int16)
                     if not len(audio_chunk):
@@ -377,6 +401,8 @@ class PiperSpeaker:
         except Exception as exc:
             print(f"Audio Error: {exc}", flush=True)
         finally:
+            if archive_wave:
+                archive_wave.close()
             self.current_volume = 0
             if self.current_process:
                 if self.current_process.stdout:

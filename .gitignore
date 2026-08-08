@@ -1,44 +1,67 @@
-# --- Python Artifacts ---
+# --- Python artifacts ---
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.pyd
 .Python
-env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Virtual environments ---
+.venv/
 venv/
+env/
+
+# --- Secrets and environment configuration ---
 .env
+.env.*
+!.env.example
 
-# --- Large Models & Binaries (Auto-downloaded) ---
-# Ignore the Piper TTS folder (it's huge and OS-specific)
+# --- PyCharm ---
+.idea/
+*.iml
+
+# --- Packaging/build output ---
+build/
+dist/
+*.egg-info/
+
+# --- Locally installed third-party software ---
 piper/
+whisper.cpp/
 
-# Ignore large model files
+# --- Large models and binaries ---
 *.onnx
 *.bin
 *.tflite
 
-# Exception: Un-comment the line below if you WANT to share your custom wake word
+# Uncomment only if this specific model should be committed.
 # !wakeword.onnx
 
-# --- User Configuration & Memory ---
-# Keep chat history local (Privacy)
+# --- Private user state ---
 memory.json
 chat_memory.json
+interaction_logs/
+config.json
 
-# Keep personal API keys or settings local
-# (Optional: comment this out if you WANT to share your config)
-# config.json
-
-# --- Temporary/Generated Media ---
-*.wav
-*.mp3
-*.jpg
-*.png
+# --- Generated media ---
 camera_capture.jpg
 current_image.jpg
 test_audio.wav
+captures/
+recordings/
+generated_audio/
 
-# --- OS Generated Files ---
+# --- Logs ---
+*.log
+
+# --- Operating-system files ---
 .DS_Store
 Thumbs.db
 ehthumbs.db
+
+# --- Local copyrighted fan-project assets — do not upload ---
+graphics/

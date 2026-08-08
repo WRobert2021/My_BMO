@@ -31,25 +31,66 @@ class LocationServiceTests(unittest.TestCase):
 
     def test_named_place_is_geocoded(self) -> None:
         def fake_request(url: str, timeout: float) -> dict:
-            self.assertIn("name=Austin", url)
+            self.assertIn("q=Austin", url)
             self.assertEqual(timeout, 6.0)
-            return {
-                "results": [
-                    {
-                        "name": "Austin",
-                        "admin1": "Texas",
+            return [
+                {
+                    "lat": "30.2672",
+                    "lon": "-97.7431",
+                    "address": {
+                        "city": "Austin",
+                        "state": "Texas",
                         "country": "United States",
-                        "latitude": 30.2672,
-                        "longitude": -97.7431,
-                        "timezone": "America/Chicago",
-                    }
-                ]
-            }
+                    },
+                }
+            ]
 
         location = LocationService(json_request=fake_request).resolve("Austin")
 
         self.assertEqual(location.name, "Austin, Texas, United States")
         self.assertAlmostEqual(location.latitude, 30.2672)
+
+    def test_city_and_state_is_resolved_as_one_place_query(self) -> None:
+        def fake_request(url: str, timeout: float) -> dict:
+            self.assertIn("q=Houston%2C+Texas", url)
+            return [
+                {
+                    "lat": "29.7633",
+                    "lon": "-95.3633",
+                    "address": {
+                        "city": "Houston",
+                        "state": "Texas",
+                        "country": "United States",
+                    },
+                }
+            ]
+
+        location = LocationService(json_request=fake_request).resolve(
+            "Houston, Texas"
+        )
+
+        self.assertEqual(location.name, "Houston, Texas, United States")
+        self.assertAlmostEqual(location.latitude, 29.7633)
+
+    def test_state_name_resolves_as_administrative_region(self) -> None:
+        def fake_request(url: str, timeout: float) -> list:
+            self.assertIn("q=California", url)
+            return [
+                {
+                    "lat": "36.7015",
+                    "lon": "-118.7559",
+                    "address": {
+                        "state": "California",
+                        "country": "United States",
+                    },
+                }
+            ]
+
+        location = LocationService(json_request=fake_request).resolve(
+            "California"
+        )
+
+        self.assertEqual(location.name, "California, United States")
 
     def test_missing_home_location_is_explicit(self) -> None:
         with self.assertRaises(LocationNotConfigured):
@@ -103,6 +144,22 @@ class ToolRouterTests(unittest.TestCase):
         self.assertEqual(
             ToolRouter.match_direct_action("Weather in Austin, Texas"),
             {"action": "get_weather", "location": "austin, texas"},
+        )
+
+    def test_weather_like_in_routes_with_location(self) -> None:
+        self.assertEqual(
+            ToolRouter.match_direct_action(
+                "What's the weather like in Houston, Texas?"
+            ),
+            {"action": "get_weather", "location": "houston, texas"},
+        )
+
+    def test_direct_weather_location_excludes_time_qualifier(self) -> None:
+        self.assertEqual(
+            ToolRouter.match_direct_action(
+                "What's the weather like in California right now?"
+            ),
+            {"action": "get_weather", "location": "california"},
         )
 
     def test_location_request_routes_without_the_language_model(self) -> None:

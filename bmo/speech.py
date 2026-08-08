@@ -25,7 +25,11 @@ class WhisperTranscriber:
         self.model = Path(model)
         self.threads = threads
 
-    def transcribe(self, filename: str | Path) -> str:
+    def transcribe(
+        self,
+        filename: str | Path,
+        archive_directory: str | Path | None = None,
+    ) -> str:
         print("Transcribing...", flush=True)
         try:
             result = subprocess.run(
@@ -44,6 +48,15 @@ class WhisperTranscriber:
                 text=True,
                 timeout=120,
             )
+            if archive_directory:
+                archive_path = Path(archive_directory)
+                archive_path.mkdir(parents=True, exist_ok=True)
+                (archive_path / "whisper_stdout.txt").write_text(
+                    result.stdout, encoding="utf-8"
+                )
+                (archive_path / "whisper_stderr.txt").write_text(
+                    result.stderr, encoding="utf-8"
+                )
             if result.returncode != 0:
                 error = result.stderr.strip() or f"exit code {result.returncode}"
                 print(f"Transcription Error: {error}", flush=True)
@@ -60,6 +73,13 @@ class WhisperTranscriber:
             return transcription.strip()
         except Exception as exc:
             print(f"Transcription Error: {exc}", flush=True)
+            if archive_directory:
+                try:
+                    Path(archive_directory, "whisper_error.txt").write_text(
+                        str(exc) + "\n", encoding="utf-8"
+                    )
+                except OSError:
+                    pass
             return ""
 
 

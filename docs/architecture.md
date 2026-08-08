@@ -9,6 +9,7 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — allowlisted tool routing for time, web search, and camera requests.
 - `bmo.memory` — conversation-history loading and atomic persistence.
+- `bmo.archive` — append-only, per-interaction artifacts and event metadata.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
 - `bmo.prompts` — system-prompt construction.
 - `bmo.state` — shared UI/application states.
@@ -18,11 +19,13 @@ The application keeps `agent.py` as the stable startup command while implementat
 1. `agent.py` creates Tkinter and `BotGUI`.
 2. `BotGUI` constructs the services using `config.json`.
 3. The wake-word service waits for wake word or push-to-talk.
-4. The recorder captures a WAV file.
-5. Whisper transcribes the WAV file.
-6. Ollama produces either normal text or an allowlisted tool request.
-7. Piper streams speech through `sounddevice`.
-8. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
+4. A unique dated interaction archive is created.
+5. The recorder captures a WAV directly into that archive.
+6. Whisper transcribes the WAV and retains its raw stdout/stderr.
+7. Ollama produces either normal text or an allowlisted tool request; requests and emitted responses are logged.
+8. Tool calls, full web results, and camera images are stored under the same interaction.
+9. Piper streams speech through `sounddevice` while also writing archival WAVs.
+10. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
 
 ## Platform behavior
 

@@ -24,14 +24,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "input_sample_rate": None,
     "whisper_binary": "whisper.cpp/build/bin/whisper-cli",
     "whisper_model": "whisper.cpp/models/ggml-base.en.bin",
-    "location": {
-        "name": "",
-        "latitude": None,
-        "longitude": None,
-        "timezone": "auto",
-    },
     "weather_units": "imperial",
     "online_timeout_seconds": 6,
+    "game_answer_wait_seconds": 12,
+    "twenty_questions_debug": False,
+    "interaction_logging": True,
+    "interaction_log_directory": "interaction_logs",
 }
 
 OLLAMA_OPTIONS: dict[str, Any] = {

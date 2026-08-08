@@ -27,23 +27,21 @@ class Location:
     timezone: str = "auto"
 
 
-JsonRequest = Callable[[str, float], dict[str, Any]]
+JsonRequest = Callable[[str, float], Any]
 
 
-def request_json(url: str, timeout: float) -> dict[str, Any]:
-    """Fetch a JSON object with a bounded timeout and identifiable user agent."""
+def request_json(url: str, timeout: float) -> Any:
+    """Fetch JSON with a bounded timeout and identifiable user agent."""
     request = Request(url, headers={"User-Agent": "be-more-agent/1.0"})
     with urlopen(request, timeout=timeout) as response:
         payload = json.load(response)
-    if not isinstance(payload, dict):
-        raise LocationError("location service returned an invalid response")
     return payload
 
 
 class LocationService:
     """Resolve home coordinates or geocode a spoken place name."""
 
-    GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+    GEOCODING_URL = "https://nominatim.openstreetmap.org/search"
 
     def __init__(
         self,
@@ -87,35 +85,53 @@ class LocationService:
     def _geocode(self, place_name: str) -> Location:
         query = urlencode(
             {
-                "name": place_name,
-                "count": 1,
-                "language": "en",
-                "format": "json",
+                "q": place_name,
+                "format": "jsonv2",
+                "limit": 1,
+                "addressdetails": 1,
+                "accept-language": "en",
             }
         )
         payload = self._json_request(f"{self.GEOCODING_URL}?{query}", self.timeout)
-        results = payload.get("results")
-        if not isinstance(results, list) or not results:
+        if not isinstance(payload, list) or not payload:
             raise LocationError(f"I could not find a place named {place_name}.")
 
-        result = results[0]
+        result = payload[0]
         if not isinstance(result, dict):
             raise LocationError("location service returned an invalid place")
         try:
-            latitude = float(result["latitude"])
-            longitude = float(result["longitude"])
+            latitude = float(result["lat"])
+            longitude = float(result["lon"])
         except (KeyError, TypeError, ValueError) as exc:
             raise LocationError("location service omitted the coordinates") from exc
 
+        address = result.get("address")
+        if not isinstance(address, dict):
+            address = {}
+        locality = next(
+            (
+                str(address.get(field) or "").strip()
+                for field in (
+                    "city",
+                    "town",
+                    "village",
+                    "municipality",
+                    "county",
+                    "state",
+                )
+                if str(address.get(field) or "").strip()
+            ),
+            "",
+        )
         label_parts = [
-            str(result.get("name") or "").strip(),
-            str(result.get("admin1") or "").strip(),
-            str(result.get("country") or "").strip(),
+            locality,
+            str(address.get("state") or "").strip(),
+            str(address.get("country") or "").strip(),
         ]
         label = ", ".join(dict.fromkeys(part for part in label_parts if part))
         return Location(
             name=label or place_name,
             latitude=latitude,
             longitude=longitude,
-            timezone=str(result.get("timezone") or "auto"),
+            timezone="auto",
         )

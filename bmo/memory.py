@@ -13,6 +13,18 @@ def load_chat_history(path: Path, system_prompt: str) -> list[dict[str, str]]:
             with path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             if isinstance(data, list) and data:
+                # Tool availability comes from the current application prompt,
+                # not a stale system message persisted by an earlier run.
+                if (
+                    isinstance(data[0], dict)
+                    and data[0].get("role") == "system"
+                ):
+                    data[0] = {"role": "system", "content": system_prompt}
+                else:
+                    data.insert(
+                        0,
+                        {"role": "system", "content": system_prompt},
+                    )
                 return data
         except (OSError, json.JSONDecodeError):
             pass

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 
 from bmo.config import load_config
@@ -53,11 +54,28 @@ class ToolRouter:
             timeout=timeout,
             units=str(effective_config.get("weather_units", "imperial")),
         )
+        self.last_tool_details: dict[str, Any] | None = None
 
     @classmethod
     def normalize_action(cls, action_data: dict[str, Any]) -> str:
         raw_action = str(action_data.get("action", "")).lower().strip()
         return cls.ALIASES.get(raw_action, raw_action)
+
+    @staticmethod
+    def clean_weather_location(place_name: str) -> str:
+        """Remove time qualifiers that are not part of a place name."""
+        cleaned = place_name.strip().rstrip("?.!")
+        temporal_suffix = re.compile(
+            r"(?:\s*,?\s+)"
+            r"(?:today|right now|currently|now|at the moment|"
+            r"this (?:morning|afternoon|evening|weekend))$",
+            re.IGNORECASE,
+        )
+        while True:
+            updated = temporal_suffix.sub("", cleaned).strip()
+            if updated == cleaned:
+                return cleaned
+            cleaned = updated
 
     @staticmethod
     def match_direct_action(user_text: str) -> dict[str, str] | None:
@@ -93,6 +111,9 @@ class ToolRouter:
             "what is the weather",
             "what's the weather",
             "whats the weather",
+            "what is the weather like today",
+            "what's the weather like today",
+            "whats the weather like today",
             "how is the weather",
             "how's the weather",
             "hows the weather",
@@ -107,6 +128,9 @@ class ToolRouter:
             "what is the weather in ",
             "what's the weather in ",
             "whats the weather in ",
+            "what is the weather like in ",
+            "what's the weather like in ",
+            "whats the weather like in ",
             "how is the weather in ",
             "how's the weather in ",
             "hows the weather in ",
@@ -119,7 +143,12 @@ class ToolRouter:
             if normalized.startswith(prefix):
                 place_name = normalized[len(prefix):].strip()
                 if place_name:
-                    return {"action": "get_weather", "location": place_name}
+                    return {
+                        "action": "get_weather",
+                        "location": ToolRouter.clean_weather_location(
+                            place_name
+                        ),
+                    }
 
         search_prefixes = (
             "search the web for ",
@@ -152,6 +181,7 @@ class ToolRouter:
         return None
 
     def execute(self, action_data: dict[str, Any]) -> str | None:
+        self.last_tool_details = None
         raw_action = str(action_data.get("action", "")).lower().strip()
         value = action_data.get("value") or action_data.get("query")
         action = self.normalize_action(action_data)
@@ -180,7 +210,9 @@ class ToolRouter:
                 return "I cannot check the configured location right now."
 
         if action == "get_weather":
-            place_name = str(action_data.get("location") or value or "").strip()
+            place_name = self.clean_weather_location(
+                str(action_data.get("location") or value or "")
+            )
             try:
                 return self.weather_service.current_report(place_name or None)
             except LocationNotConfigured:
@@ -206,8 +238,7 @@ class ToolRouter:
 
         return None
 
-    @staticmethod
-    def _search_web(query: str) -> str:
+    def _search_web(self, query: str) -> str:
         if not query:
             return "SEARCH_EMPTY"
 
@@ -248,7 +279,13 @@ class ToolRouter:
 
                 if not results:
                     print("[DEBUG] Search returned 0 results.", flush=True)
+                    self.last_tool_details = {"query": query, "results": []}
                     return "SEARCH_EMPTY"
+
+                self.last_tool_details = {
+                    "query": query,
+                    "results": results[:3],
+                }
 
                 formatted_results = []
                 for index, result in enumerate(results[:3], start=1):
@@ -270,4 +307,5 @@ class ToolRouter:
                 )
         except Exception as exc:
             print(f"[DEBUG] Connection/Library Error: {exc}", flush=True)
+            self.last_tool_details = {"query": query, "error": str(exc)}
             return "SEARCH_ERROR"
