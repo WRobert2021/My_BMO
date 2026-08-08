@@ -13,6 +13,8 @@ from bmo.features import (
     SearchWebTool,
     ToolContract,
     ToolRegistry,
+    ToolResult,
+    ToolResultKind,
     UnknownToolError,
 )
 from bmo.location import Location
@@ -20,8 +22,22 @@ from bmo.tools import ToolRouter
 
 
 class ToolRegistryTests(unittest.TestCase):
+    def test_tool_result_rejects_invalid_kind_and_content_combinations(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            TypeError,
+            "content results require string content",
+        ):
+            ToolResult(ToolResultKind.CONTENT)
+        with self.assertRaisesRegex(
+            ValueError,
+            "empty results cannot include content",
+        ):
+            ToolResult(ToolResultKind.EMPTY, "unexpected")
+
     def test_executes_canonical_actions_and_aliases(self) -> None:
-        handler = Mock(return_value="TOOL RESPONSE")
+        handler = Mock(return_value=ToolResult.success("TOOL RESPONSE"))
         registry = ToolRegistry(
             [ToolContract("status", handler, aliases=("check_status",))]
         )
@@ -29,7 +45,10 @@ class ToolRegistryTests(unittest.TestCase):
         request = {"action": "  CHECK_STATUS  ", "value": "details"}
 
         self.assertEqual(registry.normalize_action(request), "status")
-        self.assertEqual(registry.execute(request), "TOOL RESPONSE")
+        self.assertEqual(
+            registry.execute(request),
+            ToolResult.success("TOOL RESPONSE"),
+        )
         handler.assert_called_once_with(
             {"action": "status", "value": "details"}
         )
@@ -97,6 +116,17 @@ class ToolRegistryTests(unittest.TestCase):
         ):
             registry.execute({"action": "missing"})
 
+    def test_rejects_untyped_tool_results(self) -> None:
+        registry = ToolRegistry(
+            [ToolContract("legacy", Mock(return_value="SENTINEL"))]
+        )
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "Tool 'legacy' returned str; expected ToolResult",
+        ):
+            registry.execute({"action": "legacy"})
+
     def test_registered_features_own_direct_phrase_matching(self) -> None:
         registry = ToolRegistry(
             (
@@ -142,7 +172,9 @@ class ToolRegistryTests(unittest.TestCase):
         weather_service = Mock(
             current_report=Mock(return_value="CURRENT WEATHER REPORT")
         )
-        searcher = Mock(return_value="FORMATTED SEARCH RESULTS")
+        searcher = Mock(
+            return_value=ToolResult.success("FORMATTED SEARCH RESULTS")
+        )
         registry = ToolRegistry(
             (
                 GetTimeTool(now=lambda: now),
@@ -154,11 +186,13 @@ class ToolRegistryTests(unittest.TestCase):
 
         self.assertEqual(
             registry.execute({"action": "check_time"}),
-            "The current time is 04:05 PM.",
+            ToolResult.success("The current time is 04:05 PM."),
         )
         self.assertEqual(
             registry.execute({"action": "where_am_i"}),
-            "Your configured location is Austin, Texas.",
+            ToolResult.success(
+                "Your configured location is Austin, Texas."
+            ),
         )
         self.assertEqual(
             registry.execute(
@@ -167,13 +201,13 @@ class ToolRegistryTests(unittest.TestCase):
                     "location": "Dallas, Texas today",
                 }
             ),
-            "CURRENT WEATHER REPORT",
+            ToolResult.success("CURRENT WEATHER REPORT"),
         )
         self.assertEqual(
             registry.execute(
                 {"action": "google", "query": "robot news"}
             ),
-            "FORMATTED SEARCH RESULTS",
+            ToolResult.success("FORMATTED SEARCH RESULTS"),
         )
         weather_service.current_report.assert_called_once_with(
             "Dallas, Texas"
@@ -189,11 +223,13 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
     def test_registered_action_execution_delegates_to_registry(self) -> None:
         router = self.make_router()
         router.registry = Mock()
-        router.registry.execute.return_value = "REGISTRY RESPONSE"
+        router.registry.execute.return_value = ToolResult.success(
+            "REGISTRY RESPONSE"
+        )
 
         self.assertEqual(
             router.execute({"action": "check_time"}),
-            "REGISTRY RESPONSE",
+            ToolResult.success("REGISTRY RESPONSE"),
         )
         router.registry.execute.assert_called_once_with(
             {"action": "check_time"}
@@ -258,11 +294,11 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
     def test_camera_trigger_executes_through_registry(self) -> None:
         router = self.make_router()
         router.registry = Mock()
-        router.registry.execute.return_value = "IMAGE_CAPTURE_TRIGGERED"
+        router.registry.execute.return_value = ToolResult.capture_image()
 
         self.assertEqual(
             router.execute({"action": "look"}),
-            "IMAGE_CAPTURE_TRIGGERED",
+            ToolResult.capture_image(),
         )
         router.registry.execute.assert_called_once_with({"action": "look"})
 

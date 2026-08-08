@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
 from bmo.config import OLLAMA_OPTIONS
+from bmo.features import ToolResult
 from bmo.intent import infer_tool_action
 from bmo.location import Location, LocationError, LocationNotConfigured
 from bmo.prompts import build_routing_prompt
@@ -205,7 +206,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
             datetime_mock.now.return_value.strftime.return_value = "04:05 PM"
             self.assertEqual(
                 router.execute({"action": "get_time"}),
-                "The current time is 04:05 PM.",
+                ToolResult.success("The current time is 04:05 PM."),
             )
 
         router.location_service = Mock(
@@ -219,7 +220,9 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(
             router.execute({"action": "get_location"}),
-            "Your configured location is Austin, Texas.",
+            ToolResult.success(
+                "Your configured location is Austin, Texas."
+            ),
         )
 
         router.weather_service = Mock(
@@ -232,7 +235,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                     "location": "Dallas, Texas today",
                 }
             ),
-            "CURRENT WEATHER REPORT",
+            ToolResult.success("CURRENT WEATHER REPORT"),
         )
         router.weather_service.current_report.assert_called_once_with(
             "Dallas, Texas"
@@ -241,32 +244,35 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         with patch.object(
             router,
             "_search_web",
-            return_value="FORMATTED SEARCH RESULTS",
+            return_value=ToolResult.success("FORMATTED SEARCH RESULTS"),
         ) as search_web:
             self.assertEqual(
                 router.execute(
                     {"action": "search_web", "query": "robot news"}
                 ),
-                "FORMATTED SEARCH RESULTS",
+                ToolResult.success("FORMATTED SEARCH RESULTS"),
             )
         search_web.assert_called_once_with("robot news")
 
         self.assertEqual(
             router.execute({"action": "capture_image"}),
-            "IMAGE_CAPTURE_TRIGGERED",
+            ToolResult.capture_image(),
         )
 
     def test_symbolic_execute_results_are_characterized(self) -> None:
         router = self.make_router()
         cases = (
-            ({"action": "dance"}, "INVALID_ACTION"),
-            ({"action": "dance", "value": "one"}, "INVALID_ACTION"),
+            ({"action": "dance"}, ToolResult.invalid_action()),
+            (
+                {"action": "dance", "value": "one"},
+                ToolResult.invalid_action(),
+            ),
             (
                 {"action": "dance", "value": "answer in plain text"},
-                "CHAT_FALLBACK::answer in plain text",
+                ToolResult.chat_fallback("answer in plain text"),
             ),
-            ({"action": "capture_image"}, "IMAGE_CAPTURE_TRIGGERED"),
-            ({"action": "search_web"}, "SEARCH_EMPTY"),
+            ({"action": "capture_image"}, ToolResult.capture_image()),
+            ({"action": "search_web"}, ToolResult.empty()),
         )
         for action_data, expected in cases:
             with self.subTest(action_data=action_data):
@@ -300,7 +306,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     router.execute({"action": "get_location"}),
-                    expected,
+                    ToolResult.success(expected),
                 )
 
     def test_weather_result_messages_are_characterized(self) -> None:
@@ -339,7 +345,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     router.execute({"action": "get_weather"}),
-                    expected,
+                    ToolResult.success(expected),
                 )
 
     def test_search_empty_status_and_details_are_characterized(self) -> None:
@@ -359,7 +365,10 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         router = self.make_router()
         fake_ddgs = types.SimpleNamespace(DDGS=EmptyDDGS)
         with patch.dict(sys.modules, {"ddgs": fake_ddgs}):
-            self.assertEqual(router._search_web("robot news"), "SEARCH_EMPTY")
+            self.assertEqual(
+                router._search_web("robot news"),
+                ToolResult.empty(),
+            )
         self.assertEqual(
             router.last_tool_details,
             {"query": "robot news", "results": []},
@@ -373,7 +382,10 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         router = self.make_router()
         fake_ddgs = types.SimpleNamespace(DDGS=BrokenDDGS)
         with patch.dict(sys.modules, {"ddgs": fake_ddgs}):
-            self.assertEqual(router._search_web("robot news"), "SEARCH_ERROR")
+            self.assertEqual(
+                router._search_web("robot news"),
+                ToolResult.error(),
+            )
         self.assertEqual(
             router.last_tool_details,
             {"query": "robot news", "error": "offline"},
@@ -404,12 +416,14 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(
             response,
-            "SEARCH RESULTS for 'robot news':\n\n"
-            "Result 1:\n"
-            "Title: Robot update\n"
-            "Source: Example News\n"
-            "Snippet: Robots are learning new tasks.\n"
-            "URL: https://example.test/robots",
+            ToolResult.success(
+                "SEARCH RESULTS for 'robot news':\n\n"
+                "Result 1:\n"
+                "Title: Robot update\n"
+                "Source: Example News\n"
+                "Snippet: Robots are learning new tasks.\n"
+                "URL: https://example.test/robots"
+            ),
         )
         self.assertEqual(
             router.last_tool_details,
@@ -419,7 +433,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
 
 class PromptCharacterizationTests(unittest.TestCase):
     @staticmethod
-    def make_gui(*, action_name: str, tool_result: str | None) -> BotGUI:
+    def make_gui(*, action_name: str, tool_result: ToolResult) -> BotGUI:
         gui = BotGUI.__new__(BotGUI)
         gui.text_model = "text-model"
         gui.tool_router = Mock()
@@ -479,7 +493,7 @@ class PromptCharacterizationTests(unittest.TestCase):
     ) -> None:
         gui = self.make_gui(
             action_name="search_web",
-            tool_result="RAW SEARCH RESULTS",
+            tool_result=ToolResult.success("RAW SEARCH RESULTS"),
         )
 
         BotGUI._handle_direct_action(
@@ -525,13 +539,12 @@ class PromptCharacterizationTests(unittest.TestCase):
 
     def test_direct_result_statuses_have_the_current_user_facing_text(self) -> None:
         cases = (
-            ("INVALID_ACTION", "I am not sure how to do that."),
+            (ToolResult.invalid_action(), "I am not sure how to do that."),
             (
-                "SEARCH_EMPTY",
+                ToolResult.empty(),
                 "I searched, but I couldn't find anything about that.",
             ),
-            ("SEARCH_ERROR", "I cannot reach the internet right now."),
-            (None, "I could not complete that request."),
+            (ToolResult.error(), "I cannot reach the internet right now."),
         )
         for tool_result, expected in cases:
             with self.subTest(tool_result=tool_result):
@@ -556,7 +569,7 @@ class PromptCharacterizationTests(unittest.TestCase):
     def test_direct_camera_failure_has_the_current_user_facing_text(self) -> None:
         gui = self.make_gui(
             action_name="capture_image",
-            tool_result="IMAGE_CAPTURE_TRIGGERED",
+            tool_result=ToolResult.capture_image(),
         )
 
         BotGUI._handle_direct_action(
@@ -577,7 +590,7 @@ class PromptCharacterizationTests(unittest.TestCase):
     def test_generated_tool_result_uses_the_current_summary_prompt(self) -> None:
         gui = self.make_gui(
             action_name="get_weather",
-            tool_result="RAW WEATHER RESULT",
+            tool_result=ToolResult.success("RAW WEATHER RESULT"),
         )
 
         BotGUI._handle_action_response(
@@ -619,12 +632,12 @@ class PromptCharacterizationTests(unittest.TestCase):
         self,
     ) -> None:
         cases = (
-            ("INVALID_ACTION", "I am not sure how to do that."),
+            (ToolResult.invalid_action(), "I am not sure how to do that."),
             (
-                "SEARCH_EMPTY",
+                ToolResult.empty(),
                 "I searched, but I couldn't find any news about that.",
             ),
-            ("SEARCH_ERROR", "I cannot reach the internet right now."),
+            (ToolResult.error(), "I cannot reach the internet right now."),
         )
         for tool_result, expected in cases:
             with self.subTest(tool_result=tool_result):
@@ -652,7 +665,9 @@ class PromptCharacterizationTests(unittest.TestCase):
     def test_generated_time_result_is_presented_without_summary_prompt(self) -> None:
         gui = self.make_gui(
             action_name="get_time",
-            tool_result="The current time is 04:05 PM.",
+            tool_result=ToolResult.success(
+                "The current time is 04:05 PM."
+            ),
         )
 
         BotGUI._handle_action_response(
@@ -676,7 +691,9 @@ class PromptCharacterizationTests(unittest.TestCase):
     def test_generated_chat_fallback_prefix_is_removed_for_user(self) -> None:
         gui = self.make_gui(
             action_name="not_a_tool",
-            tool_result="CHAT_FALLBACK::Answer in ordinary text",
+            tool_result=ToolResult.chat_fallback(
+                "Answer in ordinary text"
+            ),
         )
 
         BotGUI._handle_action_response(
@@ -702,7 +719,7 @@ class PromptCharacterizationTests(unittest.TestCase):
     ) -> None:
         gui = self.make_gui(
             action_name="capture_image",
-            tool_result="IMAGE_CAPTURE_TRIGGERED",
+            tool_result=ToolResult.capture_image(),
         )
         gui.capture_image.return_value = "/tmp/new-image.jpg"
 
@@ -721,8 +738,35 @@ class PromptCharacterizationTests(unittest.TestCase):
         gui._speak_complete_response.assert_not_called()
         gui._logged_chat.assert_not_called()
 
-    def test_missing_generated_result_produces_no_user_facing_response(self) -> None:
-        gui = self.make_gui(action_name="get_weather", tool_result=None)
+    def test_generated_camera_failure_uses_the_camera_error_text(self) -> None:
+        gui = self.make_gui(
+            action_name="capture_image",
+            tool_result=ToolResult.capture_image(),
+        )
+
+        BotGUI._handle_action_response(
+            gui,
+            "What do you see?",
+            None,
+            "text-model",
+            '{"action":"capture_image"}',
+        )
+
+        gui._speak_complete_response.assert_called_once_with(
+            "I could not use the camera right now.",
+            None,
+        )
+        gui._remember_turn.assert_called_once_with(
+            "What do you see?",
+            "I could not use the camera right now.",
+        )
+        gui._logged_chat.assert_not_called()
+
+    def test_empty_generated_content_produces_no_user_facing_response(self) -> None:
+        gui = self.make_gui(
+            action_name="get_weather",
+            tool_result=ToolResult.success(""),
+        )
 
         BotGUI._handle_action_response(
             gui,

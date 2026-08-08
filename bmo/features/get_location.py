@@ -8,6 +8,7 @@ from typing import Any
 from bmo.features.contracts import (
     DirectAction,
     ToolRequest,
+    ToolResult,
     normalize_direct_text,
 )
 from bmo.location import LocationError, LocationNotConfigured, LocationService
@@ -36,19 +37,23 @@ class GetLocationTool:
     def __init__(self, location_service: LocationService) -> None:
         self.location_service = location_service
 
-    def execute(self, request: ToolRequest) -> str:
+    def execute(self, request: ToolRequest) -> ToolResult:
         del request
         try:
             location = self.location_service.resolve()
-            return f"Your configured location is {location.name}."
+            return ToolResult.success(
+                f"Your configured location is {location.name}."
+            )
         except LocationNotConfigured:
-            return (
+            return ToolResult.success(
                 "I do not have a home location configured yet. "
                 "Add one in config.json."
             )
         except (LocationError, OSError, TimeoutError) as exc:
             print(f"[LOCATION] Lookup failed: {exc}", flush=True)
-            return "I cannot check the configured location right now."
+            return ToolResult.success(
+                "I cannot check the configured location right now."
+            )
 
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:

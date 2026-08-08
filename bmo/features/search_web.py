@@ -8,6 +8,7 @@ from typing import Any
 from bmo.features.contracts import (
     DirectAction,
     ToolRequest,
+    ToolResult,
     normalize_direct_text,
 )
 
@@ -45,12 +46,12 @@ class SearchWebTool:
 
     def __init__(
         self,
-        searcher: Callable[[str], str] | None = None,
+        searcher: Callable[[str], ToolResult] | None = None,
     ) -> None:
         self._searcher = searcher or self.search
         self.last_details: dict[str, Any] | None = None
 
-    def execute(self, request: ToolRequest) -> str:
+    def execute(self, request: ToolRequest) -> ToolResult:
         value = request.get("value") or request.get("query")
         return self._searcher(str(value or "").strip())
 
@@ -64,10 +65,10 @@ class SearchWebTool:
                     return {"action": cls.action, "query": query}
         return None
 
-    def search(self, query: str) -> str:
+    def search(self, query: str) -> ToolResult:
         """Run a web search and retain full details for interaction archives."""
         if not query:
-            return "SEARCH_EMPTY"
+            return ToolResult.empty()
 
         print(f"Searching web for: {query}...", flush=True)
         try:
@@ -107,7 +108,7 @@ class SearchWebTool:
                 if not results:
                     print("[DEBUG] Search returned 0 results.", flush=True)
                     self.last_details = {"query": query, "results": []}
-                    return "SEARCH_EMPTY"
+                    return ToolResult.empty()
 
                 self.last_details = {
                     "query": query,
@@ -128,14 +129,14 @@ class SearchWebTool:
                         f"URL: {url}"
                     )
 
-                return (
+                return ToolResult.success(
                     f"SEARCH RESULTS for '{query}':\n\n"
                     + "\n\n".join(formatted_results)
                 )
         except Exception as exc:
             print(f"[DEBUG] Connection/Library Error: {exc}", flush=True)
             self.last_details = {"query": query, "error": str(exc)}
-            return "SEARCH_ERROR"
+            return ToolResult.error()
 
 
 def register(registry: Any, settings: Mapping[str, Any]) -> None:

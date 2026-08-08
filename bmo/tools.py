@@ -6,6 +6,7 @@ import datetime
 from typing import Any
 
 from bmo.config import load_config
+from bmo.features.contracts import ToolResult
 from bmo.features.loader import FeatureLoadFailure, load_feature_registry
 from bmo.features.registry import ToolRegistry
 
@@ -143,7 +144,7 @@ class ToolRouter:
         # Compatibility for ToolRouter.match_direct_action(user_text).
         return _get_default_router().registry.match_direct_action(str(self))
 
-    def execute(self, action_data: dict[str, Any]) -> str | None:
+    def execute(self, action_data: dict[str, Any]) -> ToolResult:
         self.last_tool_details = None
         raw_action = str(action_data.get("action", "")).lower().strip()
         value = action_data.get("value") or action_data.get("query")
@@ -152,28 +153,28 @@ class ToolRouter:
 
         if action not in self.VALID_TOOLS:
             if value and isinstance(value, str) and len(value.split()) > 1:
-                return f"CHAT_FALLBACK::{value}"
-            return "INVALID_ACTION"
+                return ToolResult.chat_fallback(value)
+            return ToolResult.invalid_action()
         return self.registry.execute(action_data)
 
-    def _execute_get_time(self, action_data: dict[str, Any]) -> str | None:
+    def _execute_get_time(self, action_data: dict[str, Any]) -> ToolResult:
         """Compatibility wrapper for the time feature."""
         return self.registry.execute(action_data)
 
-    def _execute_get_location(self, action_data: dict[str, Any]) -> str | None:
+    def _execute_get_location(self, action_data: dict[str, Any]) -> ToolResult:
         """Compatibility wrapper for the location feature."""
         return self.registry.execute(action_data)
 
-    def _execute_get_weather(self, action_data: dict[str, Any]) -> str | None:
+    def _execute_get_weather(self, action_data: dict[str, Any]) -> ToolResult:
         """Compatibility wrapper for the weather feature."""
         return self.registry.execute(action_data)
 
-    def _execute_search_web(self, action_data: dict[str, Any]) -> str:
+    def _execute_search_web(self, action_data: dict[str, Any]) -> ToolResult:
         """Compatibility wrapper retaining search results for archives."""
         value = action_data.get("value") or action_data.get("query")
         return self._search_web(str(value or "").strip())
 
-    def _search_web(self, query: str) -> str:
+    def _search_web(self, query: str) -> ToolResult:
         """Compatibility wrapper retaining search results for archives."""
         search_tool = self._require_tool("search_web")
         return search_tool.search(query)

@@ -12,6 +12,7 @@ from bmo.features.contracts import (
     DirectAction,
     Tool,
     ToolRequest,
+    ToolResult,
     ToolResponse,
 )
 
@@ -163,7 +164,13 @@ class ToolRegistry:
             raise UnknownToolError(
                 f"No tool is registered for action '{action}'."
             ) from exc
-        return tool.execute(normalized_request)
+        result = tool.execute(normalized_request)
+        if not isinstance(result, ToolResult):
+            raise TypeError(
+                f"Tool '{action}' returned {type(result).__name__}; "
+                "expected ToolResult."
+            )
+        return result
 
     def match_direct_action(self, user_text: str) -> DirectAction | None:
         """Return the first direct phrase match from registered tools."""

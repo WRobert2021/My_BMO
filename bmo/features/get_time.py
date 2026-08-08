@@ -9,6 +9,7 @@ from typing import Any
 from bmo.features.contracts import (
     DirectAction,
     ToolRequest,
+    ToolResult,
     normalize_direct_text,
 )
 
@@ -39,10 +40,10 @@ class GetTimeTool:
     ) -> None:
         self._now = now or datetime.datetime.now
 
-    def execute(self, request: ToolRequest) -> str:
+    def execute(self, request: ToolRequest) -> ToolResult:
         del request
         now = self._now().strftime("%I:%M %p")
-        return f"The current time is {now}."
+        return ToolResult.success(f"The current time is {now}.")
 
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:

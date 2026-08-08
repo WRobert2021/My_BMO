@@ -9,6 +9,7 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — stable compatibility router over the enabled feature registry.
 - `bmo.features` — typed contracts, lazy loading, and registry-backed dispatch.
+- `bmo.features.camera` — Raspberry Pi still capture and configured rotation.
 - `bmo.features.loader` — standard-library module loading from `features` config.
 - `bmo.features.get_time` — current-time action, alias, and direct phrases.
 - `bmo.features.get_location` — configured-location action and failure handling.
@@ -30,7 +31,7 @@ The application keeps `agent.py` as the stable startup command while implementat
 4. A unique dated interaction archive is created.
 5. The recorder captures a WAV directly into that archive.
 6. Whisper transcribes the WAV and retains its raw stdout/stderr.
-7. Ollama produces either normal text or an allowlisted tool request; requests and emitted responses are logged.
+7. Ollama produces either normal text or an allowlisted tool request; requests and typed tool results are logged and processed through the same presentation path as direct actions.
 8. Tool calls, full web results, and camera images are stored under the same interaction.
 9. Piper streams speech through `sounddevice` while also writing archival WAVs.
 10. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
@@ -42,8 +43,10 @@ The same Python entry point is used on macOS and Raspberry Pi.
 - Piper uses `./piper/piper` when the bundled Pi binary exists.
 - Otherwise Piper runs through the active environment with `python -m piper`.
 - Whisper paths can be overridden with `whisper_binary` and `whisper_model` in `config.json`.
-- Raspberry Pi camera execution remains in `BotGUI.capture_image()`; its action,
-  aliases, matching, and prompt metadata live in `bmo.features.capture_image`.
+- Raspberry Pi camera execution and rotation live in `bmo.features.camera`.
+  `BotGUI.capture_image()` retains UI-state and interaction-archive coordination,
+  while action aliases, matching, and prompt metadata live in
+  `bmo.features.capture_image`.
 
 ## Feature configuration
 

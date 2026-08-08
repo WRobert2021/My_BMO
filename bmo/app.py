@@ -6,7 +6,6 @@ import atexit
 import os
 import random
 import re
-import subprocess
 import threading
 import time
 import traceback
@@ -35,6 +34,8 @@ from bmo.config import (
     WAKE_WORD_THRESHOLD,
     load_config,
 )
+from bmo.features.camera import capture_image as capture_camera_image
+from bmo.features.contracts import ToolResult, ToolResultKind
 from bmo.intent import (
     infer_game_answer,
     infer_game_candidates,
@@ -622,7 +623,7 @@ class BotGUI:
 
         return logged_stream()
 
-    def _execute_tool(self, action_data: dict[str, Any]) -> str | None:
+    def _execute_tool(self, action_data: dict[str, Any]) -> ToolResult:
         action_name = self.tool_router.normalize_action(action_data)
         started = time.monotonic()
         try:
@@ -647,7 +648,7 @@ class BotGUI:
                 {
                     "action": action_name,
                     "request": action_data,
-                    "result": result,
+                    "result": result.archive_value(),
                     "details": self.tool_router.last_tool_details,
                     "duration_seconds": time.monotonic() - started,
                 },
@@ -672,31 +673,17 @@ class BotGUI:
             else BMO_IMAGE_FILE
         )
         try:
-            subprocess.run(
-                [
-                    "rpicam-still",
-                    "-t",
-                    "500",
-                    "-n",
-                    "--width",
-                    "4608",
-                    "--height",
-                    "2592",
-                    "-o",
-                    str(image_file),
-                ],
-                check=True,
-                timeout=15,
-            )
             rotation = int(self.config.get("camera_rotation", 0))
-            if rotation:
-                with Image.open(image_file) as image:
-                    image.rotate(rotation, expand=True).save(image_file)
+            captured_path = capture_camera_image(
+                image_file,
+                rotation=rotation,
+            )
             if self.current_interaction:
                 self.current_interaction.event(
-                    "image_captured", {"path": str(image_file), "rotation": rotation}
+                    "image_captured",
+                    {"path": captured_path, "rotation": rotation},
                 )
-            return str(image_file)
+            return captured_path
         except Exception as exc:
             print(f"Camera Error: {exc}", flush=True)
             if self.current_interaction:
@@ -1012,25 +999,84 @@ class BotGUI:
         self.set_state(BotStates.THINKING, "Thinking...")
         action_name = self.tool_router.normalize_action(action_data)
         tool_result = self._execute_tool(action_data)
+        self._process_tool_result(
+            user_text,
+            action_name,
+            tool_result,
+            image_path=None,
+            model_to_use=self.text_model,
+            direct=True,
+        )
+        if tool_result.kind is ToolResultKind.CAPTURE_IMAGE:
+            return
+        self.wait_for_tts()
+        self.set_state(BotStates.IDLE, "Ready")
 
-        if tool_result == "IMAGE_CAPTURE_TRIGGERED":
-            image_path = self.capture_image()
-            if image_path:
-                self.chat_and_respond(user_text, image_path=image_path)
+    def _handle_action_response(
+        self,
+        text: str,
+        image_path: str | None,
+        model_to_use: str,
+        full_response: str,
+    ) -> None:
+        action_data = extract_json_from_text(full_response)
+        if not action_data:
+            return
+
+        action_name = self.tool_router.normalize_action(action_data)
+        tool_result = self._execute_tool(action_data)
+        self._process_tool_result(
+            text,
+            action_name,
+            tool_result,
+            image_path=image_path,
+            model_to_use=model_to_use,
+            direct=False,
+        )
+
+    def _process_tool_result(
+        self,
+        user_text: str,
+        action_name: str,
+        tool_result: ToolResult,
+        *,
+        image_path: str | None,
+        model_to_use: str,
+        direct: bool,
+    ) -> None:
+        """Present one typed tool result, regardless of how it was routed."""
+        if tool_result.kind is ToolResultKind.CAPTURE_IMAGE:
+            new_image_path = self.capture_image()
+            if new_image_path:
+                self.chat_and_respond(user_text, image_path=new_image_path)
             else:
                 fallback = "I could not use the camera right now."
                 self._speak_complete_response(fallback, None)
                 self._remember_turn(user_text, fallback)
             return
 
-        fallbacks = {
-            "INVALID_ACTION": "I am not sure how to do that.",
-            "SEARCH_EMPTY": "I searched, but I couldn't find anything about that.",
-            "SEARCH_ERROR": "I cannot reach the internet right now.",
-        }
-        if tool_result in fallbacks:
-            response_text = fallbacks[tool_result]
-        elif action_name == "search_web" and tool_result:
+        fallback_text = {
+            ToolResultKind.INVALID_ACTION: "I am not sure how to do that.",
+            ToolResultKind.ERROR: "I cannot reach the internet right now.",
+        }.get(tool_result.kind)
+        if tool_result.kind is ToolResultKind.EMPTY:
+            fallback_text = (
+                "I searched, but I couldn't find anything about that."
+                if direct
+                else "I searched, but I couldn't find any news about that."
+            )
+        if fallback_text is not None:
+            self._speak_complete_response(fallback_text, image_path)
+            self._remember_turn(user_text, fallback_text)
+            return
+
+        result_text = tool_result.content
+        if not result_text:
+            return
+
+        if tool_result.kind is ToolResultKind.CHAT_FALLBACK:
+            response_text = result_text
+        elif direct and action_name == "search_web":
             self.set_state(BotStates.THINKING, "Reading...")
             summary_prompt = [
                 {
@@ -1048,7 +1094,7 @@ class BotGUI:
                     "role": "user",
                     "content": (
                         f"Search request: {user_text}\n\n"
-                        f"Web-search results:\n{tool_result}\n\n"
+                        f"Web-search results:\n{result_text}\n\n"
                         "Report what these results say."
                     ),
                 },
@@ -1060,78 +1106,33 @@ class BotGUI:
                 options=OLLAMA_OPTIONS,
             )
             response_text = final_response["message"]["content"].strip()
+        elif direct or action_name == "get_time":
+            response_text = result_text
         else:
-            response_text = tool_result or "I could not complete that request."
+            summary_prompt = [
+                {
+                    "role": "system",
+                    "content": "Summarize this result in one short sentence.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"RESULT: {result_text}\nUser Question: {user_text}"
+                    ),
+                },
+            ]
+            self.set_state(BotStates.THINKING, "Reading...")
+            self.thinking_sound_active.set()
+            final_response = self._logged_chat(
+                model=model_to_use,
+                messages=summary_prompt,
+                stream=False,
+                options=OLLAMA_OPTIONS,
+            )
+            response_text = final_response["message"]["content"]
 
-        self._speak_complete_response(response_text, None)
+        self._speak_complete_response(response_text, image_path)
         self._remember_turn(user_text, response_text)
-        self.wait_for_tts()
-        self.set_state(BotStates.IDLE, "Ready")
-
-    def _handle_action_response(
-        self,
-        text: str,
-        image_path: str | None,
-        model_to_use: str,
-        full_response: str,
-    ) -> None:
-        action_data = extract_json_from_text(full_response)
-        if not action_data:
-            return
-
-        action_name = self.tool_router.normalize_action(action_data)
-        tool_result = self._execute_tool(action_data)
-        if action_name == "get_time" and tool_result:
-            self._speak_complete_response(tool_result, image_path)
-            self._remember_turn(text, tool_result)
-            return
-        if tool_result and tool_result.startswith("CHAT_FALLBACK::"):
-            chat_text = tool_result.split("::", 1)[1]
-            self._speak_complete_response(chat_text, image_path)
-            self._remember_turn(text, chat_text)
-            return
-
-        if tool_result == "IMAGE_CAPTURE_TRIGGERED":
-            new_image_path = self.capture_image()
-            if new_image_path:
-                self.chat_and_respond(text, image_path=new_image_path)
-            return
-
-        fallbacks = {
-            "INVALID_ACTION": "I am not sure how to do that.",
-            "SEARCH_EMPTY": "I searched, but I couldn't find any news about that.",
-            "SEARCH_ERROR": "I cannot reach the internet right now.",
-        }
-        if tool_result in fallbacks:
-            fallback_text = fallbacks[tool_result]
-            self._speak_complete_response(fallback_text, image_path)
-            self._remember_turn(text, fallback_text)
-            return
-
-        if not tool_result:
-            return
-
-        summary_prompt = [
-            {
-                "role": "system",
-                "content": "Summarize this result in one short sentence.",
-            },
-            {
-                "role": "user",
-                "content": f"RESULT: {tool_result}\nUser Question: {text}",
-            },
-        ]
-        self.set_state(BotStates.THINKING, "Reading...")
-        self.thinking_sound_active.set()
-        final_response = self._logged_chat(
-            model=model_to_use,
-            messages=summary_prompt,
-            stream=False,
-            options=OLLAMA_OPTIONS,
-        )
-        final_text = final_response["message"]["content"]
-        self._speak_complete_response(final_text, image_path)
-        self._remember_turn(text, final_text)
 
     def _speak_complete_response(
         self,

@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-from bmo.features import ToolContract
+from bmo.features import ToolContract, ToolResult
 from bmo.features.loader import load_feature_registry
 from bmo.prompts import build_routing_prompt, build_system_prompt
 from bmo.tools import ToolRouter
@@ -102,16 +102,36 @@ class FeatureLoadingTests(unittest.TestCase):
 
         def register_first(registry, settings):
             del settings
-            registry.register(ToolContract("alpha", lambda request: "alpha"))
+            registry.register(
+                ToolContract(
+                    "alpha",
+                    lambda request: ToolResult.success("alpha"),
+                )
+            )
 
         def register_duplicate(registry, settings):
             del settings
-            registry.register(ToolContract("partial", lambda request: "partial"))
-            registry.register(ToolContract("alpha", lambda request: "duplicate"))
+            registry.register(
+                ToolContract(
+                    "partial",
+                    lambda request: ToolResult.success("partial"),
+                )
+            )
+            registry.register(
+                ToolContract(
+                    "alpha",
+                    lambda request: ToolResult.success("duplicate"),
+                )
+            )
 
         def register_after(registry, settings):
             del settings
-            registry.register(ToolContract("beta", lambda request: "beta"))
+            registry.register(
+                ToolContract(
+                    "beta",
+                    lambda request: ToolResult.success("beta"),
+                )
+            )
 
         first.register = register_first
         duplicate.register = register_duplicate
@@ -145,7 +165,12 @@ class FeatureLoadingTests(unittest.TestCase):
 
         def register(registry, settings):
             received.append(dict(settings))
-            registry.register(ToolContract("configured", lambda request: "ok"))
+            registry.register(
+                ToolContract(
+                    "configured",
+                    lambda request: ToolResult.success("ok"),
+                )
+            )
 
         module.register = register
         with patch("bmo.features.loader._load_module", return_value=module):

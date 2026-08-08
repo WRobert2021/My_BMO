@@ -8,6 +8,7 @@ from typing import Any
 from bmo.features.contracts import (
     DirectAction,
     ToolRequest,
+    ToolResult,
     normalize_direct_text,
 )
 
@@ -35,9 +36,9 @@ class CaptureImageTool:
         }
     )
 
-    def execute(self, request: ToolRequest) -> str:
+    def execute(self, request: ToolRequest) -> ToolResult:
         del request
-        return "IMAGE_CAPTURE_TRIGGERED"
+        return ToolResult.capture_image()
 
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:

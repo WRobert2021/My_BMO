@@ -12,6 +12,8 @@ from bmo.features.contracts import (
     ToolContract,
     ToolHandler,
     ToolRequest,
+    ToolResult,
+    ToolResultKind,
     ToolResponse,
     normalize_direct_text,
 )
@@ -70,6 +72,8 @@ __all__ = [
     "ToolHandler",
     "ToolRegistry",
     "ToolRequest",
+    "ToolResult",
+    "ToolResultKind",
     "ToolResponse",
     "UnknownToolError",
     "clean_weather_location",
