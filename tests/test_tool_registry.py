@@ -244,6 +244,7 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             router.registry.actions,
             {
                 "get_time",
+                "set_timer",
                 "get_location",
                 "get_weather",
                 "search_web",
@@ -254,6 +255,7 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             router.registry.aliases,
             {
                 "check_time": "get_time",
+                "timer": "set_timer",
                 "location": "get_location",
                 "where_am_i": "get_location",
                 "weather": "get_weather",

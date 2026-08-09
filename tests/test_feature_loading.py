@@ -20,6 +20,7 @@ class FeatureLoadingTests(unittest.TestCase):
             result.registry.actions,
             {
                 "get_time",
+                "set_timer",
                 "get_location",
                 "get_weather",
                 "search_web",

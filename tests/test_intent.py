@@ -112,6 +112,30 @@ class IntentRoutingTests(unittest.TestCase):
             infer_tool_action("gemma:2b", "Tell me a joke", fake_chat)
         )
 
+    def test_timer_classification_preserves_operation_fields(self) -> None:
+        def fake_chat(**kwargs):
+            return {
+                "message": {
+                    "content": (
+                        '{"action":"set_timer","duration":'
+                        '"one hour and ten minutes","label":"laundry"}'
+                    )
+                }
+            }
+
+        self.assertEqual(
+            infer_tool_action(
+                "gemma:2b",
+                "Remind me about the laundry in an hour and ten minutes",
+                fake_chat,
+            ),
+            {
+                "action": "set_timer",
+                "duration": "one hour and ten minutes",
+                "label": "laundry",
+            },
+        )
+
     def test_empty_search_query_is_rejected(self) -> None:
         def fake_chat(**kwargs):
             return {"message": {"content": '{"action":"search_web"}'}}

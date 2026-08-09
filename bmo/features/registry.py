@@ -10,6 +10,8 @@ from typing import Any
 
 from bmo.features.contracts import (
     DirectAction,
+    RuntimeCallback,
+    RuntimeNotification,
     Tool,
     ToolRequest,
     ToolResult,
@@ -39,11 +41,43 @@ class ToolCapability:
 class ToolRegistry:
     """Own an allowlist of tools and dispatch requests by action or alias."""
 
-    def __init__(self, tools: Iterable[Tool] = ()) -> None:
+    def __init__(
+        self,
+        tools: Iterable[Tool] = (),
+        *,
+        runtime_callback: RuntimeCallback | None = None,
+    ) -> None:
         self._tools: dict[str, Tool] = {}
         self._aliases: dict[str, str] = {}
+        self._runtime_callback = runtime_callback
+        self._closed = False
         for tool in tools:
             self.register(tool)
+
+    def notify_runtime(self, notification: RuntimeNotification) -> None:
+        """Present an asynchronous feature notification through the runtime."""
+        if not isinstance(notification, RuntimeNotification):
+            raise TypeError("Runtime notifications must use RuntimeNotification.")
+        if self._closed or self._runtime_callback is None:
+            return
+        self._runtime_callback(notification)
+
+    def close(self) -> None:
+        """Close registered feature resources once, in reverse load order."""
+        if self._closed:
+            return
+        self._closed = True
+        for tool in reversed(tuple(self._tools.values())):
+            close = getattr(tool, "close", None)
+            if not callable(close):
+                continue
+            try:
+                close()
+            except Exception as exc:
+                print(
+                    f"[FEATURE] Could not close '{tool.action}': {exc}",
+                    flush=True,
+                )
 
     @property
     def actions(self) -> set[str]:

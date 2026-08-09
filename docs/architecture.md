@@ -16,6 +16,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.features.get_weather` — weather action, place cleanup, and failures.
 - `bmo.features.search_web` — web-search action, formatting, and archive details.
 - `bmo.features.capture_image` — camera request metadata and UI capture signal.
+- `bmo.features.set_timer` — natural durations and a single condition-driven
+  priority-queue scheduler for all active timers.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
@@ -53,9 +55,15 @@ The same Python entry point is used on macOS and Raspberry Pi.
 `features` is an ordered list of objects with `module`, `enabled`, and
 `settings` fields. Each enabled module provides `register(registry, settings)`.
 Disabled entries are skipped before import. When `features` is omitted, all
-five built-in actions are enabled. Per-module registration is transactional, so
+six built-in actions are enabled. Per-module registration is transactional, so
 an import error, hook error, or duplicate action cannot remove features that
 loaded successfully.
+
+Asynchronous features send typed runtime notifications through the callback
+owned by `ToolRegistry`. The application callback forwards timer expiration to
+the existing Tk UI and TTS queue. Registry shutdown closes feature resources;
+for timers this cancels pending deadlines, wakes the scheduler condition, and
+joins its one worker thread.
 
 ## Next extraction
 

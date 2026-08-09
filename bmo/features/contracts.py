@@ -13,6 +13,23 @@ DirectMatcher: TypeAlias = Callable[[str], DirectAction | None]
 PromptExample: TypeAlias = tuple[str, str]
 
 
+@dataclass(frozen=True)
+class RuntimeNotification:
+    """A feature-originated message approved for runtime presentation."""
+
+    source: str
+    message: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("Runtime notification source cannot be empty.")
+        if not isinstance(self.message, str) or not self.message.strip():
+            raise ValueError("Runtime notification message cannot be empty.")
+
+
+RuntimeCallback: TypeAlias = Callable[[RuntimeNotification], None]
+
+
 class ToolResultKind(str, Enum):
     """Ways a tool result can be presented by the application."""
 

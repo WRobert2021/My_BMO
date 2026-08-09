@@ -35,7 +35,11 @@ from bmo.config import (
     load_config,
 )
 from bmo.features.camera import capture_image as capture_camera_image
-from bmo.features.contracts import ToolResult, ToolResultKind
+from bmo.features.contracts import (
+    RuntimeNotification,
+    ToolResult,
+    ToolResultKind,
+)
 from bmo.intent import (
     infer_game_answer,
     infer_game_candidates,
@@ -64,7 +68,10 @@ class BotGUI:
         self.config = load_config()
         self.text_model = str(self.config["text_model"])
         self.vision_model = str(self.config["vision_model"])
-        self.tool_router = ToolRouter(self.config)
+        self.tool_router = ToolRouter(
+            self.config,
+            runtime_callback=self._handle_runtime_notification,
+        )
         self.system_prompt = build_system_prompt(
             self.config,
             self.tool_router.registry,
@@ -183,6 +190,7 @@ class BotGUI:
         # Cooperative cancellation is critical on macOS. Never call the global
         # sounddevice.stop() while the wake-word thread owns an InputStream.
         self.shutdown_event.set()
+        self.tool_router.close()
         self.interrupted.set()
         self.ptt_event.set()
         self.recording_active.clear()
@@ -373,6 +381,21 @@ class BotGUI:
             self.response_text.config(state=tk.DISABLED)
 
         self.master.after(0, update)
+
+    def _handle_runtime_notification(
+        self,
+        notification: RuntimeNotification,
+    ) -> None:
+        """Forward approved feature notifications to the existing UI and TTS."""
+        if self.exiting:
+            return
+        print(
+            f"[FEATURE] {notification.source}: {notification.message}",
+            flush=True,
+        )
+        self.set_state(BotStates.SPEAKING, notification.message)
+        self.append_to_text(f"BOT: {notification.message}")
+        self.enqueue_speech(notification.message)
 
     def _stream_to_text(self, chunk: str) -> None:
         if self.exiting:
@@ -1106,7 +1129,7 @@ class BotGUI:
                 options=OLLAMA_OPTIONS,
             )
             response_text = final_response["message"]["content"].strip()
-        elif direct or action_name == "get_time":
+        elif direct or action_name in {"get_time", "set_timer"}:
             response_text = result_text
         else:
             summary_prompt = [

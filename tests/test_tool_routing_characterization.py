@@ -19,6 +19,7 @@ from bmo.weather import WeatherError
 
 EXPECTED_TOOLS = {
     "get_time",
+    "set_timer",
     "get_location",
     "get_weather",
     "search_web",
@@ -33,6 +34,7 @@ EXPECTED_ALIASES = {
     "look": "capture_image",
     "see": "capture_image",
     "check_time": "get_time",
+    "timer": "set_timer",
     "location": "get_location",
     "where_am_i": "get_location",
     "weather": "get_weather",
@@ -47,6 +49,14 @@ EXACT_DIRECT_REQUESTS = {
     "tell me the time": {"action": "get_time"},
     "what is the current time": {"action": "get_time"},
     "current time": {"action": "get_time"},
+    "set a timer for five minutes": {
+        "action": "set_timer",
+        "duration": "five minutes",
+    },
+    "cancel all timers": {
+        "action": "set_timer",
+        "operation": "cancel_all",
+    },
     "where am i": {"action": "get_location"},
     "what is my location": {"action": "get_location"},
     "what's my location": {"action": "get_location"},

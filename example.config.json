@@ -21,6 +21,14 @@
       "settings": {}
     },
     {
+      "module": "bmo.features.set_timer",
+      "enabled": true,
+      "settings": {
+        "max_timers": 20,
+        "max_duration_seconds": 604800
+      }
+    },
+    {
       "module": "bmo.features.get_location",
       "enabled": true,
       "settings": {}

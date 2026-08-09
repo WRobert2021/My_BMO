@@ -120,7 +120,10 @@ You can modify the hardware behavior and personality in `config.json`. The `agen
 Feature modules are configured by the `features` list shown in
 `example.config.json`. Each entry has a Python `module`, an `enabled` boolean,
 and a module-specific `settings` object. Omitting `features` keeps all built-in
-capabilities enabled. Disabled modules are not imported.
+capabilities enabled. Disabled modules are not imported. The `set_timer` feature
+accepts optional `max_timers` and `max_duration_seconds` settings; set its
+`enabled` field to `false` to remove timer routing and avoid starting its
+scheduler.
 
 ## Interaction archives
 

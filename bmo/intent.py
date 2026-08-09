@@ -67,6 +67,17 @@ def infer_tool_action(
         if not query:
             return None
         result["query"] = query
+    elif action == "set_timer":
+        for key in (
+            "operation",
+            "duration",
+            "duration_seconds",
+            "timer_id",
+            "label",
+        ):
+            value = normalized_data.get(key)
+            if value not in (None, ""):
+                result[key] = str(value)
     return result
 
 

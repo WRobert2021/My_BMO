@@ -6,13 +6,14 @@ import datetime
 from typing import Any
 
 from bmo.config import load_config
-from bmo.features.contracts import ToolResult
+from bmo.features.contracts import RuntimeCallback, ToolResult
 from bmo.features.loader import FeatureLoadFailure, load_feature_registry
 from bmo.features.registry import ToolRegistry
 
 
 _DEFAULT_ACTIONS = {
     "get_time",
+    "set_timer",
     "get_location",
     "get_weather",
     "search_web",
@@ -20,6 +21,7 @@ _DEFAULT_ACTIONS = {
 }
 _DEFAULT_ALIASES = {
     "check_time": "get_time",
+    "timer": "set_timer",
     "location": "get_location",
     "where_am_i": "get_location",
     "weather": "get_weather",
@@ -43,7 +45,12 @@ class ToolRouter:
     VALID_TOOLS = set(_DEFAULT_ACTIONS)
     ALIASES = dict(_DEFAULT_ALIASES)
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        runtime_callback: RuntimeCallback | None = None,
+    ) -> None:
         effective_config = load_config() if config is None else config
         result = load_feature_registry(
             effective_config,
@@ -52,6 +59,7 @@ class ToolRouter:
                 for key, value in effective_config.items()
                 if key != "features"
             },
+            runtime_callback=runtime_callback,
         )
         self.registry = result.registry
         self.feature_failures: tuple[FeatureLoadFailure, ...] = result.failures
@@ -156,6 +164,10 @@ class ToolRouter:
                 return ToolResult.chat_fallback(value)
             return ToolResult.invalid_action()
         return self.registry.execute(action_data)
+
+    def close(self) -> None:
+        """Close feature-owned workers and other runtime resources."""
+        self.registry.close()
 
     def _execute_get_time(self, action_data: dict[str, Any]) -> ToolResult:
         """Compatibility wrapper for the time feature."""
