@@ -9,7 +9,13 @@ from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
 from bmo.config import OLLAMA_OPTIONS
-from bmo.features import ToolResult
+from bmo.features import ToolArchive, ToolResult
+from bmo.features.search_web import (
+    SEARCH_EMPTY_TEXT,
+    SEARCH_ERROR_TEXT,
+    SEARCH_MODEL_ROUTED_EMPTY_TEXT,
+    SEARCH_SUMMARY_PRESENTATION,
+)
 from bmo.intent import infer_tool_action
 from bmo.location import Location, LocationError, LocationNotConfigured
 from bmo.prompts import build_routing_prompt
@@ -230,7 +236,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(
             router.execute({"action": "get_location"}),
-            ToolResult.success(
+            ToolResult.model_summarized(
                 "Your configured location is Austin, Texas."
             ),
         )
@@ -245,7 +251,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                     "location": "Dallas, Texas today",
                 }
             ),
-            ToolResult.success("CURRENT WEATHER REPORT"),
+            ToolResult.model_summarized("CURRENT WEATHER REPORT"),
         )
         router.weather_service.current_report.assert_called_once_with(
             "Dallas, Texas"
@@ -260,7 +266,11 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 router.execute(
                     {"action": "search_web", "query": "robot news"}
                 ),
-                ToolResult.success("FORMATTED SEARCH RESULTS"),
+                ToolResult.summarized(
+                    "FORMATTED SEARCH RESULTS",
+                    presentation=SEARCH_SUMMARY_PRESENTATION,
+                    archive=ToolArchive("web", "searches.jsonl"),
+                ),
             )
         search_web.assert_called_once_with("robot news")
 
@@ -282,7 +292,14 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 ToolResult.chat_fallback("answer in plain text"),
             ),
             ({"action": "capture_image"}, ToolResult.capture_image()),
-            ({"action": "search_web"}, ToolResult.empty()),
+            (
+                {"action": "search_web"},
+                ToolResult.empty(
+                    SEARCH_EMPTY_TEXT,
+                    model_routed_text=SEARCH_MODEL_ROUTED_EMPTY_TEXT,
+                    archive=ToolArchive("web", "searches.jsonl"),
+                ),
+            ),
         )
         for action_data, expected in cases:
             with self.subTest(action_data=action_data):
@@ -316,7 +333,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     router.execute({"action": "get_location"}),
-                    ToolResult.success(expected),
+                    ToolResult.model_summarized(expected),
                 )
 
     def test_weather_result_messages_are_characterized(self) -> None:
@@ -355,7 +372,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     router.execute({"action": "get_weather"}),
-                    ToolResult.success(expected),
+                    ToolResult.model_summarized(expected),
                 )
 
     def test_search_empty_status_and_details_are_characterized(self) -> None:
@@ -375,13 +392,18 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         router = self.make_router()
         fake_ddgs = types.SimpleNamespace(DDGS=EmptyDDGS)
         with patch.dict(sys.modules, {"ddgs": fake_ddgs}):
-            self.assertEqual(
-                router._search_web("robot news"),
-                ToolResult.empty(),
-            )
+            result = router._search_web("robot news")
         self.assertEqual(
-            router.last_tool_details,
-            {"query": "robot news", "results": []},
+            result,
+            ToolResult.empty(
+                SEARCH_EMPTY_TEXT,
+                model_routed_text=SEARCH_MODEL_ROUTED_EMPTY_TEXT,
+                archive=ToolArchive(
+                    "web",
+                    "searches.jsonl",
+                    {"query": "robot news", "results": []},
+                ),
+            )
         )
 
     def test_search_error_status_and_details_are_characterized(self) -> None:
@@ -392,13 +414,17 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         router = self.make_router()
         fake_ddgs = types.SimpleNamespace(DDGS=BrokenDDGS)
         with patch.dict(sys.modules, {"ddgs": fake_ddgs}):
-            self.assertEqual(
-                router._search_web("robot news"),
-                ToolResult.error(),
-            )
+            result = router._search_web("robot news")
         self.assertEqual(
-            router.last_tool_details,
-            {"query": "robot news", "error": "offline"},
+            result,
+            ToolResult.error(
+                SEARCH_ERROR_TEXT,
+                archive=ToolArchive(
+                    "web",
+                    "searches.jsonl",
+                    {"query": "robot news", "error": "offline"},
+                ),
+            )
         )
 
     def test_search_success_result_and_details_are_characterized(self) -> None:
@@ -426,18 +452,20 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(
             response,
-            ToolResult.success(
+            ToolResult.summarized(
                 "SEARCH RESULTS for 'robot news':\n\n"
                 "Result 1:\n"
                 "Title: Robot update\n"
                 "Source: Example News\n"
                 "Snippet: Robots are learning new tasks.\n"
-                "URL: https://example.test/robots"
+                "URL: https://example.test/robots",
+                presentation=SEARCH_SUMMARY_PRESENTATION,
+                archive=ToolArchive(
+                    "web",
+                    "searches.jsonl",
+                    {"query": "robot news", "results": [result]},
+                ),
             ),
-        )
-        self.assertEqual(
-            router.last_tool_details,
-            {"query": "robot news", "results": [result]},
         )
 
 
@@ -503,7 +531,10 @@ class PromptCharacterizationTests(unittest.TestCase):
     ) -> None:
         gui = self.make_gui(
             action_name="search_web",
-            tool_result=ToolResult.success("RAW SEARCH RESULTS"),
+            tool_result=ToolResult.summarized(
+                "RAW SEARCH RESULTS",
+                presentation=SEARCH_SUMMARY_PRESENTATION,
+            ),
         )
 
         BotGUI._handle_direct_action(
@@ -547,14 +578,57 @@ class PromptCharacterizationTests(unittest.TestCase):
             "Generated summary.",
         )
 
+    def test_model_routed_search_preserves_its_summary_behavior(self) -> None:
+        gui = self.make_gui(
+            action_name="search_web",
+            tool_result=ToolResult.summarized(
+                "RAW SEARCH RESULTS",
+                presentation=SEARCH_SUMMARY_PRESENTATION,
+            ),
+        )
+
+        BotGUI._handle_action_response(
+            gui,
+            "What is new with robots?",
+            None,
+            "text-model",
+            '{"action":"search_web","query":"robot news"}',
+        )
+
+        gui._logged_chat.assert_called_once_with(
+            model="text-model",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Summarize this result in one short sentence.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "RESULT: RAW SEARCH RESULTS\n"
+                        "User Question: What is new with robots?"
+                    ),
+                },
+            ],
+            stream=False,
+            options=OLLAMA_OPTIONS,
+        )
+        gui._speak_complete_response.assert_called_once_with(
+            "Generated summary.  ",
+            None,
+        )
+
     def test_direct_result_statuses_have_the_current_user_facing_text(self) -> None:
         cases = (
             (ToolResult.invalid_action(), "I am not sure how to do that."),
             (
-                ToolResult.empty(),
-                "I searched, but I couldn't find anything about that.",
+                ToolResult.empty("The sensor returned no measurements."),
+                "The sensor returned no measurements.",
             ),
-            (ToolResult.error(), "I cannot reach the internet right now."),
+            (
+                ToolResult.error("I cannot read the sensor right now."),
+                "I cannot read the sensor right now.",
+            ),
         )
         for tool_result, expected in cases:
             with self.subTest(tool_result=tool_result):
@@ -597,10 +671,10 @@ class PromptCharacterizationTests(unittest.TestCase):
             "I could not use the camera right now.",
         )
 
-    def test_generated_tool_result_uses_the_current_summary_prompt(self) -> None:
+    def test_generated_weather_result_uses_the_current_summary_prompt(self) -> None:
         gui = self.make_gui(
             action_name="get_weather",
-            tool_result=ToolResult.success("RAW WEATHER RESULT"),
+            tool_result=ToolResult.model_summarized("RAW WEATHER RESULT"),
         )
 
         BotGUI._handle_action_response(
@@ -644,10 +718,13 @@ class PromptCharacterizationTests(unittest.TestCase):
         cases = (
             (ToolResult.invalid_action(), "I am not sure how to do that."),
             (
-                ToolResult.empty(),
-                "I searched, but I couldn't find any news about that.",
+                ToolResult.empty("The sensor returned no measurements."),
+                "The sensor returned no measurements.",
             ),
-            (ToolResult.error(), "I cannot reach the internet right now."),
+            (
+                ToolResult.error("I cannot read the sensor right now."),
+                "I cannot read the sensor right now.",
+            ),
         )
         for tool_result, expected in cases:
             with self.subTest(tool_result=tool_result):

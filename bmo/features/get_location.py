@@ -41,17 +41,17 @@ class GetLocationTool:
         del request
         try:
             location = self.location_service.resolve()
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 f"Your configured location is {location.name}."
             )
         except LocationNotConfigured:
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 "I do not have a home location configured yet. "
                 "Add one in config.json."
             )
         except (LocationError, OSError, TimeoutError) as exc:
             print(f"[LOCATION] Lookup failed: {exc}", flush=True)
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 "I cannot check the configured location right now."
             )
 

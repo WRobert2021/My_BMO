@@ -11,12 +11,14 @@ from bmo.features import (
     GetTimeTool,
     GetWeatherTool,
     SearchWebTool,
+    ToolArchive,
     ToolContract,
     ToolRegistry,
     ToolResult,
     ToolResultKind,
     UnknownToolError,
 )
+from bmo.features.search_web import SEARCH_SUMMARY_PRESENTATION
 from bmo.location import Location
 from bmo.tools import ToolRouter
 
@@ -258,7 +260,7 @@ class ToolRegistryTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.execute({"action": "where_am_i"}),
-            ToolResult.success(
+            ToolResult.model_summarized(
                 "Your configured location is Austin, Texas."
             ),
         )
@@ -269,13 +271,17 @@ class ToolRegistryTests(unittest.TestCase):
                     "location": "Dallas, Texas today",
                 }
             ),
-            ToolResult.success("CURRENT WEATHER REPORT"),
+            ToolResult.model_summarized("CURRENT WEATHER REPORT"),
         )
         self.assertEqual(
             registry.execute(
                 {"action": "google", "query": "robot news"}
             ),
-            ToolResult.success("FORMATTED SEARCH RESULTS"),
+            ToolResult.summarized(
+                "FORMATTED SEARCH RESULTS",
+                presentation=SEARCH_SUMMARY_PRESENTATION,
+                archive=ToolArchive("web", "searches.jsonl"),
+            ),
         )
         weather_service.current_report.assert_called_once_with(
             "Dallas, Texas"

@@ -7,8 +7,11 @@ from typing import Any
 
 from bmo.features.contracts import (
     DirectAction,
+    ToolArchive,
+    ToolPresentation,
     ToolRequest,
     ToolResult,
+    ToolResultKind,
     normalize_direct_text,
 )
 
@@ -23,6 +26,39 @@ SEARCH_PREFIXES = (
     "look up ",
     "google ",
 )
+
+SEARCH_EMPTY_TEXT = "I searched, but I couldn't find anything about that."
+SEARCH_MODEL_ROUTED_EMPTY_TEXT = (
+    "I searched, but I couldn't find any news about that."
+)
+SEARCH_ERROR_TEXT = "I cannot reach the internet right now."
+SEARCH_SUMMARY_PRESENTATION = ToolPresentation.by_route(
+    direct=ToolPresentation.summarize(
+        system_prompt=(
+            "You are reading current web-search results for the user. "
+            "Briefly report the useful information contained in the results. "
+            "The user's words may be a search command rather than a question. "
+            "Do not claim the results are irrelevant when their titles or "
+            "snippets clearly concern the requested subject. "
+            "Use only the supplied results. Answer in one or two short sentences."
+        ),
+        user_prompt_template=(
+            "Search request: {user_text}\n\n"
+            "Web-search results:\n{content}\n\n"
+            "Report what these results say."
+        ),
+        strip_response=True,
+    ),
+    model_routed=ToolPresentation.summarize(),
+)
+
+
+def _search_archive(details: dict[str, Any] | None = None) -> ToolArchive:
+    return ToolArchive(
+        category="web",
+        filename="searches.jsonl",
+        details=details,
+    )
 
 
 class SearchWebTool:
@@ -49,11 +85,31 @@ class SearchWebTool:
         searcher: Callable[[str], ToolResult] | None = None,
     ) -> None:
         self._searcher = searcher or self.search
-        self.last_details: dict[str, Any] | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
         query = request.get("query") or request.get("value")
-        return self._searcher(str(query or "").strip())
+        normalized_query = str(query or "").strip()
+        result = self._searcher(normalized_query)
+        if result.archive.category == "web":
+            return result
+        if result.kind is ToolResultKind.CONTENT:
+            return ToolResult.summarized(
+                result.content or "",
+                presentation=SEARCH_SUMMARY_PRESENTATION,
+                archive=_search_archive(),
+            )
+        if result.kind is ToolResultKind.EMPTY:
+            return ToolResult.empty(
+                SEARCH_EMPTY_TEXT,
+                model_routed_text=SEARCH_MODEL_ROUTED_EMPTY_TEXT,
+                archive=_search_archive(),
+            )
+        if result.kind is ToolResultKind.ERROR:
+            return ToolResult.error(
+                SEARCH_ERROR_TEXT,
+                archive=_search_archive(),
+            )
+        return result
 
     @staticmethod
     def prepare_model_request(
@@ -80,9 +136,13 @@ class SearchWebTool:
         return None
 
     def search(self, query: str) -> ToolResult:
-        """Run a web search and retain full details for interaction archives."""
+        """Run a web search with feature-owned presentation and archive data."""
         if not query:
-            return ToolResult.empty()
+            return ToolResult.empty(
+                SEARCH_EMPTY_TEXT,
+                model_routed_text=SEARCH_MODEL_ROUTED_EMPTY_TEXT,
+                archive=_search_archive(),
+            )
 
         print(f"Searching web for: {query}...", flush=True)
         try:
@@ -121,10 +181,14 @@ class SearchWebTool:
 
                 if not results:
                     print("[DEBUG] Search returned 0 results.", flush=True)
-                    self.last_details = {"query": query, "results": []}
-                    return ToolResult.empty()
+                    details = {"query": query, "results": []}
+                    return ToolResult.empty(
+                        SEARCH_EMPTY_TEXT,
+                        model_routed_text=SEARCH_MODEL_ROUTED_EMPTY_TEXT,
+                        archive=_search_archive(details),
+                    )
 
-                self.last_details = {
+                details = {
                     "query": query,
                     "results": results[:3],
                 }
@@ -143,14 +207,19 @@ class SearchWebTool:
                         f"URL: {url}"
                     )
 
-                return ToolResult.success(
+                return ToolResult.summarized(
                     f"SEARCH RESULTS for '{query}':\n\n"
-                    + "\n\n".join(formatted_results)
+                    + "\n\n".join(formatted_results),
+                    presentation=SEARCH_SUMMARY_PRESENTATION,
+                    archive=_search_archive(details),
                 )
         except Exception as exc:
             print(f"[DEBUG] Connection/Library Error: {exc}", flush=True)
-            self.last_details = {"query": query, "error": str(exc)}
-            return ToolResult.error()
+            details = {"query": query, "error": str(exc)}
+            return ToolResult.error(
+                SEARCH_ERROR_TEXT,
+                archive=_search_archive(details),
+            )
 
 
 def register(registry: Any, settings: Mapping[str, Any]) -> None:

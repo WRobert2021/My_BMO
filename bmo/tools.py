@@ -66,7 +66,6 @@ class ToolRouter:
         self.feature_modules = result.modules
         self.VALID_TOOLS = self.registry.actions
         self.ALIASES = self.registry.aliases
-        self._last_tool_details: dict[str, Any] | None = None
 
         time_tool = self.registry.get("get_time")
         if time_tool is not None and hasattr(time_tool, "_now"):
@@ -101,21 +100,6 @@ class ToolRouter:
     @weather_service.setter
     def weather_service(self, service: Any) -> None:
         self._require_tool("get_weather").weather_service = service
-
-    @property
-    def last_tool_details(self) -> dict[str, Any] | None:
-        """Expose web-search details for the existing archive workflow."""
-        search_tool = self.registry.get("search_web")
-        if search_tool is not None:
-            return getattr(search_tool, "last_details", self._last_tool_details)
-        return self._last_tool_details
-
-    @last_tool_details.setter
-    def last_tool_details(self, details: dict[str, Any] | None) -> None:
-        self._last_tool_details = details
-        search_tool = self.registry.get("search_web")
-        if search_tool is not None and hasattr(search_tool, "last_details"):
-            search_tool.last_details = details
 
     def normalize_action(
         self,
@@ -153,7 +137,6 @@ class ToolRouter:
         return _get_default_router().registry.match_direct_action(str(self))
 
     def execute(self, action_data: dict[str, Any]) -> ToolResult:
-        self.last_tool_details = None
         raw_action = str(action_data.get("action", "")).lower().strip()
         value = action_data.get("value") or action_data.get("query")
         action = self.normalize_action(action_data)

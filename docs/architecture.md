@@ -83,9 +83,20 @@ contract in `bmo.features.contracts`:
   alternate identifiers. The registry normalizes both to stripped lowercase.
 - `description`, `schemas`, `prompt_guidance`, and `prompt_examples` describe
   the capability to the routing and system prompts.
-- `execute(request)` returns a `ToolResult`, never a bare string. Its kind tells
-  the application whether it contains content, is empty, failed, falls back to
-  chat, or requests camera capture.
+- `execute(request)` returns a `ToolResult`, never a bare string. Its kind
+  records the semantic outcome: content, an expected empty/error result, chat
+  fallback, invalid action, or camera capture.
+- Each result carries `ToolPresentation` metadata. A feature can mark content
+  as user-ready or provide local-model summary prompts, including distinct
+  direct-match and model-routed policies when compatibility requires them.
+  Expected empty and error outcomes carry their own user-facing text, so an
+  offline search and a failed local hardware sensor do not share an error
+  message.
+- Each result also carries `ToolArchive` metadata. The category, JSONL
+  filename, and optional structured details determine archival without UI code
+  knowing which action produced the result. Ordinary results default to
+  `output/tools.jsonl`; web search selects `web/searches.jsonl` and attaches its
+  query and raw result/error details.
 - `match_direct_action(user_text)` returns action data only for deterministic,
   unambiguous phrases. `normalize_request(request)`,
   `prepare_model_request(request)`, and `close()` are optional hooks for
@@ -178,7 +189,7 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
 
     def execute(request: ToolRequest) -> ToolResult:
         del request
-        return ToolResult.success(greeting)
+        return ToolResult.direct(greeting)
 
     def match_direct(user_text: str):
         if normalize_direct_text(user_text) == "say hello":

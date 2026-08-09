@@ -105,25 +105,25 @@ class GetWeatherTool:
             str(request.get("location") or value or "")
         )
         try:
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 self.weather_service.current_report(place_name or None)
             )
         except LocationNotConfigured:
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 "I need a home location in config.json, or you can ask "
                 "for the weather in a named city."
             )
         except LocationError as exc:
             print(f"[LOCATION] Weather place lookup failed: {exc}", flush=True)
-            return ToolResult.success(str(exc))
+            return ToolResult.model_summarized(str(exc))
         except (WeatherError, OSError, TimeoutError) as exc:
             print(f"[WEATHER] Lookup failed: {exc}", flush=True)
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 "I cannot reach the weather service right now."
             )
         except Exception as exc:
             print(f"[WEATHER] Unexpected lookup error: {exc}", flush=True)
-            return ToolResult.success(
+            return ToolResult.model_summarized(
                 "I cannot reach the weather service right now."
             )
 

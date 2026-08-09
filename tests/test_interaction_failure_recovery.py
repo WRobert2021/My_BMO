@@ -51,7 +51,6 @@ class InteractionFailureRecoveryTests(unittest.TestCase):
             RuntimeError("tool exploded"),
             ToolResult.success("The next request worked."),
         ]
-        gui.tool_router.last_tool_details = None
 
         archives: list[Mock] = []
 

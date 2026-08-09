@@ -37,6 +37,7 @@ from bmo.config import (
 from bmo.features.camera import capture_image as capture_camera_image
 from bmo.features.contracts import (
     RuntimeNotification,
+    ToolPresentationKind,
     ToolResult,
     ToolResultKind,
 )
@@ -725,8 +726,8 @@ class BotGUI:
         except Exception as exc:
             if self.current_interaction:
                 self.current_interaction.append_json(
-                    "web" if action_name == "search_web" else "output",
-                    "searches.jsonl" if action_name == "search_web" else "tools.jsonl",
+                    "output",
+                    "tools.jsonl",
                     {
                         "action": action_name,
                         "request": action_data,
@@ -741,14 +742,15 @@ class BotGUI:
             )
             raise
         if self.current_interaction:
+            archive = result.archive
             self.current_interaction.append_json(
-                "web" if action_name == "search_web" else "output",
-                "searches.jsonl" if action_name == "search_web" else "tools.jsonl",
+                archive.category,
+                archive.filename,
                 {
                     "action": action_name,
                     "request": action_data,
                     "result": result.archive_value(),
-                    "details": self.tool_router.last_tool_details,
+                    "details": archive.details,
                     "duration_seconds": time.monotonic() - started,
                 },
             )
@@ -927,11 +929,9 @@ class BotGUI:
     ) -> None:
         """Execute a clearly requested tool without asking the LLM to route it."""
         self.set_state(BotStates.THINKING, "Thinking...")
-        action_name = self.tool_router.normalize_action(action_data)
         tool_result = self._execute_tool(action_data)
         self._process_tool_result(
             user_text,
-            action_name,
             tool_result,
             image_path=None,
             model_to_use=self.text_model,
@@ -953,11 +953,9 @@ class BotGUI:
         if not action_data:
             return
 
-        action_name = self.tool_router.normalize_action(action_data)
         tool_result = self._execute_tool(action_data)
         self._process_tool_result(
             text,
-            action_name,
             tool_result,
             image_path=image_path,
             model_to_use=model_to_use,
@@ -967,7 +965,6 @@ class BotGUI:
     def _process_tool_result(
         self,
         user_text: str,
-        action_name: str,
         tool_result: ToolResult,
         *,
         image_path: str | None,
@@ -980,86 +977,37 @@ class BotGUI:
             if new_image_path:
                 self.chat_and_respond(user_text, image_path=new_image_path)
             else:
-                fallback = "I could not use the camera right now."
+                fallback = tool_result.presentation.user_text
+                if not fallback:
+                    return
                 self._speak_complete_response(fallback, None)
                 self._remember_turn(user_text, fallback)
             return
 
-        fallback_text = {
-            ToolResultKind.INVALID_ACTION: "I am not sure how to do that.",
-            ToolResultKind.ERROR: "I cannot reach the internet right now.",
-        }.get(tool_result.kind)
-        if tool_result.kind is ToolResultKind.EMPTY:
-            fallback_text = (
-                "I searched, but I couldn't find anything about that."
-                if direct
-                else "I searched, but I couldn't find any news about that."
-            )
-        if fallback_text is not None:
-            self._speak_complete_response(fallback_text, image_path)
-            self._remember_turn(user_text, fallback_text)
-            return
-
-        result_text = tool_result.content
-        if not result_text:
-            return
-
-        if tool_result.kind is ToolResultKind.CHAT_FALLBACK:
-            response_text = result_text
-        elif direct and action_name == "search_web":
-            self.set_state(BotStates.THINKING, "Reading...")
-            summary_prompt = [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are reading current web-search results for the user. "
-                        "Briefly report the useful information contained in the results. "
-                        "The user's words may be a search command rather than a question. "
-                        "Do not claim the results are irrelevant when their titles or "
-                        "snippets clearly concern the requested subject. "
-                        "Use only the supplied results. Answer in one or two short sentences."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Search request: {user_text}\n\n"
-                        f"Web-search results:\n{result_text}\n\n"
-                        "Report what these results say."
-                    ),
-                },
-            ]
-            final_response = self._logged_chat(
-                model=self.text_model,
-                messages=summary_prompt,
-                stream=False,
-                options=OLLAMA_OPTIONS,
-            )
-            response_text = final_response["message"]["content"].strip()
-        elif direct or action_name in {"get_time", "set_timer"}:
-            response_text = result_text
+        presentation = tool_result.presentation.for_route(direct=direct)
+        if presentation.kind is ToolPresentationKind.DIRECT:
+            response_text = presentation.user_text or tool_result.content
         else:
-            summary_prompt = [
-                {
-                    "role": "system",
-                    "content": "Summarize this result in one short sentence.",
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"RESULT: {result_text}\nUser Question: {user_text}"
-                    ),
-                },
-            ]
+            result_text = tool_result.content
+            if not result_text:
+                return
             self.set_state(BotStates.THINKING, "Reading...")
             self.thinking_sound_active.set()
             final_response = self._logged_chat(
                 model=model_to_use,
-                messages=summary_prompt,
+                messages=presentation.summary_messages(
+                    content=result_text,
+                    user_text=user_text,
+                ),
                 stream=False,
                 options=OLLAMA_OPTIONS,
             )
             response_text = final_response["message"]["content"]
+            if presentation.strip_response:
+                response_text = response_text.strip()
+
+        if not response_text:
+            return
 
         self._speak_complete_response(response_text, image_path)
         self._remember_turn(user_text, response_text)
