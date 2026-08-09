@@ -46,13 +46,15 @@ from bmo.features.contracts import (
 )
 from bmo.intent import infer_tool_action
 from bmo.memory import load_chat_history, save_chat_history
-from bmo.modes import InputPolicyKind, ModeRegistry
-from bmo.modes.games import MatchingGameMode, TwentyQuestionsMode
+from bmo.modes import (
+    InputPolicyKind,
+    ModeRuntimeContext,
+    load_mode_registry,
+)
 from bmo.prompts import build_system_prompt
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
-from bmo.twenty_questions import TwentyQuestionsGame
 
 
 class BotGUI:
@@ -127,35 +129,28 @@ class BotGUI:
         self.tts_active = threading.Event()
         self.exiting = False
         self.main_thread: threading.Thread | None = None
-        self.mode_registry = ModeRegistry(
-            (
-                MatchingGameMode(
-                    self.master,
-                    speak_response=self._speak_complete_response,
-                    remember_turn=self._remember_turn,
-                    wait_for_tts=self.wait_for_tts,
-                    set_state=self.set_state,
-                    announce=self.enqueue_speech,
-                    face_provider=self._current_mode_face,
-                ),
-                TwentyQuestionsMode(
-                    TwentyQuestionsGame(
-                        debug=bool(
-                            self.config.get("twenty_questions_debug", False)
-                        )
-                    ),
-                    text_model=self.text_model,
-                    chat=self._logged_chat,
-                    speak_response=self._speak_complete_response,
-                    wait_for_tts=self.wait_for_tts,
-                    set_state=self.set_state,
-                    answer_wait_seconds=self.config.get(
-                        "game_answer_wait_seconds",
-                        12,
-                    ),
-                ),
-            )
+        mode_result = load_mode_registry(
+            self.config,
+            context=ModeRuntimeContext(
+                master=self.master,
+                text_model=self.text_model,
+                chat=self._logged_chat,
+                speak_response=self._speak_complete_response,
+                remember_turn=self._remember_turn,
+                wait_for_tts=self.wait_for_tts,
+                set_state=self.set_state,
+                announce=self.enqueue_speech,
+                face_provider=self._current_mode_face,
+            ),
+            shared_settings={
+                key: value
+                for key, value in self.config.items()
+                if key != "modes"
+            },
         )
+        self.mode_registry = mode_result.registry
+        self.mode_failures = mode_result.failures
+        self.mode_modules = mode_result.modules
         atexit.register(self.safe_exit)
 
         self._build_gui()

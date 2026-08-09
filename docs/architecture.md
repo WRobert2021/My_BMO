@@ -20,7 +20,11 @@ The application keeps `agent.py` as the stable startup command while implementat
   priority-queue scheduler for all active timers.
 - `bmo.modes` — typed lifecycle contracts and exclusive input ownership for
   long-lived interactions.
-- `bmo.modes.games` — adapters for Twenty Questions and the Pup Pairs UI.
+- `bmo.modes.loader` — standard-library module loading from `modes` config.
+- `bmo.modes.matching_game` — Pup Pairs lifecycle and registration adapter.
+- `bmo.modes.twenty_questions` — Twenty Questions lifecycle and registration
+  adapter over the existing Bayesian engine.
+- `bmo.modes.games` — compatibility imports for the two built-in adapters.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
@@ -30,9 +34,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 ## Runtime flow
 
 1. `agent.py` creates Tkinter and `BotGUI`.
-2. `BotGUI` loads enabled feature modules, constructs the two built-in modes,
-   and creates services using defaults overlaid by `config.json`. A missing
-   config file is not created; defaults remain in memory only.
+2. `BotGUI` creates services using defaults overlaid by `config.json`, then
+   loads enabled feature and mode modules. A missing config file is not created;
+   defaults remain in memory only.
 3. The wake-word service waits for wake word or push-to-talk.
 4. A unique dated interaction archive is created.
 5. The recorder captures a WAV directly into that archive.
@@ -56,6 +60,10 @@ The same Python entry point is used on macOS and Raspberry Pi.
 - The application supplies a fresh `ToolContext` for each execution. It exposes
   only approved artifact allocation, structured interaction events, and generic
   UI status requests; features never receive `BotGUI` or an archive object.
+- Mode registration receives one frozen `ModeRuntimeContext` exposing only the
+  Tk master, text model and chat callback, speech and memory callbacks, state
+  updates, announcements, and the current-face provider. Modes never receive
+  `BotGUI` itself.
 
 ## Extension contracts
 
@@ -64,7 +72,7 @@ Features and modes solve different routing problems:
 | Extension | Lifetime | Selection | Input ownership |
 | --- | --- | --- | --- |
 | Feature tool | One action request | Enabled module list, direct matcher, or model-produced action JSON | Does not retain it |
-| Interaction mode | Multiple turns or a dedicated UI | First registered mode whose start matcher succeeds | Exclusive until `is_active()` is false |
+| Interaction mode | Multiple turns or a dedicated UI | Enabled module list, then first registered start matcher | Exclusive until `is_active()` is false |
 
 ### Feature module contract
 
@@ -133,21 +141,37 @@ The mode's `InputPolicy` selects one of three main-loop behaviors:
   mode's timeout, status messages, and archive trigger source.
 - `SUSPENDED`: pause speech capture while a separate UI owns interaction.
 
-The two game modes are constructed directly in `BotGUI`. They are always
-registered and are active only after their start matcher succeeds. There is no
-configuration-driven mode loader, so a `modes` key in `config.json` or
-`example.config.json` would currently have no effect.
+`modes` is an ordered list with the same allowlist semantics as `features`.
+Omitting it loads `bmo.modes.matching_game` followed by
+`bmo.modes.twenty_questions`, preserving the historical matching order.
+Providing the key replaces those defaults; an empty list disables every mode.
+Each entry supports:
+
+- `module`: a non-empty importable Python module name.
+- `enabled`: a JSON boolean, defaulting to `true`. A false entry is skipped
+  before its module name or settings are validated and before import.
+- `settings`: an object, defaulting to `{}`. Per-mode values override shared
+  application settings. The Twenty Questions adapter accepts
+  `answer_wait_seconds` and `debug`, while retaining the historical top-level
+  setting names as fallbacks.
+
+An enabled mode module exposes `register(registry, context, settings)`. The
+context must be `ModeRuntimeContext`; it deliberately exposes approved services
+rather than the entire GUI coordinator. Registration order controls the first
+matching start request. The built-in modules construct the existing adapters,
+and the matching UI and Bayesian Twenty Questions engine remain responsible for
+their existing score, history, and learning behavior.
 
 ### Enable, disable, and failure isolation
 
-Feature isolation is intentionally strongest during startup. A malformed
-`features` value produces an empty registry and a reported configuration
-failure. For individual enabled entries, configuration, import, missing-hook,
-and hook exceptions are reported and skipped while later entries continue.
-Registration is transactional: if a hook registers a tool and then fails (for
-example, on a duplicate action), all registrations from that hook are rolled
-back without disturbing earlier modules. Disabled entries produce no failure
-because they are not validated or imported.
+Feature and mode isolation is intentionally strongest during startup. A
+malformed top-level list produces an empty corresponding registry and a reported
+configuration failure. For individual enabled entries, configuration, import,
+missing-hook, and hook exceptions are reported and skipped while later entries
+continue. Registration is transactional: if a hook partially registers and
+then fails on an exception or duplicate name, its additions are rolled back
+without disturbing earlier modules. Rolled-back modes are closed immediately.
+Disabled entries produce no failure because they are not validated or imported.
 
 Execution is a separate boundary. The registry validates the optional
 `ToolContext`, passes it only to tools that opt in, and validates that handlers
@@ -222,6 +246,18 @@ The disabled `bmo.features.say_hello` entry in `example.config.json` is safe to
 leave in place because disabled modules are never imported. After creating the
 module, copy the example to `config.json` if needed and set that entry's
 `enabled` value to `true`.
+
+### Add a mode
+
+1. Implement `InteractionMode` in a module with no import-time workers or UI
+   creation, then expose `register(registry, context, settings)`.
+2. Construct the mode only from `ModeRuntimeContext` services and module
+   settings. Do not accept or retain `BotGUI`.
+3. Add the module to the local `modes` list. Add it to
+   `DEFAULT_MODE_MODULES` only when it should load for configurations that omit
+   `modes`.
+4. Test disabled-import behavior, registration rollback, start matching, active
+   input routing, `InputPolicy`, and idempotent cleanup.
 
 ## Next extraction
 

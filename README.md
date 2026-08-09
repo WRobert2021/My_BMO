@@ -150,9 +150,26 @@ shown in `example.config.json`:
 A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
 Pairs UI. Modes have an active/inactive lifecycle and choose whether input uses
 the wake word, continues listening, or is suspended while a UI owns the turn.
-Only one mode can own input at a time. Modes are currently registered directly
-by `BotGUI`; there is no `modes` configuration key and the built-in modes cannot
-be enabled or disabled through `example.config.json`.
+Only one mode can own input at a time. Mode modules use the same ordered,
+configuration-driven loading rules as features:
+
+- Omitting `modes` preserves the historical behavior by loading Pup Pairs and
+  Twenty Questions in their original registration order. Once `modes` is
+  present, it is an allowlist, and an empty list disables every mode.
+- Each entry has `module`, `enabled`, and `settings` fields. Disabled entries are
+  skipped before validation or import, so disabling Twenty Questions does not
+  import its game engine, and disabling Pup Pairs does not import its Tk game UI.
+- Configuration, import, missing-hook, duplicate-name, and registration failures
+  are isolated per module. Later valid modes still load, and a failed hook leaves
+  none of its partial registrations behind.
+- Built-in Twenty Questions settings are `answer_wait_seconds` and `debug`.
+  Historical top-level `game_answer_wait_seconds` and
+  `twenty_questions_debug` values remain supported when mode settings do not
+  override them.
+
+Mode registration receives a constrained runtime context containing only the Tk
+master and approved model, speech, memory, state, announcement, and face
+callbacks. Mode modules never receive the complete `BotGUI` object.
 
 The complete feature and mode contracts, failure boundaries, and a minimal
 `say_hello` feature are in [the architecture guide](docs/architecture.md#extension-contracts).

@@ -2,9 +2,48 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
+
+from PIL import Image
+
+
+SetState = Callable[[str, str], None]
+SpeakResponse = Callable[[str, str | None], None]
+RememberTurn = Callable[[str, str], None]
+Chat = Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class ModeRuntimeContext:
+    """Narrow access to application services approved for interaction modes."""
+
+    master: Any
+    text_model: str
+    chat: Chat
+    speak_response: SpeakResponse
+    remember_turn: RememberTurn
+    wait_for_tts: Callable[[], None]
+    set_state: SetState
+    announce: Callable[[str], None]
+    face_provider: Callable[[], Image.Image | None]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text_model, str) or not self.text_model.strip():
+            raise ValueError("Mode text model cannot be empty.")
+        for name in (
+            "chat",
+            "speak_response",
+            "remember_turn",
+            "wait_for_tts",
+            "set_state",
+            "announce",
+            "face_provider",
+        ):
+            if not callable(getattr(self, name)):
+                raise TypeError(f"Mode runtime context {name} must be callable.")
 
 
 class InputPolicyKind(str, Enum):

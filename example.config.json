@@ -10,10 +10,23 @@
   "input_sample_rate": 44100,
   "weather_units": "imperial",
   "online_timeout_seconds": 6,
-  "game_answer_wait_seconds": 12,
-  "twenty_questions_debug": false,
   "interaction_logging": true,
   "interaction_log_directory": "interaction_logs",
+  "modes": [
+    {
+      "module": "bmo.modes.matching_game",
+      "enabled": true,
+      "settings": {}
+    },
+    {
+      "module": "bmo.modes.twenty_questions",
+      "enabled": true,
+      "settings": {
+        "answer_wait_seconds": 12,
+        "debug": false
+      }
+    }
+  ],
   "features": [
     {
       "module": "bmo.features.get_time",

@@ -92,6 +92,35 @@ class ModeRegistryTests(unittest.TestCase):
         self.assertTrue(second.closed)
         self.assertFalse(registry.is_active())
 
+    def test_close_runs_in_reverse_order_and_continues_after_failure(self) -> None:
+        closed: list[str] = []
+
+        class CloseRecordingMode(StubMode):
+            def __init__(self, name: str, *, fail: bool = False) -> None:
+                super().__init__(name, name)
+                self.fail = fail
+
+            def close(self) -> None:
+                closed.append(self.name)
+                if self.fail:
+                    raise RuntimeError("close exploded")
+                super().close()
+
+        first = CloseRecordingMode("first")
+        second = CloseRecordingMode("second", fail=True)
+        third = CloseRecordingMode("third")
+        registry = ModeRegistry((first, second, third))
+
+        output = StringIO()
+        with redirect_stdout(output):
+            registry.close()
+            registry.close()
+
+        self.assertEqual(closed, ["third", "second", "first"])
+        self.assertIn("Could not close 'second'", output.getvalue())
+        self.assertTrue(first.closed)
+        self.assertTrue(third.closed)
+
     def test_start_failure_releases_input_ownership_and_identifies_mode(
         self,
     ) -> None:

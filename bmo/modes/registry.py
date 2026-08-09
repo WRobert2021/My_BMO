@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import contextmanager
 import threading
 
 from bmo.modes.contracts import InputPolicy, InteractionMode
@@ -40,6 +41,31 @@ class ModeRegistry:
         """Return registered mode names in matching order."""
         with self._lock:
             return tuple(self._modes)
+
+    def get(self, name: str) -> InteractionMode | None:
+        """Return a registered mode by normalized name."""
+        normalized = str(name).strip().lower()
+        with self._lock:
+            return self._modes.get(normalized)
+
+    @contextmanager
+    def registration(self):
+        """Roll back and close modes registered by a failing hook."""
+        with self._lock:
+            modes_before = self._modes.copy()
+        try:
+            yield
+        except Exception:
+            with self._lock:
+                rolled_back = tuple(
+                    mode
+                    for name, mode in self._modes.items()
+                    if name not in modes_before
+                )
+                self._modes = modes_before
+            for mode in reversed(rolled_back):
+                self._close_mode(mode, action="roll back")
+            raise
 
     def match_start_request(self, user_text: str) -> InteractionMode | None:
         """Return the first mode matching a start request when none is active."""
@@ -129,13 +155,7 @@ class ModeRegistry:
             self._active_mode = None
             modes = tuple(reversed(tuple(self._modes.values())))
         for mode in modes:
-            try:
-                mode.close()
-            except Exception as exc:
-                print(
-                    f"[MODE] Could not close '{mode.name}': {exc}",
-                    flush=True,
-                )
+            self._close_mode(mode)
 
     def _current_mode(self) -> InteractionMode | None:
         mode = self._active_mode
@@ -175,3 +195,17 @@ class ModeRegistry:
             f"{type(exc).__name__}: {exc}",
             flush=True,
         )
+
+    @staticmethod
+    def _close_mode(
+        mode: InteractionMode,
+        *,
+        action: str = "close",
+    ) -> None:
+        try:
+            mode.close()
+        except Exception as exc:
+            print(
+                f"[MODE] Could not {action} '{mode.name}': {exc}",
+                flush=True,
+            )
