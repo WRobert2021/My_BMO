@@ -135,11 +135,13 @@ Execution is a separate boundary. The registry validates that handlers return
 `ToolResult`, but it does not swallow handler or mode lifecycle exceptions.
 Feature execution failures propagate to `BotGUI`, which records the failed
 tool call when interaction logging is enabled before its normal interaction
-error handling runs. If a mode's `start` raises, the registry releases input
-ownership and re-raises; exceptions from other mode methods also propagate to
-the caller. On application shutdown, feature and mode `close()` methods run in
-reverse registration order, and one close failure is reported without
-preventing the remaining resources from closing.
+error handling runs. Once startup has completed, each voice or typed turn has
+its own failure boundary: an unexpected tool or mode failure ends only that
+interaction, presents a generic retry message, and leaves the main loop ready
+for another request. A failing mode lifecycle callback releases input
+ownership before its exception is re-raised. On application shutdown, feature
+and mode `close()` methods run in reverse registration order, and one close
+failure is reported without preventing the remaining resources from closing.
 
 ### Add a feature
 

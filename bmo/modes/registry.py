@@ -47,10 +47,19 @@ class ModeRegistry:
             if self._closed or self._current_mode() is not None:
                 return None
             modes = tuple(self._modes.values())
-        return next(
-            (mode for mode in modes if mode.matches_start_request(user_text)),
-            None,
-        )
+        for mode in modes:
+            try:
+                matches = mode.matches_start_request(user_text)
+            except Exception as exc:
+                self._handle_lifecycle_failure(
+                    mode,
+                    "matches_start_request",
+                    exc,
+                )
+                raise
+            if matches:
+                return mode
+        return None
 
     def start(self, mode: InteractionMode, user_text: str) -> None:
         """Start a registered mode and make it the input owner."""
@@ -65,10 +74,8 @@ class ModeRegistry:
             self._active_mode = mode
         try:
             mode.start(user_text)
-        except Exception:
-            with self._lock:
-                if self._active_mode is mode:
-                    self._active_mode = None
+        except Exception as exc:
+            self._handle_lifecycle_failure(mode, "start", exc)
             raise
         self._clear_inactive(mode)
 
@@ -78,7 +85,11 @@ class ModeRegistry:
             mode = self._current_mode()
         if mode is None:
             return False
-        mode.handle_input(user_text)
+        try:
+            mode.handle_input(user_text)
+        except Exception as exc:
+            self._handle_lifecycle_failure(mode, "handle_input", exc)
+            raise
         self._clear_inactive(mode)
         return True
 
@@ -101,7 +112,13 @@ class ModeRegistry:
         """Return the active mode's policy or normal wake-word behavior."""
         with self._lock:
             mode = self._current_mode()
-        return mode.input_policy() if mode is not None else InputPolicy.wake_word()
+        if mode is None:
+            return InputPolicy.wake_word()
+        try:
+            return mode.input_policy()
+        except Exception as exc:
+            self._handle_lifecycle_failure(mode, "input_policy", exc)
+            raise
 
     def close(self) -> None:
         """Close every registered mode once, in reverse registration order."""
@@ -122,12 +139,39 @@ class ModeRegistry:
 
     def _current_mode(self) -> InteractionMode | None:
         mode = self._active_mode
-        if mode is not None and not mode.is_active():
-            self._active_mode = None
-            return None
+        if mode is not None:
+            try:
+                active = mode.is_active()
+            except Exception as exc:
+                self._handle_lifecycle_failure(mode, "is_active", exc)
+                raise
+            if not active:
+                self._active_mode = None
+                return None
         return mode
 
     def _clear_inactive(self, mode: InteractionMode) -> None:
+        try:
+            active = mode.is_active()
+        except Exception as exc:
+            self._handle_lifecycle_failure(mode, "is_active", exc)
+            raise
         with self._lock:
-            if self._active_mode is mode and not mode.is_active():
+            if self._active_mode is mode and not active:
                 self._active_mode = None
+
+    def _handle_lifecycle_failure(
+        self,
+        mode: InteractionMode,
+        lifecycle: str,
+        exc: Exception,
+    ) -> None:
+        """Release failed input ownership and identify the failing callback."""
+        with self._lock:
+            if self._active_mode is mode:
+                self._active_mode = None
+        print(
+            f"[MODE] Unexpected failure in '{mode.name}.{lifecycle}': "
+            f"{type(exc).__name__}: {exc}",
+            flush=True,
+        )

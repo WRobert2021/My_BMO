@@ -56,6 +56,7 @@ class BotGUI:
 
     BG_WIDTH, BG_HEIGHT = 800, 480
     OVERLAY_WIDTH, OVERLAY_HEIGHT = 400, 300
+    INTERACTION_FAILURE_MESSAGE = "Something went wrong. Please try again."
 
     def __init__(self, master: tk.Tk) -> None:
         self.master = master
@@ -435,117 +436,167 @@ class BotGUI:
             self.warm_up_logic()
             self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
             self.tts_thread.start()
-
-            while not self.exiting:
-                input_policy = self.mode_registry.input_policy()
-                while (
-                    input_policy.kind == InputPolicyKind.SUSPENDED
-                    and not self.exiting
-                ):
-                    self.shutdown_event.wait(0.1)
-                    input_policy = self.mode_registry.input_policy()
-                if self.exiting:
-                    return
-                if input_policy.kind == InputPolicyKind.CONTINUOUS:
-                    trigger_source = input_policy.trigger_source
-                    self.set_state(
-                        BotStates.LISTENING,
-                        input_policy.listening_status,
-                    )
-                else:
-                    trigger_source = self.detect_wake_word_or_ptt()
-                if self.exiting:
-                    return
-                if self.interrupted.is_set():
-                    self.interrupted.clear()
-                    self.set_state(BotStates.IDLE, "Resetting...")
-                    continue
-
-                if input_policy.kind == InputPolicyKind.WAKE_WORD:
-                    self.set_state(
-                        BotStates.LISTENING,
-                        input_policy.listening_status,
-                    )
-                if trigger_source == "STOP" or self.shutdown_event.is_set():
-                    return
-                self._start_interaction(trigger_source)
-                audio_path = (
-                    str(self.current_interaction.audio_path)
-                    if self.current_interaction
-                    else "input.wav"
-                )
-                if trigger_source == "PTT":
-                    audio_file = self.recorder.record_ptt(
-                        self.recording_active,
-                        filename=audio_path,
-                        shutdown_event=self.shutdown_event,
-                    )
-                else:
-                    audio_file = self.recorder.record_adaptive(
-                        filename=audio_path,
-                        shutdown_event=self.shutdown_event,
-                        initial_silence_timeout=(
-                            input_policy.initial_silence_timeout
-                        ),
-                    )
-
-                if not audio_file:
-                    self._finish_interaction("no_speech")
-                    if (
-                        input_policy.kind == InputPolicyKind.CONTINUOUS
-                        and self.mode_registry.is_active()
-                    ):
-                        self.set_state(
-                            BotStates.LISTENING,
-                            input_policy.no_speech_status,
-                        )
-                    else:
-                        self.set_state(BotStates.IDLE, "Heard nothing.")
-                    continue
-
-                self.play_sound(self.random_sound("ack"))
-                user_text = self.transcriber.transcribe(
-                    audio_file,
-                    archive_directory=(
-                        self.current_interaction.path / "input"
-                        if self.current_interaction
-                        else None
-                    ),
-                )
-                if not user_text:
-                    self._finish_interaction("transcription_empty")
-                    if (
-                        input_policy.kind == InputPolicyKind.CONTINUOUS
-                        and self.mode_registry.is_active()
-                    ):
-                        self.set_state(
-                            BotStates.LISTENING,
-                            input_policy.empty_transcript_status,
-                        )
-                    else:
-                        self.set_state(
-                            BotStates.IDLE,
-                            "Transcription empty.",
-                        )
-                    continue
-
-                if self.current_interaction:
-                    self.current_interaction.write_text(
-                        "input", "transcript.txt", user_text + "\n"
-                    )
-                    self.current_interaction.event(
-                        "transcription_completed",
-                        {"text": user_text, "audio_file": str(audio_file)},
-                    )
-                self.append_to_text(f"YOU: {user_text}")
-                self.interrupted.clear()
-                self.chat_and_respond(user_text)
-                self._finish_interaction("completed")
         except Exception as exc:
-            self._finish_interaction("error", str(exc))
             if not self.exiting:
-                traceback.print_exc()
+                traceback.print_exception(type(exc), exc, exc.__traceback__)
                 self.set_state(BotStates.ERROR, f"Fatal Error: {str(exc)[:40]}")
+            return
+
+        while not self.exiting:
+            try:
+                if not self._run_voice_interaction():
+                    return
+            except Exception as exc:
+                if self.exiting or self.shutdown_event.is_set():
+                    self.thinking_sound_active.clear()
+                    self._finish_interaction("error", str(exc))
+                    return
+                self._recover_interaction_failure(exc)
+
+    def _run_voice_interaction(self) -> bool:
+        """Run one voice-loop iteration, returning false when it should stop."""
+        input_policy = self.mode_registry.input_policy()
+        while (
+            input_policy.kind == InputPolicyKind.SUSPENDED
+            and not self.exiting
+        ):
+            self.shutdown_event.wait(0.1)
+            input_policy = self.mode_registry.input_policy()
+        if self.exiting:
+            return False
+        if input_policy.kind == InputPolicyKind.CONTINUOUS:
+            trigger_source = input_policy.trigger_source
+            self.set_state(
+                BotStates.LISTENING,
+                input_policy.listening_status,
+            )
+        else:
+            trigger_source = self.detect_wake_word_or_ptt()
+        if self.exiting:
+            return False
+        if self.interrupted.is_set():
+            self.interrupted.clear()
+            self.set_state(BotStates.IDLE, "Resetting...")
+            return True
+
+        if input_policy.kind == InputPolicyKind.WAKE_WORD:
+            self.set_state(
+                BotStates.LISTENING,
+                input_policy.listening_status,
+            )
+        if trigger_source == "STOP" or self.shutdown_event.is_set():
+            return False
+        self._start_interaction(trigger_source)
+        audio_path = (
+            str(self.current_interaction.audio_path)
+            if self.current_interaction
+            else "input.wav"
+        )
+        if trigger_source == "PTT":
+            audio_file = self.recorder.record_ptt(
+                self.recording_active,
+                filename=audio_path,
+                shutdown_event=self.shutdown_event,
+            )
+        else:
+            audio_file = self.recorder.record_adaptive(
+                filename=audio_path,
+                shutdown_event=self.shutdown_event,
+                initial_silence_timeout=(input_policy.initial_silence_timeout),
+            )
+
+        if not audio_file:
+            if (
+                input_policy.kind == InputPolicyKind.CONTINUOUS
+                and self.mode_registry.is_active()
+            ):
+                self.set_state(
+                    BotStates.LISTENING,
+                    input_policy.no_speech_status,
+                )
+            else:
+                self.set_state(BotStates.IDLE, "Heard nothing.")
+            self._finish_interaction("no_speech")
+            return True
+
+        self.play_sound(self.random_sound("ack"))
+        user_text = self.transcriber.transcribe(
+            audio_file,
+            archive_directory=(
+                self.current_interaction.path / "input"
+                if self.current_interaction
+                else None
+            ),
+        )
+        if not user_text:
+            if (
+                input_policy.kind == InputPolicyKind.CONTINUOUS
+                and self.mode_registry.is_active()
+            ):
+                self.set_state(
+                    BotStates.LISTENING,
+                    input_policy.empty_transcript_status,
+                )
+            else:
+                self.set_state(
+                    BotStates.IDLE,
+                    "Transcription empty.",
+                )
+            self._finish_interaction("transcription_empty")
+            return True
+
+        if self.current_interaction:
+            self.current_interaction.write_text(
+                "input", "transcript.txt", user_text + "\n"
+            )
+            self.current_interaction.event(
+                "transcription_completed",
+                {"text": user_text, "audio_file": str(audio_file)},
+            )
+        self.append_to_text(f"YOU: {user_text}")
+        self.interrupted.clear()
+        self.chat_and_respond(user_text)
+        self._finish_interaction("completed")
+        return True
+
+    def _recover_interaction_failure(self, exc: Exception) -> None:
+        """Report one failed turn and restore the loop to a usable state."""
+        print(
+            f"[INTERACTION] Unexpected failure: {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
+        self.thinking_sound_active.clear()
+        self.interrupted.clear()
+        try:
+            self.set_state(BotStates.ERROR, "Something went wrong.")
+            self._speak_complete_response(
+                self.INTERACTION_FAILURE_MESSAGE,
+                None,
+            )
+            self.wait_for_tts()
+        except Exception as recovery_exc:
+            print(
+                "[INTERACTION] Could not present the failure message: "
+                f"{type(recovery_exc).__name__}: {recovery_exc}",
+                flush=True,
+            )
+            traceback.print_exception(
+                type(recovery_exc),
+                recovery_exc,
+                recovery_exc.__traceback__,
+            )
+        finally:
+            self.thinking_sound_active.clear()
+            self._finish_interaction("error", str(exc))
+            try:
+                self.set_state(BotStates.IDLE, "Ready")
+            except Exception as state_exc:
+                print(
+                    "[INTERACTION] Could not restore the idle state: "
+                    f"{type(state_exc).__name__}: {state_exc}",
+                    flush=True,
+                )
 
     def warm_up_logic(self) -> None:
         self.set_state(BotStates.WARMUP, "Warming up brains...")
@@ -683,6 +734,11 @@ class BotGUI:
                         "duration_seconds": time.monotonic() - started,
                     },
                 )
+            print(
+                f"[FEATURE] Unexpected failure in '{action_name}': "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
             raise
         if self.current_interaction:
             self.current_interaction.append_json(
@@ -850,10 +906,9 @@ class BotGUI:
 
             self.wait_for_tts()
             self.set_state(BotStates.IDLE, "Ready")
-        except Exception as exc:
-            print(f"LLM Error: {exc}", flush=True)
-            self._finish_interaction("error", str(exc))
-            self.set_state(BotStates.ERROR, "Brain Freeze!")
+        except Exception:
+            self.thinking_sound_active.clear()
+            raise
 
     def _current_mode_face(self) -> Image.Image | None:
         frames = self.animations.get(

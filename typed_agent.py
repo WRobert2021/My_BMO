@@ -68,50 +68,63 @@ class TypedBotGUI(BotGUI):
                 daemon=True,
             )
             self.tts_thread.start()
-
-            print("Typed on-screen debug input is ready.", flush=True)
-            while not self.exiting:
-                while (
-                    self.mode_registry.input_policy().kind
-                    == InputPolicyKind.SUSPENDED
-                    and not self.exiting
-                ):
-                    self.shutdown_event.wait(0.1)
-                if self.exiting:
-                    return
-
-                self.set_state(BotStates.IDLE, "Type a command below...")
-                user_text = self._wait_for_typed_input()
-
-                if self.exiting or user_text is None:
-                    return
-                if user_text.lower() == "/quit":
-                    self.master.after(0, self.safe_exit)
-                    return
-                if not user_text:
-                    continue
-
-                self._start_interaction("TYPED")
-                if self.current_interaction:
-                    self.current_interaction.write_text(
-                        "input",
-                        "transcript.txt",
-                        user_text + "\n",
-                    )
-                    self.current_interaction.event(
-                        "typed_input_received",
-                        {"text": user_text},
-                    )
-
-                self.append_to_text(f"YOU: {user_text}")
-                self.interrupted.clear()
-                self.chat_and_respond(user_text)
-                self._finish_interaction("completed")
         except Exception as exc:
-            self._finish_interaction("error", str(exc))
             if not self.exiting:
-                traceback.print_exc()
+                traceback.print_exception(type(exc), exc, exc.__traceback__)
                 self.set_state(BotStates.ERROR, f"Fatal Error: {str(exc)[:40]}")
+            return
+
+        print("Typed on-screen debug input is ready.", flush=True)
+        while not self.exiting:
+            try:
+                if not self._run_typed_interaction():
+                    return
+            except Exception as exc:
+                if self.exiting or self.shutdown_event.is_set():
+                    self.thinking_sound_active.clear()
+                    self._finish_interaction("error", str(exc))
+                    return
+                self._recover_interaction_failure(exc)
+
+    def _run_typed_interaction(self) -> bool:
+        """Run one typed-loop iteration, returning false when it should stop."""
+        while (
+            self.mode_registry.input_policy().kind
+            == InputPolicyKind.SUSPENDED
+            and not self.exiting
+        ):
+            self.shutdown_event.wait(0.1)
+        if self.exiting:
+            return False
+
+        self.set_state(BotStates.IDLE, "Type a command below...")
+        user_text = self._wait_for_typed_input()
+
+        if self.exiting or user_text is None:
+            return False
+        if user_text.lower() == "/quit":
+            self.master.after(0, self.safe_exit)
+            return False
+        if not user_text:
+            return True
+
+        self._start_interaction("TYPED")
+        if self.current_interaction:
+            self.current_interaction.write_text(
+                "input",
+                "transcript.txt",
+                user_text + "\n",
+            )
+            self.current_interaction.event(
+                "typed_input_received",
+                {"text": user_text},
+            )
+
+        self.append_to_text(f"YOU: {user_text}")
+        self.interrupted.clear()
+        self.chat_and_respond(user_text)
+        self._finish_interaction("completed")
+        return True
 
 
 def main() -> None:

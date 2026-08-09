@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -89,6 +91,64 @@ class ModeRegistryTests(unittest.TestCase):
         self.assertTrue(first.closed)
         self.assertTrue(second.closed)
         self.assertFalse(registry.is_active())
+
+    def test_start_failure_releases_input_ownership_and_identifies_mode(
+        self,
+    ) -> None:
+        class StartFailingMode(StubMode):
+            def start(self, user_text: str) -> None:
+                self.active = True
+                raise RuntimeError("start exploded")
+
+        mode = StartFailingMode("broken-start", "start broken")
+        registry = ModeRegistry((mode,))
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            RuntimeError,
+            "start exploded",
+        ):
+            registry.route_input("start broken")
+
+        self.assertFalse(registry.is_active())
+        self.assertEqual(
+            registry.input_policy().kind,
+            InputPolicyKind.WAKE_WORD,
+        )
+        self.assertIn("broken-start.start", output.getvalue())
+        self.assertIn("start exploded", output.getvalue())
+
+    def test_input_failure_cannot_permanently_suspend_input(self) -> None:
+        class InputFailingMode(StubMode):
+            def handle_input(self, user_text: str) -> None:
+                raise RuntimeError("input exploded")
+
+            def input_policy(self) -> InputPolicy:
+                return InputPolicy.suspended()
+
+        mode = InputFailingMode("broken-input", "start broken")
+        registry = ModeRegistry((mode,))
+        registry.route_input("start broken")
+        self.assertEqual(
+            registry.input_policy().kind,
+            InputPolicyKind.SUSPENDED,
+        )
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            RuntimeError,
+            "input exploded",
+        ):
+            registry.route_input("next answer")
+
+        self.assertFalse(registry.is_active())
+        self.assertEqual(
+            registry.input_policy().kind,
+            InputPolicyKind.WAKE_WORD,
+        )
+        self.assertFalse(registry.route_input("ordinary chat"))
+        self.assertIn("broken-input.handle_input", output.getvalue())
+        self.assertIn("input exploded", output.getvalue())
 
 
 class TwentyQuestionsModeTests(unittest.TestCase):
