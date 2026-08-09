@@ -183,7 +183,8 @@ configuration failure. For individual enabled entries, configuration, import,
 missing-hook, and hook exceptions are reported and skipped while later entries
 continue. Registration is transactional: if a hook partially registers and
 then fails on an exception or duplicate name, its additions are rolled back
-without disturbing earlier modules. Rolled-back modes are closed immediately.
+without disturbing earlier modules. Rolled-back tools and modes are closed
+immediately.
 Disabled entries produce no failure because they are not validated or imported.
 Consequently, malformed or disabled extension entries cannot prevent valid
 built-in entries later in the same explicit list from registering. Supplying a
@@ -200,9 +201,10 @@ error handling runs. Once startup has completed, each voice or typed turn has
 its own failure boundary: an unexpected tool or mode failure ends only that
 interaction, presents a generic retry message, and leaves the main loop ready
 for another request. A failing mode lifecycle callback releases input
-ownership before its exception is re-raised. On application shutdown, feature
-and mode `close()` methods run in reverse registration order, and one close
-failure is reported without preventing the remaining resources from closing.
+ownership, closes and quarantines that mode for the rest of the process, then
+re-raises the original exception. On application shutdown, feature and mode
+`close()` methods run in reverse registration order, and one close failure is
+reported without preventing the remaining resources from closing.
 
 ### Add a feature
 

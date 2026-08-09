@@ -4,12 +4,50 @@ from __future__ import annotations
 
 import types
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 
-from bmo.features import ToolContract, ToolResult
+from bmo.features import ToolContract, ToolRegistry, ToolResult
 from bmo.features.loader import load_feature_registry
 from bmo.prompts import build_routing_prompt, build_system_prompt
 from bmo.tools import ToolRouter
+
+
+class ResourceTool:
+    description = ""
+    schemas: tuple[str, ...] = ()
+    prompt_guidance: tuple[str, ...] = ()
+    prompt_examples: tuple[tuple[str, str], ...] = ()
+
+    def __init__(
+        self,
+        action: str,
+        *,
+        aliases: tuple[str, ...] = (),
+        close_events: list[str] | None = None,
+        fail_on_close: bool = False,
+    ) -> None:
+        self.action = action
+        self.aliases = aliases
+        self.close_events = close_events
+        self.fail_on_close = fail_on_close
+        self.close_count = 0
+
+    def execute(self, request) -> ToolResult:
+        del request
+        return ToolResult.success(self.action)
+
+    def match_direct_action(self, user_text: str):
+        del user_text
+        return None
+
+    def close(self) -> None:
+        self.close_count += 1
+        if self.close_events is not None:
+            self.close_events.append(self.action)
+        if self.fail_on_close:
+            raise RuntimeError("close exploded")
 
 
 class FeatureLoadingTests(unittest.TestCase):
@@ -100,6 +138,17 @@ class FeatureLoadingTests(unittest.TestCase):
         first = types.ModuleType("first")
         duplicate = types.ModuleType("duplicate")
         after = types.ModuleType("after")
+        close_events: list[str] = []
+        partial = ResourceTool(
+            "partial",
+            aliases=("partial_alias",),
+            close_events=close_events,
+        )
+        later_partial = ResourceTool(
+            "later_partial",
+            aliases=("later_alias",),
+            close_events=close_events,
+        )
 
         def register_first(registry, settings):
             del settings
@@ -107,17 +156,14 @@ class FeatureLoadingTests(unittest.TestCase):
                 ToolContract(
                     "alpha",
                     lambda request: ToolResult.success("alpha"),
+                    aliases=("alpha_alias",),
                 )
             )
 
         def register_duplicate(registry, settings):
             del settings
-            registry.register(
-                ToolContract(
-                    "partial",
-                    lambda request: ToolResult.success("partial"),
-                )
-            )
+            registry.register(partial)
+            registry.register(later_partial)
             registry.register(
                 ToolContract(
                     "alpha",
@@ -131,6 +177,7 @@ class FeatureLoadingTests(unittest.TestCase):
                 ToolContract(
                     "beta",
                     lambda request: ToolResult.success("beta"),
+                    aliases=("beta_alias",),
                 )
             )
 
@@ -156,9 +203,56 @@ class FeatureLoadingTests(unittest.TestCase):
 
         self.assertEqual(result.registry.actions, {"alpha", "beta"})
         self.assertNotIn("partial", result.registry.actions)
+        self.assertNotIn("partial_alias", result.registry.aliases)
+        self.assertNotIn("later_partial", result.registry.actions)
+        self.assertNotIn("later_alias", result.registry.aliases)
+        self.assertEqual(
+            result.registry.aliases,
+            {"alpha_alias": "alpha", "beta_alias": "beta"},
+        )
+        self.assertEqual(close_events, ["later_partial", "partial"])
+        self.assertEqual(partial.close_count, 1)
+        self.assertEqual(later_partial.close_count, 1)
         self.assertEqual(len(result.failures), 1)
         self.assertEqual(result.failures[0].stage, "register")
+        self.assertEqual(result.modules, ("first", "after"))
         self.assertIn("Duplicate tool action name 'alpha'", messages[0])
+
+        result.registry.close()
+
+        self.assertEqual(partial.close_count, 1)
+        self.assertEqual(later_partial.close_count, 1)
+
+    def test_rollback_close_failure_does_not_mask_registration_failure(
+        self,
+    ) -> None:
+        existing = ResourceTool("existing", aliases=("existing_alias",))
+        partial = ResourceTool(
+            "partial",
+            aliases=("partial_alias",),
+            fail_on_close=True,
+        )
+        registry = ToolRegistry((existing,))
+        registration_failure = RuntimeError("registration exploded")
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(RuntimeError) as raised:
+            with registry.registration():
+                registry.register(partial)
+                raise registration_failure
+
+        self.assertIs(raised.exception, registration_failure)
+        self.assertEqual(registry.actions, {"existing"})
+        self.assertEqual(registry.aliases, {"existing_alias": "existing"})
+        self.assertEqual(existing.close_count, 0)
+        self.assertEqual(partial.close_count, 1)
+        self.assertIn("Could not roll back 'partial'", output.getvalue())
+        self.assertIn("close exploded", output.getvalue())
+
+        registry.close()
+
+        self.assertEqual(existing.close_count, 1)
+        self.assertEqual(partial.close_count, 1)
 
     def test_settings_are_passed_to_the_module_registration_hook(self) -> None:
         module = types.ModuleType("configured")

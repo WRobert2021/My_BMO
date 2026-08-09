@@ -69,16 +69,7 @@ class ToolRegistry:
             return
         self._closed = True
         for tool in reversed(tuple(self._tools.values())):
-            close = getattr(tool, "close", None)
-            if not callable(close):
-                continue
-            try:
-                close()
-            except Exception as exc:
-                print(
-                    f"[FEATURE] Could not close '{tool.action}': {exc}",
-                    flush=True,
-                )
+            self._close_tool(tool)
 
     @property
     def actions(self) -> set[str]:
@@ -117,15 +108,43 @@ class ToolRegistry:
 
     @contextmanager
     def registration(self):
-        """Roll back all registrations performed in a failing block."""
+        """Roll back and close tools registered by a failing hook."""
         tools_before = self._tools.copy()
         aliases_before = self._aliases.copy()
         try:
             yield
         except Exception:
+            existing_tool_ids = {id(tool) for tool in tools_before.values()}
+            rolled_back = []
+            rolled_back_ids: set[int] = set()
+            for action, tool in self._tools.items():
+                tool_id = id(tool)
+                if (
+                    action in tools_before
+                    or tool_id in existing_tool_ids
+                    or tool_id in rolled_back_ids
+                ):
+                    continue
+                rolled_back.append(tool)
+                rolled_back_ids.add(tool_id)
             self._tools = tools_before
             self._aliases = aliases_before
+            for tool in reversed(rolled_back):
+                self._close_tool(tool, action="roll back")
             raise
+
+    @staticmethod
+    def _close_tool(tool: Tool, *, action: str = "close") -> None:
+        close = getattr(tool, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception as exc:
+            print(
+                f"[FEATURE] Could not {action} '{tool.action}': {exc}",
+                flush=True,
+            )
 
     def register(self, tool: Tool) -> None:
         """Register one tool, rejecting all ambiguous identifiers."""

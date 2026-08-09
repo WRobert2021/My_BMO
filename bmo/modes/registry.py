@@ -19,6 +19,8 @@ class ModeRegistry:
     def __init__(self, modes: Iterable[InteractionMode] = ()) -> None:
         self._modes: dict[str, InteractionMode] = {}
         self._active_mode: InteractionMode | None = None
+        self._quarantined_modes: dict[int, InteractionMode] = {}
+        self._closed_modes: dict[int, InteractionMode] = {}
         self._closed = False
         self._lock = threading.RLock()
         for mode in modes:
@@ -32,6 +34,8 @@ class ModeRegistry:
         with self._lock:
             if self._closed:
                 raise RuntimeError("Cannot register modes after closing the registry.")
+            if self._quarantined_modes.get(id(mode)) is mode:
+                raise RuntimeError(f"Mode '{name}' is quarantined.")
             if name in self._modes:
                 raise DuplicateModeError(f"Duplicate mode name '{name}'.")
             self._modes[name] = mode
@@ -155,7 +159,7 @@ class ModeRegistry:
             self._active_mode = None
             modes = tuple(reversed(tuple(self._modes.values())))
         for mode in modes:
-            self._close_mode(mode)
+            self._close_mode_once(mode)
 
     def _current_mode(self) -> InteractionMode | None:
         mode = self._active_mode
@@ -186,15 +190,33 @@ class ModeRegistry:
         lifecycle: str,
         exc: Exception,
     ) -> None:
-        """Release failed input ownership and identify the failing callback."""
+        """Release, quarantine, and close a mode after a failed callback."""
         with self._lock:
             if self._active_mode is mode:
                 self._active_mode = None
+            for name, registered in tuple(self._modes.items()):
+                if registered is mode:
+                    del self._modes[name]
+            self._quarantined_modes[id(mode)] = mode
         print(
             f"[MODE] Unexpected failure in '{mode.name}.{lifecycle}': "
             f"{type(exc).__name__}: {exc}",
             flush=True,
         )
+        self._close_mode_once(mode, action="clean up")
+
+    def _close_mode_once(
+        self,
+        mode: InteractionMode,
+        *,
+        action: str = "close",
+    ) -> None:
+        with self._lock:
+            mode_id = id(mode)
+            if self._closed_modes.get(mode_id) is mode:
+                return
+            self._closed_modes[mode_id] = mode
+        self._close_mode(mode, action=action)
 
     @staticmethod
     def _close_mode(

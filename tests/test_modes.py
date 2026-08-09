@@ -24,6 +24,7 @@ class StubMode:
         self.started_with: list[str] = []
         self.inputs: list[str] = []
         self.closed = False
+        self.close_count = 0
 
     def matches_start_request(self, user_text: str) -> bool:
         return user_text == self.start_phrase
@@ -49,11 +50,38 @@ class StubMode:
         )
 
     def close(self) -> None:
+        self.close_count += 1
         self.closed = True
         self.active = False
 
 
 class ModeRegistryTests(unittest.TestCase):
+    def assert_failure_isolated(
+        self,
+        registry: ModeRegistry,
+        broken: StubMode,
+        healthy: StubMode,
+    ) -> None:
+        self.assertEqual(registry.names, (healthy.name,))
+        self.assertIsNone(registry.get(broken.name))
+        self.assertEqual(broken.close_count, 1)
+        self.assertFalse(registry.is_active())
+        self.assertEqual(
+            registry.input_policy().kind,
+            InputPolicyKind.WAKE_WORD,
+        )
+        self.assertIsNone(registry.match_start_request(broken.start_phrase))
+        with self.assertRaisesRegex(RuntimeError, "quarantined"):
+            registry.register(broken)
+
+        self.assertTrue(registry.route_input(healthy.start_phrase))
+        self.assertEqual(healthy.started_with, [healthy.start_phrase])
+
+        registry.close()
+
+        self.assertEqual(broken.close_count, 1)
+        self.assertEqual(healthy.close_count, 1)
+
     def test_routes_start_and_subsequent_input_through_one_mode(self) -> None:
         first = StubMode("first", "start first")
         second = StubMode("second", "start second")
@@ -90,6 +118,8 @@ class ModeRegistryTests(unittest.TestCase):
 
         self.assertTrue(first.closed)
         self.assertTrue(second.closed)
+        self.assertEqual(first.close_count, 1)
+        self.assertEqual(second.close_count, 1)
         self.assertFalse(registry.is_active())
 
     def test_close_runs_in_reverse_order_and_continues_after_failure(self) -> None:
@@ -130,7 +160,8 @@ class ModeRegistryTests(unittest.TestCase):
                 raise RuntimeError("start exploded")
 
         mode = StartFailingMode("broken-start", "start broken")
-        registry = ModeRegistry((mode,))
+        healthy = StubMode("healthy", "start healthy")
+        registry = ModeRegistry((mode, healthy))
 
         output = StringIO()
         with redirect_stdout(output), self.assertRaisesRegex(
@@ -139,13 +170,9 @@ class ModeRegistryTests(unittest.TestCase):
         ):
             registry.route_input("start broken")
 
-        self.assertFalse(registry.is_active())
-        self.assertEqual(
-            registry.input_policy().kind,
-            InputPolicyKind.WAKE_WORD,
-        )
         self.assertIn("broken-start.start", output.getvalue())
         self.assertIn("start exploded", output.getvalue())
+        self.assert_failure_isolated(registry, mode, healthy)
 
     def test_input_failure_cannot_permanently_suspend_input(self) -> None:
         class InputFailingMode(StubMode):
@@ -156,7 +183,8 @@ class ModeRegistryTests(unittest.TestCase):
                 return InputPolicy.suspended()
 
         mode = InputFailingMode("broken-input", "start broken")
-        registry = ModeRegistry((mode,))
+        healthy = StubMode("healthy", "start healthy")
+        registry = ModeRegistry((mode, healthy))
         registry.route_input("start broken")
         self.assertEqual(
             registry.input_policy().kind,
@@ -170,14 +198,104 @@ class ModeRegistryTests(unittest.TestCase):
         ):
             registry.route_input("next answer")
 
-        self.assertFalse(registry.is_active())
-        self.assertEqual(
-            registry.input_policy().kind,
-            InputPolicyKind.WAKE_WORD,
-        )
-        self.assertFalse(registry.route_input("ordinary chat"))
         self.assertIn("broken-input.handle_input", output.getvalue())
         self.assertIn("input exploded", output.getvalue())
+        self.assert_failure_isolated(registry, mode, healthy)
+
+    def test_is_active_failure_quarantines_and_closes_only_broken_mode(
+        self,
+    ) -> None:
+        class ActiveFailingMode(StubMode):
+            fail_is_active = False
+
+            def is_active(self) -> bool:
+                if self.fail_is_active:
+                    raise RuntimeError("active check exploded")
+                return super().is_active()
+
+        mode = ActiveFailingMode("broken-active", "start broken")
+        healthy = StubMode("healthy", "start healthy")
+        registry = ModeRegistry((mode, healthy))
+        registry.route_input("start broken")
+        mode.fail_is_active = True
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            RuntimeError,
+            "active check exploded",
+        ):
+            registry.is_active()
+
+        self.assertIn("broken-active.is_active", output.getvalue())
+        self.assert_failure_isolated(registry, mode, healthy)
+
+    def test_input_policy_failure_quarantines_and_closes_only_broken_mode(
+        self,
+    ) -> None:
+        class PolicyFailingMode(StubMode):
+            def input_policy(self) -> InputPolicy:
+                raise RuntimeError("policy exploded")
+
+        mode = PolicyFailingMode("broken-policy", "start broken")
+        healthy = StubMode("healthy", "start healthy")
+        registry = ModeRegistry((mode, healthy))
+        registry.route_input("start broken")
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            RuntimeError,
+            "policy exploded",
+        ):
+            registry.input_policy()
+
+        self.assertIn("broken-policy.input_policy", output.getvalue())
+        self.assert_failure_isolated(registry, mode, healthy)
+
+    def test_match_failure_quarantines_and_closes_only_broken_mode(self) -> None:
+        class MatchFailingMode(StubMode):
+            def matches_start_request(self, user_text: str) -> bool:
+                raise RuntimeError("match exploded")
+
+        mode = MatchFailingMode("broken-match", "start broken")
+        healthy = StubMode("healthy", "start healthy")
+        registry = ModeRegistry((mode, healthy))
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(
+            RuntimeError,
+            "match exploded",
+        ):
+            registry.match_start_request("ordinary chat")
+
+        self.assertIn("broken-match.matches_start_request", output.getvalue())
+        self.assert_failure_isolated(registry, mode, healthy)
+
+    def test_close_failure_does_not_mask_original_lifecycle_failure(self) -> None:
+        lifecycle_failure = RuntimeError("start exploded")
+
+        class CleanupFailingMode(StubMode):
+            def start(self, user_text: str) -> None:
+                self.active = True
+                raise lifecycle_failure
+
+            def close(self) -> None:
+                self.close_count += 1
+                self.active = False
+                raise RuntimeError("close exploded")
+
+        mode = CleanupFailingMode("broken-cleanup", "start broken")
+        healthy = StubMode("healthy", "start healthy")
+        registry = ModeRegistry((mode, healthy))
+
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(RuntimeError) as raised:
+            registry.route_input("start broken")
+
+        self.assertIs(raised.exception, lifecycle_failure)
+        self.assertIn("broken-cleanup.start", output.getvalue())
+        self.assertIn("Could not clean up 'broken-cleanup'", output.getvalue())
+        self.assertIn("close exploded", output.getvalue())
+        self.assert_failure_isolated(registry, mode, healthy)
 
 
 class TwentyQuestionsModeTests(unittest.TestCase):
