@@ -47,6 +47,13 @@
       "module": "bmo.features.capture_image",
       "enabled": true,
       "settings": {}
+    },
+    {
+      "module": "bmo.features.say_hello",
+      "enabled": false,
+      "settings": {
+        "greeting": "Hello!"
+      }
     }
   ]
 }

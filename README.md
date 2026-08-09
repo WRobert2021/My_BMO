@@ -35,7 +35,7 @@ be-more-agent/
 ├── agent.py                   # The main brain script
 ├── setup.sh                   # Auto-installer script
 ├── wakeword.onnx              # OpenWakeWord model (The "Ear")
-├── config.json                # User settings (Models, Prompt, Hardware)
+├── config.json                # Local user settings (copied from the example)
 ├── chat_memory.json           # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -102,7 +102,17 @@ python agent.py
 
 ## 📂 Configuration (`config.json`)
 
-You can modify the hardware behavior and personality in `config.json`. The `agent.py` script creates this on the first run if it doesn't exist, but you can create it manually:
+The application reads local settings from `config.json`, but it does **not**
+create that file. If the file is absent or invalid, BMO reports a parsing error
+when applicable and runs with the defaults in `bmo/config.py` without writing
+anything. To keep a local configuration, copy the tracked example and edit the
+copy:
+
+```bash
+cp example.config.json config.json
+```
+
+For example:
 
 ```json
 {
@@ -117,13 +127,35 @@ You can modify the hardware behavior and personality in `config.json`. The `agen
 }
 ```
 
-Feature modules are configured by the `features` list shown in
-`example.config.json`. Each entry has a Python `module`, an `enabled` boolean,
-and a module-specific `settings` object. Omitting `features` keeps all built-in
-capabilities enabled. Disabled modules are not imported. The `set_timer` feature
-accepts optional `max_timers` and `max_duration_seconds` settings; set its
-`enabled` field to `false` to remove timer routing and avoid starting its
-scheduler.
+### Features and modes
+
+A **feature** is a short-lived, model-routable action such as checking the time
+or setting a timer. Feature modules are selected by the ordered `features` list
+shown in `example.config.json`:
+
+- Omitting `features` enables all built-in feature modules. Once the list is
+  present, it is an allowlist: only entries with `"enabled": true` are loaded,
+  and an empty list disables every feature.
+- `enabled` defaults to `true`, and `settings` defaults to `{}`. A disabled
+  entry is skipped before its module name or settings are validated, so it is
+  never imported and cannot start workers or register prompt/routing metadata.
+- Invalid entries, import failures, missing `register` hooks, and
+  registration conflicts are reported per enabled entry. Other valid entries
+  still load, and a failed registration leaves none of that module's partial
+  tools behind.
+- The system and routing prompts advertise only tools that registered
+  successfully. Disabling `set_timer`, for example, removes timer routing and
+  avoids constructing its scheduler.
+
+A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
+Pairs UI. Modes have an active/inactive lifecycle and choose whether input uses
+the wake word, continues listening, or is suspended while a UI owns the turn.
+Only one mode can own input at a time. Modes are currently registered directly
+by `BotGUI`; there is no `modes` configuration key and the built-in modes cannot
+be enabled or disabled through `example.config.json`.
+
+The complete feature and mode contracts, failure boundaries, and a minimal
+`say_hello` feature are in [the architecture guide](docs/architecture.md#extension-contracts).
 
 ## Interaction archives
 
@@ -171,7 +203,11 @@ When you run the `setup.sh` script, it will automatically download the compiled 
 3. Place both downloaded files inside the `voices/` folder.
 4. Ensure your `config.json` file points to the new model:
    ```json
-   "voice_model": "voices/bmo.onnx"
+   {
+     "voice_model": "voices/bmo.onnx"
+   }
+   ```
+
 ---
 
 ## ⚠️ Troubleshooting
