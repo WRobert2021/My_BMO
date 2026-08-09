@@ -52,8 +52,22 @@ class SearchWebTool:
         self.last_details: dict[str, Any] | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
-        value = request.get("value") or request.get("query")
-        return self._searcher(str(value or "").strip())
+        query = request.get("query") or request.get("value")
+        return self._searcher(str(query or "").strip())
+
+    @staticmethod
+    def prepare_model_request(
+        request: ToolRequest,
+    ) -> dict[str, Any] | None:
+        """Require search terms before accepting a model-produced request."""
+        normalized = dict(request)
+        query = str(
+            request.get("query") or request.get("value") or ""
+        ).strip()
+        if not query:
+            return None
+        normalized["query"] = query
+        return normalized
 
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:

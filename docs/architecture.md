@@ -87,8 +87,10 @@ contract in `bmo.features.contracts`:
   the application whether it contains content, is empty, failed, falls back to
   chat, or requests camera capture.
 - `match_direct_action(user_text)` returns action data only for deterministic,
-  unambiguous phrases. `normalize_request(request)` and `close()` are optional
-  hooks for request cleanup and resource ownership.
+  unambiguous phrases. `normalize_request(request)`,
+  `prepare_model_request(request)`, and `close()` are optional hooks for
+  request cleanup, model-route validation, and resource ownership. Returning
+  `None` from `prepare_model_request` rejects that model-produced request.
 - A background feature sends `RuntimeNotification` values through
   `registry.notify_runtime`; it must stop its workers in `close()`.
 

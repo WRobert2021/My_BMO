@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import types
 import unittest
+from unittest.mock import patch
 
+from bmo.features import ToolContract, ToolResult
 from bmo.intent import (
     infer_game_answer,
     infer_game_candidates,
@@ -13,6 +16,77 @@ from bmo.tools import ToolRouter
 
 
 class IntentRoutingTests(unittest.TestCase):
+    def test_configured_custom_feature_receives_every_model_argument(
+        self,
+    ) -> None:
+        module = types.ModuleType("custom_color_feature")
+        received = []
+
+        def execute(request):
+            received.append(dict(request))
+            return ToolResult.success("Color set.")
+
+        def register(registry, settings):
+            del settings
+            registry.register(
+                ToolContract(
+                    "set_color",
+                    execute,
+                    description="Set a display color and brightness.",
+                    schemas=(
+                        '{"action":"set_color","color":"name",'
+                        '"brightness":40}',
+                    ),
+                )
+            )
+
+        module.register = register
+        with patch(
+            "bmo.features.loader._load_module",
+            return_value=module,
+        ):
+            router = ToolRouter(
+                {
+                    "features": [
+                        {
+                            "module": "custom_color_feature",
+                            "enabled": True,
+                            "settings": {},
+                        }
+                    ]
+                }
+            )
+
+        def fake_chat(**kwargs):
+            return {
+                "message": {
+                    "content": (
+                        '{"action":"set_color","color":"blue",'
+                        '"brightness":40}'
+                    )
+                }
+            }
+
+        action = infer_tool_action(
+            "gemma:2b",
+            "Set the color to blue at 40 percent brightness",
+            fake_chat,
+            router,
+        )
+
+        self.assertEqual(
+            action,
+            {"action": "set_color", "color": "blue", "brightness": 40},
+        )
+        self.assertEqual(
+            router.execute(action),
+            ToolResult.success("Color set."),
+        )
+        self.assertEqual(
+            received,
+            [{"action": "set_color", "color": "blue", "brightness": 40}],
+        )
+
     def test_disabled_action_is_absent_from_prompt_and_rejected(self) -> None:
         router = ToolRouter(
             {
@@ -136,13 +210,52 @@ class IntentRoutingTests(unittest.TestCase):
             },
         )
 
-    def test_empty_search_query_is_rejected(self) -> None:
+    def test_timer_classification_preserves_every_supported_field_type(
+        self,
+    ) -> None:
         def fake_chat(**kwargs):
-            return {"message": {"content": '{"action":"search_web"}'}}
+            return {
+                "message": {
+                    "content": (
+                        '{"action":"set_timer","operation":"cancel",'
+                        '"duration":"90 seconds","duration_seconds":90,'
+                        '"timer_id":7,"label":"tea"}'
+                    )
+                }
+            }
 
-        self.assertIsNone(
-            infer_tool_action("gemma:2b", "Search for something", fake_chat)
+        self.assertEqual(
+            infer_tool_action(
+                "gemma:2b",
+                "Cancel tea timer number seven",
+                fake_chat,
+            ),
+            {
+                "action": "set_timer",
+                "operation": "cancel",
+                "duration": "90 seconds",
+                "duration_seconds": 90,
+                "timer_id": 7,
+                "label": "tea",
+            },
         )
+
+    def test_empty_search_query_is_rejected(self) -> None:
+        for content in (
+            '{"action":"search_web"}',
+            '{"action":"search_web","query":"  "}',
+        ):
+            with self.subTest(content=content):
+                def fake_chat(**kwargs):
+                    return {"message": {"content": content}}
+
+                self.assertIsNone(
+                    infer_tool_action(
+                        "gemma:2b",
+                        "Search for something",
+                        fake_chat,
+                    )
+                )
 
     def test_conversational_game_answer_can_use_local_model(self) -> None:
         def fake_chat(**kwargs):

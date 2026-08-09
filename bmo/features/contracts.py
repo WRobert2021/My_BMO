@@ -11,6 +11,10 @@ ToolRequest: TypeAlias = Mapping[str, Any]
 DirectAction: TypeAlias = dict[str, str]
 DirectMatcher: TypeAlias = Callable[[str], DirectAction | None]
 PromptExample: TypeAlias = tuple[str, str]
+RequestNormalizer: TypeAlias = Callable[[ToolRequest], Mapping[str, Any]]
+ModelRequestPreparer: TypeAlias = Callable[
+    [ToolRequest], Mapping[str, Any] | None
+]
 
 
 @dataclass(frozen=True)
@@ -129,6 +133,8 @@ class ToolContract:
     schemas: tuple[str, ...] = ()
     prompt_guidance: tuple[str, ...] = ()
     prompt_examples: tuple[PromptExample, ...] = ()
+    request_normalizer: RequestNormalizer | None = None
+    model_request_preparer: ModelRequestPreparer | None = None
 
     def execute(self, request: ToolRequest) -> ToolResponse:
         return self.handler(request)
@@ -137,3 +143,17 @@ class ToolContract:
         if self.direct_matcher is None:
             return None
         return self.direct_matcher(user_text)
+
+    def normalize_request(self, request: ToolRequest) -> dict[str, Any]:
+        if self.request_normalizer is None:
+            return dict(request)
+        return dict(self.request_normalizer(request))
+
+    def prepare_model_request(
+        self,
+        request: ToolRequest,
+    ) -> dict[str, Any] | None:
+        if self.model_request_preparer is None:
+            return dict(request)
+        prepared = self.model_request_preparer(request)
+        return None if prepared is None else dict(prepared)

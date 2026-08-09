@@ -188,6 +188,26 @@ class ToolRegistry:
             normalized_request["action"] = action
         return normalized_request
 
+    def prepare_model_request(
+        self,
+        request: ToolRequest,
+    ) -> dict[str, Any] | None:
+        """Prepare model action data for an enabled feature, or reject it."""
+        normalized_request = self.normalize_request(request)
+        action = str(normalized_request["action"])
+        tool = self._tools.get(action)
+        if tool is None:
+            return None
+
+        preparer = getattr(tool, "prepare_model_request", None)
+        if callable(preparer):
+            prepared_request = preparer(normalized_request)
+            if prepared_request is None:
+                return None
+            normalized_request = dict(prepared_request)
+            normalized_request["action"] = action
+        return normalized_request
+
     def execute(self, request: ToolRequest) -> ToolResponse:
         """Dispatch a request or raise if its action is not registered."""
         normalized_request = self.normalize_request(request)

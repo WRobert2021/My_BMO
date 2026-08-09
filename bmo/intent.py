@@ -24,7 +24,7 @@ def infer_tool_action(
     user_text: str,
     chat_request: ChatRequest,
     tool_router: ToolRouter | None = None,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     """Ask the local model to classify an utterance without conversation bias."""
     effective_router = tool_router or ToolRouter(
         {"online_timeout_seconds": 6}
@@ -47,38 +47,7 @@ def infer_tool_action(
     if not action_data:
         return None
 
-    normalized_data = effective_router.normalize_request(action_data)
-    action = str(normalized_data["action"])
-    valid_tools = effective_router.VALID_TOOLS
-    if action not in valid_tools:
-        return None
-
-    result = {"action": action}
-    if action == "get_weather":
-        location = str(normalized_data.get("location") or "")
-        if location:
-            result["location"] = location
-    elif action == "search_web":
-        query = str(
-            normalized_data.get("query")
-            or normalized_data.get("value")
-            or ""
-        ).strip()
-        if not query:
-            return None
-        result["query"] = query
-    elif action == "set_timer":
-        for key in (
-            "operation",
-            "duration",
-            "duration_seconds",
-            "timer_id",
-            "label",
-        ):
-            value = normalized_data.get(key)
-            if value not in (None, ""):
-                result[key] = str(value)
-    return result
+    return effective_router.registry.prepare_model_request(action_data)
 
 
 def infer_game_answer(

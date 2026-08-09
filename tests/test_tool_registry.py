@@ -55,6 +55,74 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(registry.actions, {"status"})
         self.assertEqual(registry.aliases, {"check_status": "status"})
 
+    def test_prepares_model_requests_without_losing_json_fields_or_types(
+        self,
+    ) -> None:
+        events = []
+
+        def normalize(request):
+            events.append(("normalize", dict(request)))
+            return {
+                **request,
+                "color": str(request.get("color") or "").lower(),
+            }
+
+        def prepare(request):
+            events.append(("prepare", dict(request)))
+            return request if request.get("color") else None
+
+        registry = ToolRegistry(
+            [
+                ToolContract(
+                    "set_color",
+                    Mock(return_value=ToolResult.success("ok")),
+                    aliases=("color",),
+                    request_normalizer=normalize,
+                    model_request_preparer=prepare,
+                )
+            ]
+        )
+        request = {
+            "action": " COLOR ",
+            "color": "BLUE",
+            "brightness": 40,
+            "transition": {"seconds": 1.5, "enabled": True},
+        }
+
+        self.assertEqual(
+            registry.prepare_model_request(request),
+            {
+                "action": "set_color",
+                "color": "blue",
+                "brightness": 40,
+                "transition": {"seconds": 1.5, "enabled": True},
+            },
+        )
+        self.assertEqual(
+            [event[0] for event in events],
+            ["normalize", "prepare"],
+        )
+
+    def test_model_request_preparation_rejects_unknown_and_invalid_actions(
+        self,
+    ) -> None:
+        registry = ToolRegistry(
+            [
+                ToolContract(
+                    "search",
+                    Mock(return_value=ToolResult.success("ok")),
+                    model_request_preparer=lambda request: (
+                        request if request.get("query") else None
+                    ),
+                )
+            ]
+        )
+
+        self.assertIsNone(
+            registry.prepare_model_request({"action": "disabled"})
+        )
+        self.assertIsNone(registry.prepare_model_request({"action": "search"}))
+
     def test_rejects_duplicate_action_names_without_partial_registration(
         self,
     ) -> None:
