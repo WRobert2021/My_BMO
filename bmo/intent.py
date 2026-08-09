@@ -26,9 +26,9 @@ def infer_tool_action(
     tool_router: ToolRouter | None = None,
 ) -> dict[str, Any] | None:
     """Ask the local model to classify an utterance without conversation bias."""
-    effective_router = tool_router or ToolRouter(
-        {"online_timeout_seconds": 6}
-    )
+    # An explicit empty mapping selects registry-owned defaults without reading
+    # private local configuration or duplicating a feature's settings here.
+    effective_router = tool_router or ToolRouter({})
     routing_prompt = build_routing_prompt(effective_router.registry)
     response = chat_request(
         model=model,

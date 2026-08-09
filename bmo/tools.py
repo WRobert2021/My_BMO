@@ -11,39 +11,30 @@ from bmo.features.loader import FeatureLoadFailure, load_feature_registry
 from bmo.features.registry import ToolRegistry
 
 
-_DEFAULT_ACTIONS = {
-    "get_time",
-    "set_timer",
-    "get_location",
-    "get_weather",
-    "search_web",
-    "capture_image",
-}
-_DEFAULT_ALIASES = {
-    "check_time": "get_time",
-    "timer": "set_timer",
-    "location": "get_location",
-    "where_am_i": "get_location",
-    "weather": "get_weather",
-    "forecast": "get_weather",
-    "check_weather": "get_weather",
-    "google": "search_web",
-    "browser": "search_web",
-    "news": "search_web",
-    "search_news": "search_web",
-    "look": "capture_image",
-    "see": "capture_image",
-}
 _default_router: ToolRouter | None = None
+
+
+class _DefaultRegistryMetadata:
+    """Expose historical class metadata from the actual default registry."""
+
+    def __init__(self, attribute: str) -> None:
+        self.attribute = attribute
+
+    def __get__(self, instance: object, owner: type) -> Any:
+        del owner
+        if isinstance(instance, ToolRouter):
+            return getattr(instance.registry, self.attribute)
+        return getattr(_get_default_router().registry, self.attribute)
 
 
 class ToolRouter:
     """Preserve the routing API while loading tools from configuration."""
 
-    # Class-level defaults preserve the historical introspection API. Each
-    # instance shadows these with the actions it actually loaded.
-    VALID_TOOLS = set(_DEFAULT_ACTIONS)
-    ALIASES = dict(_DEFAULT_ALIASES)
+    # These descriptors preserve ToolRouter.VALID_TOOLS/ALIASES without a
+    # second built-in vocabulary. Instances shadow them with their configured
+    # registry snapshots to retain the historical mutable-attribute behavior.
+    VALID_TOOLS = _DefaultRegistryMetadata("actions")
+    ALIASES = _DefaultRegistryMetadata("aliases")
 
     def __init__(
         self,
@@ -71,6 +62,10 @@ class ToolRouter:
         if time_tool is not None and hasattr(time_tool, "_now"):
             time_tool._now = lambda: datetime.datetime.now()
 
+        # Concrete names below are intentionally limited to the historical
+        # ToolRouter facade. Core matching, dispatch, and presentation use only
+        # registry metadata and typed result contracts.
+        #
         # Retain the patchable compatibility boundary used by archive and test
         # callers while the feature continues to own the real search work.
         search_tool = self.registry.get("search_web")
@@ -110,9 +105,10 @@ class ToolRouter:
             request = action_data or {}
             return ToolRegistry.resolve_action(request, self.ALIASES)
 
-        # Compatibility for ToolRouter.normalize_action(action_data).
+        # Compatibility for ToolRouter.normalize_action(action_data). Resolve
+        # through the loaded defaults instead of duplicating their aliases.
         request = self
-        return ToolRegistry.resolve_action(request, _DEFAULT_ALIASES)
+        return _get_default_router().registry.normalize_action(request)
 
     def normalize_request(self, action_data: dict[str, Any]) -> dict[str, Any]:
         """Apply action aliases and feature-specific request normalization."""
@@ -186,5 +182,5 @@ def _get_default_router() -> ToolRouter:
     """Lazily create a default router for legacy class-method-style calls."""
     global _default_router
     if _default_router is None:
-        _default_router = ToolRouter({"online_timeout_seconds": 6})
+        _default_router = ToolRouter({})
     return _default_router

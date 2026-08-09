@@ -125,6 +125,14 @@ Only successfully registered tools appear in prompts or dispatch. The
 compatibility router rejects unregistered actions, so disabling a feature also
 removes its aliases, direct phrases, prompt metadata, and execution path.
 
+The importable `tests.extension_modules.proof_feature` fixture is the
+end-to-end contract proof. A single enabled config entry supplies its custom
+settings and makes its action, alias, schema, direct matcher, string and numeric
+model parameters, request normalization, direct presentation, expected error,
+and cleanup hook available. Disabling that same entry removes every surface and
+does not import the module. Nothing in `bmo.tools`, `bmo.intent`, `bmo.prompts`,
+`bmo.app`, or either package export table names the fixture.
+
 ### Mode contract
 
 An `InteractionMode` has a unique normalized `name` and implements
@@ -162,6 +170,11 @@ matching start request. The built-in modules construct the existing adapters,
 and the matching UI and Bayesian Twenty Questions engine remain responsible for
 their existing score, history, and learning behavior.
 
+The importable `tests.extension_modules.proof_mode` fixture proves the same
+configuration-only boundary for modes. Its enabled entry registers start
+matching, active input ownership, configured input policy, and cleanup; its
+disabled entry is ignored before validation or import.
+
 ### Enable, disable, and failure isolation
 
 Feature and mode isolation is intentionally strongest during startup. A
@@ -172,6 +185,10 @@ continue. Registration is transactional: if a hook partially registers and
 then fails on an exception or duplicate name, its additions are rolled back
 without disturbing earlier modules. Rolled-back modes are closed immediately.
 Disabled entries produce no failure because they are not validated or imported.
+Consequently, malformed or disabled extension entries cannot prevent valid
+built-in entries later in the same explicit list from registering. Supplying a
+`features` or `modes` list still replaces the omitted-key defaults, so an
+explicit list must include whichever built-ins should remain enabled.
 
 Execution is a separate boundary. The registry validates the optional
 `ToolContext`, passes it only to tools that opt in, and validates that handlers
@@ -189,18 +206,24 @@ failure is reported without preventing the remaining resources from closing.
 
 ### Add a feature
 
-1. Create a module under `bmo/features/` with a tool and
+The exact minimal workflow for an optional feature is:
+
+1. **Create module:** add an importable module with a tool and
    `register(registry, settings)` hook. Keep imports free of side effects;
    allocate threads, devices, or clients during registration or first use.
-2. Give every action and alias a globally unique name. Return a typed
-   `ToolResult` for every normal outcome, and reserve exceptions for unexpected
-   failures that should reach the application error boundary.
-3. Add the module to the `features` list in local configuration. Add it to
-   `DEFAULT_FEATURE_MODULES` only if it should load when `features` is omitted,
-   and keep `example.config.json` synchronized for a new built-in default.
-4. Add focused tests for registration, settings, routing metadata, direct
-   matching, result kinds, failure behavior, and cleanup as applicable. Run
-   the focused tests and then the full suite with `.venv/bin/python -m pytest -q`.
+   Give each action and alias a globally unique name and return a typed
+   `ToolResult` for every expected outcome.
+2. **Add config entry:** add its module name, enabled boolean, and settings to
+   the local `features` list. No edit to `tools.py`, `intent.py`, `prompts.py`,
+   `app.py`, or `bmo.features.__init__` is required. Edit
+   `DEFAULT_FEATURE_MODULES` only when deliberately adding a built-in that must
+   load when the key is omitted; keep `example.config.json` synchronized then.
+3. **Add tests:** cover registration, settings, model and direct routing,
+   normalization, presentation/result kinds, expected failures, disablement,
+   and cleanup as applicable. Run focused tests and
+   `.venv/bin/python -m pytest -q`.
+4. **Restart:** restart the agent so it reloads configuration and imports the
+   newly enabled module.
 
 This minimal feature has no resources to close. Save it as
 `bmo/features/say_hello.py`:
@@ -249,15 +272,48 @@ module, copy the example to `config.json` if needed and set that entry's
 
 ### Add a mode
 
-1. Implement `InteractionMode` in a module with no import-time workers or UI
-   creation, then expose `register(registry, context, settings)`.
-2. Construct the mode only from `ModeRuntimeContext` services and module
-   settings. Do not accept or retain `BotGUI`.
-3. Add the module to the local `modes` list. Add it to
-   `DEFAULT_MODE_MODULES` only when it should load for configurations that omit
-   `modes`.
-4. Test disabled-import behavior, registration rollback, start matching, active
-   input routing, `InputPolicy`, and idempotent cleanup.
+The exact minimal workflow for an optional mode is:
+
+1. **Create module:** implement `InteractionMode` without import-time workers
+   or UI creation, then expose `register(registry, context, settings)`. Construct
+   it only from `ModeRuntimeContext` and settings; do not retain `BotGUI`.
+2. **Add config entry:** add the importable module to the local `modes` list.
+   No edit to `app.py`, the mode registry, or `bmo.modes.__init__` is required.
+   Edit `DEFAULT_MODE_MODULES` only when deliberately adding an omitted-key
+   built-in default.
+3. **Add tests:** cover enable/disable import behavior, settings, registration
+   rollback, start matching, active input routing, `InputPolicy`, and idempotent
+   cleanup. Run focused tests and `.venv/bin/python -m pytest -q`.
+4. **Restart:** restart the agent so it reloads configuration and imports the
+   newly enabled module.
+
+### Intentional runtime coupling
+
+An identifier-literal audit covers `bmo.app`, `bmo.intent`, `bmo.prompts`, and
+both registries. Those routing and presentation modules contain no built-in
+action names or concrete mode names. Their remaining branches are on typed,
+generic runtime concepts:
+
+- `ToolPresentationKind` selects direct text or model summarization.
+- `ToolAttachmentKind.IMAGE` and `ToolFollowUpKind.VISION` select application
+  services for typed artifacts; they do not identify the feature that produced
+  them.
+- `InputPolicyKind` selects wake-word, continuous, or suspended input behavior;
+  it does not identify the active mode.
+- `ToolResultKind` validates semantic outcomes independently of action names.
+
+Concrete built-in identifiers remain only at explicit compatibility and
+default-loading boundaries. `DEFAULT_FEATURE_MODULES` and
+`DEFAULT_MODE_MODULES` define behavior when their config keys are omitted.
+`bmo.tools.ToolRouter` names time, location, weather, and search only in legacy
+patch/property/wrapper APIs; its class-level `VALID_TOOLS` and `ALIASES` are now
+derived from the actual default registry rather than duplicated constants.
+`bmo.features.__init__` and `bmo.modes.games` retain lazy or concrete exports for
+callers using the old import paths. `bmo.config.DEFAULT_CONFIG` retains
+historical top-level built-in settings while module-level defaults and per-entry
+settings support new configurations. These compatibility surfaces do not
+participate in core matching, model routing, dispatch, presentation, or mode
+selection.
 
 ## Next extraction
 
