@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import threading
-import time
 import traceback
 import tkinter as tk
 from queue import Empty, Queue
 
 from bmo.app import BotGUI
+from bmo.modes import InputPolicyKind
 from bmo.state import BotStates
 
 
@@ -71,8 +71,12 @@ class TypedBotGUI(BotGUI):
 
             print("Typed on-screen debug input is ready.", flush=True)
             while not self.exiting:
-                while self.matching_game_active.is_set() and not self.exiting:
-                    time.sleep(0.1)
+                while (
+                    self.mode_registry.input_policy().kind
+                    == InputPolicyKind.SUSPENDED
+                    and not self.exiting
+                ):
+                    self.shutdown_event.wait(0.1)
                 if self.exiting:
                     return
 

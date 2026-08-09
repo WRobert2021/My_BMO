@@ -40,21 +40,15 @@ from bmo.features.contracts import (
     ToolResult,
     ToolResultKind,
 )
-from bmo.intent import (
-    infer_game_answer,
-    infer_game_candidates,
-    infer_tool_action,
-)
+from bmo.intent import infer_tool_action
 from bmo.memory import load_chat_history, save_chat_history
-from bmo.matching_game import (
-    MatchingGameApp,
-    is_matching_game_start_request,
-)
+from bmo.modes import InputPolicyKind, ModeRegistry
+from bmo.modes.games import MatchingGameMode, TwentyQuestionsMode
 from bmo.prompts import build_system_prompt
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
-from bmo.twenty_questions import QUESTIONS, TwentyQuestionsGame
+from bmo.twenty_questions import TwentyQuestionsGame
 
 
 class BotGUI:
@@ -100,11 +94,6 @@ class BotGUI:
             preferred_rate,
         )
         self.speaker = PiperSpeaker(str(self.config["voice_model"]))
-        self.twenty_questions = TwentyQuestionsGame(
-            debug=bool(self.config.get("twenty_questions_debug", False))
-        )
-        self.matching_game_active = threading.Event()
-        self.matching_game_ui: MatchingGameApp | None = None
 
         master.title("Pi Assistant")
         master.attributes("-fullscreen", True)
@@ -112,7 +101,6 @@ class BotGUI:
         master.bind("<Return>", self.handle_ptt_toggle)
         master.bind("<space>", self.handle_speaking_interrupt)
         master.protocol("WM_DELETE_WINDOW", self.safe_exit)
-        atexit.register(self.safe_exit)
 
         self.current_state = BotStates.WARMUP
         self.animations: dict[str, list[ImageTk.PhotoImage]] = {}
@@ -134,6 +122,36 @@ class BotGUI:
         self.tts_active = threading.Event()
         self.exiting = False
         self.main_thread: threading.Thread | None = None
+        self.mode_registry = ModeRegistry(
+            (
+                MatchingGameMode(
+                    self.master,
+                    speak_response=self._speak_complete_response,
+                    remember_turn=self._remember_turn,
+                    wait_for_tts=self.wait_for_tts,
+                    set_state=self.set_state,
+                    announce=self.enqueue_speech,
+                    face_provider=self._current_mode_face,
+                ),
+                TwentyQuestionsMode(
+                    TwentyQuestionsGame(
+                        debug=bool(
+                            self.config.get("twenty_questions_debug", False)
+                        )
+                    ),
+                    text_model=self.text_model,
+                    chat=self._logged_chat,
+                    speak_response=self._speak_complete_response,
+                    wait_for_tts=self.wait_for_tts,
+                    set_state=self.set_state,
+                    answer_wait_seconds=self.config.get(
+                        "game_answer_wait_seconds",
+                        12,
+                    ),
+                ),
+            )
+        )
+        atexit.register(self.safe_exit)
 
         self._build_gui()
         self.load_animations()
@@ -191,6 +209,7 @@ class BotGUI:
         # sounddevice.stop() while the wake-word thread owns an InputStream.
         self.shutdown_event.set()
         self.tool_router.close()
+        self.mode_registry.close()
         self.interrupted.set()
         self.ptt_event.set()
         self.recording_active.clear()
@@ -418,15 +437,20 @@ class BotGUI:
             self.tts_thread.start()
 
             while not self.exiting:
-                while self.matching_game_active.is_set() and not self.exiting:
-                    time.sleep(0.1)
+                input_policy = self.mode_registry.input_policy()
+                while (
+                    input_policy.kind == InputPolicyKind.SUSPENDED
+                    and not self.exiting
+                ):
+                    self.shutdown_event.wait(0.1)
+                    input_policy = self.mode_registry.input_policy()
                 if self.exiting:
                     return
-                if self.twenty_questions.active:
-                    trigger_source = "GAME"
+                if input_policy.kind == InputPolicyKind.CONTINUOUS:
+                    trigger_source = input_policy.trigger_source
                     self.set_state(
                         BotStates.LISTENING,
-                        "Take your time. I'm listening...",
+                        input_policy.listening_status,
                     )
                 else:
                     trigger_source = self.detect_wake_word_or_ptt()
@@ -437,8 +461,11 @@ class BotGUI:
                     self.set_state(BotStates.IDLE, "Resetting...")
                     continue
 
-                if trigger_source != "GAME":
-                    self.set_state(BotStates.LISTENING, "I'm listening!")
+                if input_policy.kind == InputPolicyKind.WAKE_WORD:
+                    self.set_state(
+                        BotStates.LISTENING,
+                        input_policy.listening_status,
+                    )
                 if trigger_source == "STOP" or self.shutdown_event.is_set():
                     return
                 self._start_interaction(trigger_source)
@@ -454,33 +481,23 @@ class BotGUI:
                         shutdown_event=self.shutdown_event,
                     )
                 else:
-                    initial_silence_timeout = 1.5
-                    if trigger_source == "GAME":
-                        try:
-                            initial_silence_timeout = float(
-                                self.config.get(
-                                    "game_answer_wait_seconds",
-                                    12,
-                                )
-                            )
-                        except (TypeError, ValueError):
-                            initial_silence_timeout = 12
-                        initial_silence_timeout = min(
-                            max(initial_silence_timeout, 3),
-                            30,
-                        )
                     audio_file = self.recorder.record_adaptive(
                         filename=audio_path,
                         shutdown_event=self.shutdown_event,
-                        initial_silence_timeout=initial_silence_timeout,
+                        initial_silence_timeout=(
+                            input_policy.initial_silence_timeout
+                        ),
                     )
 
                 if not audio_file:
                     self._finish_interaction("no_speech")
-                    if self.twenty_questions.active:
+                    if (
+                        input_policy.kind == InputPolicyKind.CONTINUOUS
+                        and self.mode_registry.is_active()
+                    ):
                         self.set_state(
                             BotStates.LISTENING,
-                            "Still listening...",
+                            input_policy.no_speech_status,
                         )
                     else:
                         self.set_state(BotStates.IDLE, "Heard nothing.")
@@ -497,10 +514,13 @@ class BotGUI:
                 )
                 if not user_text:
                     self._finish_interaction("transcription_empty")
-                    if self.twenty_questions.active:
+                    if (
+                        input_policy.kind == InputPolicyKind.CONTINUOUS
+                        and self.mode_registry.is_active()
+                    ):
                         self.set_state(
                             BotStates.LISTENING,
-                            "I didn't catch that. Try again...",
+                            input_policy.empty_transcript_status,
                         )
                     else:
                         self.set_state(
@@ -716,19 +736,7 @@ class BotGUI:
             return None
 
     def chat_and_respond(self, text: str, image_path: str | None = None) -> None:
-        if image_path is None and self.twenty_questions.active:
-            self._handle_twenty_questions(text)
-            return
-
-        if image_path is None and is_matching_game_start_request(text):
-            self._handle_matching_game_start(text)
-            return
-
-        if (
-            image_path is None
-            and self.twenty_questions.is_start_request(text)
-        ):
-            self._handle_twenty_questions(text, start=True)
+        if image_path is None and self.mode_registry.route_input(text):
             return
 
         if "forget everything" in text.lower() or "reset memory" in text.lower():
@@ -847,41 +855,7 @@ class BotGUI:
             self._finish_interaction("error", str(exc))
             self.set_state(BotStates.ERROR, "Brain Freeze!")
 
-    def _handle_matching_game_start(self, user_text: str) -> None:
-        """Introduce and open the touch game on Tk's main thread."""
-        if self.matching_game_active.is_set():
-            return
-        self.matching_game_active.set()
-        response = "Pup Pairs! You go first. Tap two cards, then I'll take my turn."
-        self._speak_complete_response(response, None)
-        self._remember_turn(user_text, response)
-        self.wait_for_tts()
-        self.set_state(BotStates.IDLE, "Your turn.")
-
-        def open_game() -> None:
-            try:
-                self.matching_game_ui = MatchingGameApp(
-                    self.master,
-                    embedded=True,
-                    on_close=self._handle_matching_game_close,
-                    announce=self.enqueue_speech,
-                    face_provider=self._matching_game_face,
-                    on_player_change=self._handle_matching_game_player,
-                )
-            except Exception as exc:
-                print(f"[MATCHING GAME] Could not start: {exc}", flush=True)
-                self.matching_game_active.clear()
-                self.matching_game_ui = None
-                self.set_state(BotStates.ERROR, "Could not start Pup Pairs.")
-
-        self.master.after(0, open_game)
-
-    def _handle_matching_game_close(self) -> None:
-        self.matching_game_ui = None
-        self.matching_game_active.clear()
-        self.set_state(BotStates.IDLE, "Ready")
-
-    def _matching_game_face(self) -> Image.Image | None:
+    def _current_mode_face(self) -> Image.Image | None:
         frames = self.animations.get(
             self.current_state,
             [],
@@ -890,128 +864,6 @@ class BotGUI:
             return None
         frame_index = self.current_frame_index % len(frames)
         return ImageTk.getimage(frames[frame_index]).copy()
-
-    def _handle_matching_game_player(self, player: str) -> None:
-        if player == "bmo":
-            self.set_state(BotStates.THINKING, "BMO's turn.")
-        else:
-            self.set_state(BotStates.IDLE, "Your turn.")
-
-    def _handle_twenty_questions(
-        self,
-        user_text: str,
-        start: bool = False,
-    ) -> None:
-        """Start or advance the deterministic Twenty Questions game."""
-        self.set_state(BotStates.THINKING, "Thinking...")
-        if start:
-            response = self.twenty_questions.start()
-            self._speak_complete_response(response, None)
-            self.wait_for_tts()
-            self.set_state(
-                BotStates.LISTENING,
-                "Take your time. I'm listening...",
-            )
-            return
-
-        if self.twenty_questions.awaiting_reveal:
-            response = self.twenty_questions.reveal_and_learn(user_text)
-            self._speak_complete_response(response, None)
-            self.wait_for_tts()
-            self.set_state(BotStates.IDLE, "Ready")
-            return
-
-        parsed_answer = self.twenty_questions.parse_answer(user_text)
-        if parsed_answer is None:
-            try:
-                parsed_answer = infer_game_answer(
-                    self.text_model,
-                    user_text,
-                    self._logged_chat,
-                )
-                if parsed_answer:
-                    print(
-                        f"[20 QUESTIONS] Local model interpreted: "
-                        f"{parsed_answer}",
-                        flush=True,
-                    )
-            except Exception as exc:
-                print(
-                    f"[20 QUESTIONS] Answer interpretation failed: {exc}",
-                    flush=True,
-                )
-
-        terminal = self.twenty_questions.accept_answer(
-            parsed_answer or user_text
-        )
-        if terminal is not None:
-            response = terminal
-            self._speak_complete_response(response, None)
-            self.wait_for_tts()
-            next_state = (
-                BotStates.LISTENING
-                if self.twenty_questions.active
-                else BotStates.IDLE
-            )
-            next_status = (
-                "Take your time. I'm listening..."
-                if self.twenty_questions.active
-                else "Ready"
-            )
-            self.set_state(next_state, next_status)
-            return
-
-        if self.twenty_questions.question_count in {5, 10, 15}:
-            try:
-                candidates: list[dict[str, Any]] = []
-                total_returned = 0
-                total_added = 0
-                for attempt in range(2):
-                    candidates = infer_game_candidates(
-                        self.text_model,
-                        self.twenty_questions.structured_history(),
-                        [question.key for question in QUESTIONS],
-                        self._logged_chat,
-                        excluded_names=(
-                            self.twenty_questions.expansion_exclusions()
-                        ),
-                        request_count=30 if attempt == 0 else 50,
-                        debug=self.twenty_questions.debug,
-                    )
-                    total_returned += len(candidates)
-                    added = (
-                        self.twenty_questions.add_provisional_candidates(
-                            candidates
-                        )
-                    )
-                    total_added += added
-                    if total_added >= 20:
-                        break
-                    if attempt == 0 and self.twenty_questions.debug:
-                        print(
-                            "[20 QUESTIONS DEBUG] Expansion produced fewer "
-                            "than 20 usable candidates; retrying once.",
-                            flush=True,
-                        )
-                print(
-                    "[20 QUESTIONS] Candidate expansion: "
-                    f"returned {total_returned}, "
-                    f"accepted {total_added}.",
-                    flush=True,
-                )
-            except Exception as exc:
-                print(
-                    f"[20 QUESTIONS] Candidate expansion failed: {exc}",
-                    flush=True,
-                )
-
-        response = self.twenty_questions.next_move()
-        self._speak_complete_response(response, None)
-        self.wait_for_tts()
-        self.set_state(
-            BotStates.LISTENING,
-            "Take your time. I'm listening...",
-        )
 
     def _handle_direct_action(
         self,
