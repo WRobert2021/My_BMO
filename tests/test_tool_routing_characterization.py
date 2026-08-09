@@ -9,7 +9,8 @@ from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
 from bmo.config import OLLAMA_OPTIONS
-from bmo.features import ToolArchive, ToolResult
+from bmo.features import ToolArchive, ToolAttachment, ToolResult
+from bmo.features.capture_image import CAMERA_FAILURE_TEXT
 from bmo.features.search_web import (
     SEARCH_EMPTY_TEXT,
     SEARCH_ERROR_TEXT,
@@ -276,7 +277,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(
             router.execute({"action": "capture_image"}),
-            ToolResult.capture_image(),
+            ToolResult.error(CAMERA_FAILURE_TEXT),
         )
 
     def test_symbolic_execute_results_are_characterized(self) -> None:
@@ -291,7 +292,10 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
                 {"action": "dance", "value": "answer in plain text"},
                 ToolResult.chat_fallback("answer in plain text"),
             ),
-            ({"action": "capture_image"}, ToolResult.capture_image()),
+            (
+                {"action": "capture_image"},
+                ToolResult.error(CAMERA_FAILURE_TEXT),
+            ),
             (
                 {"action": "search_web"},
                 ToolResult.empty(
@@ -478,7 +482,6 @@ class PromptCharacterizationTests(unittest.TestCase):
         gui.tool_router.normalize_action.return_value = action_name
         gui._execute_tool = Mock(return_value=tool_result)
         gui.set_state = Mock()
-        gui.capture_image = Mock(return_value=None)
         gui.chat_and_respond = Mock()
         gui._logged_chat = Mock(
             return_value={"message": {"content": "Generated summary.  "}}
@@ -653,7 +656,7 @@ class PromptCharacterizationTests(unittest.TestCase):
     def test_direct_camera_failure_has_the_current_user_facing_text(self) -> None:
         gui = self.make_gui(
             action_name="capture_image",
-            tool_result=ToolResult.capture_image(),
+            tool_result=ToolResult.error(CAMERA_FAILURE_TEXT),
         )
 
         BotGUI._handle_direct_action(
@@ -806,9 +809,10 @@ class PromptCharacterizationTests(unittest.TestCase):
     ) -> None:
         gui = self.make_gui(
             action_name="capture_image",
-            tool_result=ToolResult.capture_image(),
+            tool_result=ToolResult.vision_follow_up(
+                ToolAttachment.image("/tmp/new-image.jpg")
+            ),
         )
-        gui.capture_image.return_value = "/tmp/new-image.jpg"
 
         BotGUI._handle_action_response(
             gui,
@@ -828,7 +832,7 @@ class PromptCharacterizationTests(unittest.TestCase):
     def test_generated_camera_failure_uses_the_camera_error_text(self) -> None:
         gui = self.make_gui(
             action_name="capture_image",
-            tool_result=ToolResult.capture_image(),
+            tool_result=ToolResult.error(CAMERA_FAILURE_TEXT),
         )
 
         BotGUI._handle_action_response(

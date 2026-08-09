@@ -6,7 +6,7 @@ import datetime
 from typing import Any
 
 from bmo.config import load_config
-from bmo.features.contracts import RuntimeCallback, ToolResult
+from bmo.features.contracts import RuntimeCallback, ToolContext, ToolResult
 from bmo.features.loader import FeatureLoadFailure, load_feature_registry
 from bmo.features.registry import ToolRegistry
 
@@ -136,7 +136,12 @@ class ToolRouter:
         # Compatibility for ToolRouter.match_direct_action(user_text).
         return _get_default_router().registry.match_direct_action(str(self))
 
-    def execute(self, action_data: dict[str, Any]) -> ToolResult:
+    def execute(
+        self,
+        action_data: dict[str, Any],
+        *,
+        context: ToolContext | None = None,
+    ) -> ToolResult:
         raw_action = str(action_data.get("action", "")).lower().strip()
         value = action_data.get("value") or action_data.get("query")
         action = self.normalize_action(action_data)
@@ -146,7 +151,9 @@ class ToolRouter:
             if value and isinstance(value, str) and len(value.split()) > 1:
                 return ToolResult.chat_fallback(value)
             return ToolResult.invalid_action()
-        return self.registry.execute(action_data)
+        if context is None:
+            return self.registry.execute(action_data)
+        return self.registry.execute(action_data, context=context)
 
     def close(self) -> None:
         """Close feature-owned workers and other runtime resources."""

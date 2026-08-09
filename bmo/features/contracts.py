@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, TypeAlias
 
 
@@ -42,7 +43,154 @@ class ToolResultKind(str, Enum):
     ERROR = "error"
     INVALID_ACTION = "invalid_action"
     CHAT_FALLBACK = "chat_fallback"
-    CAPTURE_IMAGE = "capture_image"
+    ATTACHMENT = "attachment"
+    FOLLOW_UP = "follow_up"
+
+
+class ToolAttachmentKind(str, Enum):
+    """Attachment types understood by the core application."""
+
+    IMAGE = "image"
+
+
+class ToolFollowUpKind(str, Enum):
+    """Generic application follow-ups requested by a feature result."""
+
+    VISION = "vision"
+
+
+@dataclass(frozen=True)
+class ToolAttachment:
+    """A typed local artifact returned by an executable feature."""
+
+    kind: ToolAttachmentKind
+    path: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ToolAttachmentKind):
+            raise TypeError("Attachment kind must be a ToolAttachmentKind.")
+        if not isinstance(self.path, str) or not self.path.strip():
+            raise ValueError("Attachment path cannot be empty.")
+
+    @classmethod
+    def image(cls, path: str | Path) -> ToolAttachment:
+        """Return a typed image attachment for a local path."""
+        return cls(ToolAttachmentKind.IMAGE, str(path))
+
+    def archive_value(self) -> dict[str, str]:
+        """Return a stable JSON-friendly attachment representation."""
+        return {"kind": self.kind.value, "path": self.path}
+
+
+@dataclass(frozen=True)
+class ToolFollowUp:
+    """A feature-neutral request for core processing of an attachment."""
+
+    kind: ToolFollowUpKind
+    attachment: ToolAttachment
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ToolFollowUpKind):
+            raise TypeError("Follow-up kind must be a ToolFollowUpKind.")
+        if not isinstance(self.attachment, ToolAttachment):
+            raise TypeError("Follow-up attachment must be a ToolAttachment.")
+        if (
+            self.kind is ToolFollowUpKind.VISION
+            and self.attachment.kind is not ToolAttachmentKind.IMAGE
+        ):
+            raise ValueError("Vision follow-ups require an image attachment.")
+
+    @classmethod
+    def vision(cls, attachment: ToolAttachment) -> ToolFollowUp:
+        """Ask the application to run a vision turn for an image."""
+        return cls(ToolFollowUpKind.VISION, attachment)
+
+    def archive_value(self) -> dict[str, Any]:
+        """Return a stable JSON-friendly follow-up representation."""
+        return {
+            "kind": self.kind.value,
+            "attachment": self.attachment.archive_value(),
+        }
+
+
+@dataclass(frozen=True)
+class ToolEvent:
+    """A structured interaction event emitted during tool execution."""
+
+    name: str
+    data: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Tool event name cannot be empty.")
+        if not isinstance(self.data, Mapping):
+            raise TypeError("Tool event data must be a mapping.")
+
+
+@dataclass(frozen=True)
+class ToolStatusUpdate:
+    """A generic UI status requested during tool execution."""
+
+    state: str
+    message: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.state, str) or not self.state.strip():
+            raise ValueError("Tool status state cannot be empty.")
+        if not isinstance(self.message, str):
+            raise TypeError("Tool status message must be a string.")
+
+
+ArtifactAllocator: TypeAlias = Callable[
+    [ToolAttachmentKind, str], Path
+]
+ToolEventRecorder: TypeAlias = Callable[[ToolEvent], None]
+ToolStatusRequester: TypeAlias = Callable[[ToolStatusUpdate], None]
+
+
+@dataclass(frozen=True)
+class ToolContext:
+    """Narrow, per-execution access to approved runtime services."""
+
+    artifact_allocator: ArtifactAllocator
+    event_recorder: ToolEventRecorder
+    status_requester: ToolStatusRequester
+
+    def __post_init__(self) -> None:
+        for name in (
+            "artifact_allocator",
+            "event_recorder",
+            "status_requester",
+        ):
+            if not callable(getattr(self, name)):
+                raise TypeError(f"Tool context {name} must be callable.")
+
+    def allocate_artifact(
+        self,
+        kind: ToolAttachmentKind,
+        suffix: str,
+    ) -> Path:
+        """Allocate a runtime-approved path for one local artifact."""
+        if not isinstance(kind, ToolAttachmentKind):
+            raise TypeError("Artifact kind must be a ToolAttachmentKind.")
+        if not isinstance(suffix, str) or not suffix.startswith("."):
+            raise ValueError("Artifact suffix must start with '.'.")
+        path = self.artifact_allocator(kind, suffix)
+        if not isinstance(path, Path):
+            raise TypeError("Artifact allocator must return pathlib.Path.")
+        return path
+
+    def record_event(
+        self,
+        name: str,
+        data: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Record a structured event in the active interaction, if any."""
+        self.event_recorder(ToolEvent(name, data or {}))
+
+    def request_status(self, state: str, message: str = "") -> None:
+        """Request a runtime-owned UI status update."""
+        self.status_requester(ToolStatusUpdate(state, message))
 
 
 class ToolPresentationKind(str, Enum):
@@ -199,6 +347,8 @@ class ToolResult:
         default_factory=ToolPresentation.direct
     )
     archive: ToolArchive = field(default_factory=ToolArchive)
+    attachments: tuple[ToolAttachment, ...] = ()
+    follow_up: ToolFollowUp | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, ToolResultKind):
@@ -219,6 +369,34 @@ class ToolResult:
             )
         if not isinstance(self.archive, ToolArchive):
             raise TypeError("ToolResult archive must be a ToolArchive.")
+        if not isinstance(self.attachments, tuple) or any(
+            not isinstance(attachment, ToolAttachment)
+            for attachment in self.attachments
+        ):
+            raise TypeError("ToolResult attachments must be ToolAttachments.")
+        if self.follow_up is not None and not isinstance(
+            self.follow_up,
+            ToolFollowUp,
+        ):
+            raise TypeError("ToolResult follow-up must be a ToolFollowUp.")
+        if self.kind is ToolResultKind.ATTACHMENT:
+            if not self.attachments:
+                raise ValueError("Attachment results require an attachment.")
+            if self.follow_up is not None:
+                raise ValueError(
+                    "Attachment results cannot include a follow-up."
+                )
+        elif self.kind is ToolResultKind.FOLLOW_UP:
+            if self.follow_up is None:
+                raise ValueError("Follow-up results require a follow-up.")
+            if self.follow_up.attachment not in self.attachments:
+                raise ValueError(
+                    "Follow-up attachment must be included in attachments."
+                )
+        elif self.attachments or self.follow_up is not None:
+            raise ValueError(
+                "Only attachment and follow-up results can carry artifacts."
+            )
         presentations = [self.presentation]
         if self.presentation.model_routed is not None:
             presentations.append(self.presentation.model_routed)
@@ -339,17 +517,55 @@ class ToolResult:
         return cls(ToolResultKind.CHAT_FALLBACK, content)
 
     @classmethod
-    def capture_image(cls) -> ToolResult:
+    def image_attachment(
+        cls,
+        attachment: ToolAttachment,
+        user_text: str | None = None,
+        *,
+        archive: ToolArchive | None = None,
+    ) -> ToolResult:
+        """Return an image for generic UI presentation."""
+        if not isinstance(attachment, ToolAttachment):
+            raise TypeError("Image results require a ToolAttachment.")
+        if attachment.kind is not ToolAttachmentKind.IMAGE:
+            raise ValueError("Image results require an image attachment.")
         return cls(
-            ToolResultKind.CAPTURE_IMAGE,
-            presentation=ToolPresentation.direct(
-                "I could not use the camera right now."
-            ),
+            ToolResultKind.ATTACHMENT,
+            presentation=ToolPresentation.direct(user_text),
+            archive=archive or ToolArchive(),
+            attachments=(attachment,),
         )
 
-    def archive_value(self) -> dict[str, str | None]:
+    @classmethod
+    def vision_follow_up(
+        cls,
+        attachment: ToolAttachment,
+        *,
+        archive: ToolArchive | None = None,
+    ) -> ToolResult:
+        """Ask the core application to run vision on an image attachment."""
+        follow_up = ToolFollowUp.vision(attachment)
+        return cls(
+            ToolResultKind.FOLLOW_UP,
+            archive=archive or ToolArchive(),
+            attachments=(attachment,),
+            follow_up=follow_up,
+        )
+
+    def archive_value(self) -> dict[str, Any]:
         """Return a stable JSON-friendly representation for interaction logs."""
-        return {"kind": self.kind.value, "content": self.content}
+        value: dict[str, Any] = {
+            "kind": self.kind.value,
+            "content": self.content,
+        }
+        if self.attachments:
+            value["attachments"] = [
+                attachment.archive_value()
+                for attachment in self.attachments
+            ]
+        if self.follow_up is not None:
+            value["follow_up"] = self.follow_up.archive_value()
+        return value
 
 
 ToolResponse: TypeAlias = ToolResult

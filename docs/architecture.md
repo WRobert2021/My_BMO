@@ -9,13 +9,13 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — stable compatibility router over the enabled feature registry.
 - `bmo.features` — typed contracts, lazy loading, and registry-backed dispatch.
-- `bmo.features.camera` — Raspberry Pi still capture and configured rotation.
 - `bmo.features.loader` — standard-library module loading from `features` config.
 - `bmo.features.get_time` — current-time action, alias, and direct phrases.
 - `bmo.features.get_location` — configured-location action and failure handling.
 - `bmo.features.get_weather` — weather action, place cleanup, and failures.
 - `bmo.features.search_web` — web-search action, formatting, and archive details.
-- `bmo.features.capture_image` — camera request metadata and UI capture signal.
+- `bmo.features.capture_image` — configured camera routing, Raspberry Pi still
+  capture, rotation, event recording, and vision follow-up results.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
 - `bmo.modes` — typed lifecycle contracts and exclusive input ownership for
@@ -49,10 +49,13 @@ The same Python entry point is used on macOS and Raspberry Pi.
 - Piper uses `./piper/piper` when the bundled Pi binary exists.
 - Otherwise Piper runs through the active environment with `python -m piper`.
 - Whisper paths can be overridden with `whisper_binary` and `whisper_model` in `config.json`.
-- Raspberry Pi camera execution and rotation live in `bmo.features.camera`.
-  `BotGUI.capture_image()` retains UI-state and interaction-archive coordination,
-  while action aliases, matching, and prompt metadata live in
-  `bmo.features.capture_image`.
+- Raspberry Pi camera matching, execution, timeout, configured rotation, and
+  result ownership all live in the optional `bmo.features.capture_image`
+  module. When disabled, that module is never imported and contributes no
+  prompt metadata, direct matcher, or subprocess path.
+- The application supplies a fresh `ToolContext` for each execution. It exposes
+  only approved artifact allocation, structured interaction events, and generic
+  UI status requests; features never receive `BotGUI` or an archive object.
 
 ## Extension contracts
 
@@ -85,7 +88,11 @@ contract in `bmo.features.contracts`:
   the capability to the routing and system prompts.
 - `execute(request)` returns a `ToolResult`, never a bare string. Its kind
   records the semantic outcome: content, an expected empty/error result, chat
-  fallback, invalid action, or camera capture.
+  fallback, invalid action, a typed attachment, or a generic follow-up.
+- Tools that need runtime services opt in with `uses_context = True` and receive
+  `execute(request, context)`. The registry leaves ordinary one-argument tools
+  unchanged. Image attachments and vision follow-ups are core contracts, so
+  presentation and vision routing never inspect the producing feature's action.
 - Each result carries `ToolPresentation` metadata. A feature can mark content
   as user-ready or provide local-model summary prompts, including distinct
   direct-match and model-routed policies when compatibility requires them.
@@ -142,8 +149,10 @@ example, on a duplicate action), all registrations from that hook are rolled
 back without disturbing earlier modules. Disabled entries produce no failure
 because they are not validated or imported.
 
-Execution is a separate boundary. The registry validates that handlers return
-`ToolResult`, but it does not swallow handler or mode lifecycle exceptions.
+Execution is a separate boundary. The registry validates the optional
+`ToolContext`, passes it only to tools that opt in, and validates that handlers
+return `ToolResult`, but it does not swallow handler or mode lifecycle
+exceptions.
 Feature execution failures propagate to `BotGUI`, which records the failed
 tool call when interaction logging is enabled before its normal interaction
 error handling runs. Once startup has completed, each voice or typed turn has

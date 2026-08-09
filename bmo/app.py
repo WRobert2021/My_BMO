@@ -34,12 +34,15 @@ from bmo.config import (
     WAKE_WORD_THRESHOLD,
     load_config,
 )
-from bmo.features.camera import capture_image as capture_camera_image
 from bmo.features.contracts import (
     RuntimeNotification,
+    ToolAttachmentKind,
+    ToolContext,
+    ToolEvent,
+    ToolFollowUpKind,
     ToolPresentationKind,
     ToolResult,
-    ToolResultKind,
+    ToolStatusUpdate,
 )
 from bmo.intent import infer_tool_action
 from bmo.memory import load_chat_history, save_chat_history
@@ -722,7 +725,10 @@ class BotGUI:
         action_name = self.tool_router.normalize_action(action_data)
         started = time.monotonic()
         try:
-            result = self.tool_router.execute(action_data)
+            result = self.tool_router.execute(
+                action_data,
+                context=self._tool_context(),
+            )
         except Exception as exc:
             if self.current_interaction:
                 self.current_interaction.append_json(
@@ -756,6 +762,35 @@ class BotGUI:
             )
         return result
 
+    def _tool_context(self) -> ToolContext:
+        """Create the approved runtime-service view for one tool execution."""
+        return ToolContext(
+            artifact_allocator=self._allocate_tool_artifact,
+            event_recorder=self._record_tool_event,
+            status_requester=self._request_tool_status,
+        )
+
+    def _allocate_tool_artifact(
+        self,
+        kind: ToolAttachmentKind,
+        suffix: str,
+    ) -> Path:
+        """Allocate an interaction artifact without exposing the archive."""
+        if kind is not ToolAttachmentKind.IMAGE:
+            raise ValueError(f"Unsupported tool artifact kind: {kind.value}")
+        if self.current_interaction:
+            return self.current_interaction.image_path(suffix)
+        return BMO_IMAGE_FILE
+
+    def _record_tool_event(self, event: ToolEvent) -> None:
+        """Record a feature event without exposing archive internals."""
+        if self.current_interaction:
+            self.current_interaction.event(event.name, dict(event.data))
+
+    def _request_tool_status(self, update: ToolStatusUpdate) -> None:
+        """Forward a feature's generic status request to the UI owner."""
+        self.set_state(update.state, update.message)
+
     def _archive_assistant_text(self, text: str) -> None:
         if not self.current_interaction:
             return
@@ -765,33 +800,6 @@ class BotGUI:
         self.current_interaction.append_json(
             "output", "responses.jsonl", {"text": text}
         )
-
-    def capture_image(self) -> str | None:
-        self.set_state(BotStates.CAPTURING, "Watching...")
-        image_file = (
-            self.current_interaction.image_path()
-            if self.current_interaction
-            else BMO_IMAGE_FILE
-        )
-        try:
-            rotation = int(self.config.get("camera_rotation", 0))
-            captured_path = capture_camera_image(
-                image_file,
-                rotation=rotation,
-            )
-            if self.current_interaction:
-                self.current_interaction.event(
-                    "image_captured",
-                    {"path": captured_path, "rotation": rotation},
-                )
-            return captured_path
-        except Exception as exc:
-            print(f"Camera Error: {exc}", flush=True)
-            if self.current_interaction:
-                self.current_interaction.event(
-                    "image_capture_failed", {"error": str(exc)}
-                )
-            return None
 
     def chat_and_respond(self, text: str, image_path: str | None = None) -> None:
         if image_path is None and self.mode_registry.route_input(text):
@@ -937,7 +945,7 @@ class BotGUI:
             model_to_use=self.text_model,
             direct=True,
         )
-        if tool_result.kind is ToolResultKind.CAPTURE_IMAGE:
+        if tool_result.follow_up is not None:
             return
         self.wait_for_tts()
         self.set_state(BotStates.IDLE, "Ready")
@@ -972,18 +980,24 @@ class BotGUI:
         direct: bool,
     ) -> None:
         """Present one typed tool result, regardless of how it was routed."""
-        if tool_result.kind is ToolResultKind.CAPTURE_IMAGE:
-            new_image_path = self.capture_image()
-            if new_image_path:
-                self.chat_and_respond(user_text, image_path=new_image_path)
-            else:
-                fallback = tool_result.presentation.user_text
-                if not fallback:
-                    return
-                self._speak_complete_response(fallback, None)
-                self._remember_turn(user_text, fallback)
+        if tool_result.follow_up is not None:
+            follow_up = tool_result.follow_up
+            if follow_up.kind is ToolFollowUpKind.VISION:
+                self.chat_and_respond(
+                    user_text,
+                    image_path=follow_up.attachment.path,
+                )
             return
 
+        attachment_image_path = next(
+            (
+                attachment.path
+                for attachment in tool_result.attachments
+                if attachment.kind is ToolAttachmentKind.IMAGE
+            ),
+            None,
+        )
+        presentation_image_path = attachment_image_path or image_path
         presentation = tool_result.presentation.for_route(direct=direct)
         if presentation.kind is ToolPresentationKind.DIRECT:
             response_text = presentation.user_text or tool_result.content
@@ -1009,7 +1023,7 @@ class BotGUI:
         if not response_text:
             return
 
-        self._speak_complete_response(response_text, image_path)
+        self._speak_complete_response(response_text, presentation_image_path)
         self._remember_turn(user_text, response_text)
 
     def _speak_complete_response(

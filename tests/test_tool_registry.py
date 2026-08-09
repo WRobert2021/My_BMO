@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 from bmo.features import (
@@ -12,7 +13,9 @@ from bmo.features import (
     GetWeatherTool,
     SearchWebTool,
     ToolArchive,
+    ToolAttachment,
     ToolContract,
+    ToolContext,
     ToolRegistry,
     ToolResult,
     ToolResultKind,
@@ -56,6 +59,46 @@ class ToolRegistryTests(unittest.TestCase):
         )
         self.assertEqual(registry.actions, {"status"})
         self.assertEqual(registry.aliases, {"check_status": "status"})
+
+    def test_passes_context_only_to_features_that_opt_in(self) -> None:
+        class ContextualTool:
+            action = "artifact"
+            aliases = ()
+            uses_context = True
+
+            def __init__(self) -> None:
+                self.execute = Mock(
+                    return_value=ToolResult.success("created")
+                )
+
+        contextual = ContextualTool()
+        simple_handler = Mock(return_value=ToolResult.success("simple"))
+        registry = ToolRegistry(
+            (
+                contextual,
+                ToolContract("simple", simple_handler),
+            )
+        )
+        context = ToolContext(
+            artifact_allocator=lambda kind, suffix: Path("/tmp/output.jpg"),
+            event_recorder=Mock(),
+            status_requester=Mock(),
+        )
+
+        self.assertEqual(
+            registry.execute({"action": "artifact"}, context=context),
+            ToolResult.success("created"),
+        )
+        self.assertEqual(
+            registry.execute({"action": "simple"}, context=context),
+            ToolResult.success("simple"),
+        )
+
+        contextual.execute.assert_called_once_with(
+            {"action": "artifact"},
+            context,
+        )
+        simple_handler.assert_called_once_with({"action": "simple"})
 
     def test_prepares_model_requests_without_losing_json_fields_or_types(
         self,
@@ -370,11 +413,14 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
     def test_camera_trigger_executes_through_registry(self) -> None:
         router = self.make_router()
         router.registry = Mock()
-        router.registry.execute.return_value = ToolResult.capture_image()
+        result = ToolResult.vision_follow_up(
+            ToolAttachment.image("/tmp/camera.jpg")
+        )
+        router.registry.execute.return_value = result
 
         self.assertEqual(
             router.execute({"action": "look"}),
-            ToolResult.capture_image(),
+            result,
         )
         router.registry.execute.assert_called_once_with({"action": "look"})
 

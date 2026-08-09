@@ -13,6 +13,7 @@ from bmo.features.contracts import (
     RuntimeCallback,
     RuntimeNotification,
     Tool,
+    ToolContext,
     ToolRequest,
     ToolResult,
     ToolResponse,
@@ -208,8 +209,15 @@ class ToolRegistry:
             normalized_request["action"] = action
         return normalized_request
 
-    def execute(self, request: ToolRequest) -> ToolResponse:
+    def execute(
+        self,
+        request: ToolRequest,
+        *,
+        context: ToolContext | None = None,
+    ) -> ToolResponse:
         """Dispatch a request or raise if its action is not registered."""
+        if context is not None and not isinstance(context, ToolContext):
+            raise TypeError("Tool execution context must be a ToolContext.")
         normalized_request = self.normalize_request(request)
         action = str(normalized_request["action"])
         try:
@@ -218,7 +226,10 @@ class ToolRegistry:
             raise UnknownToolError(
                 f"No tool is registered for action '{action}'."
             ) from exc
-        result = tool.execute(normalized_request)
+        if getattr(tool, "uses_context", False):
+            result = tool.execute(normalized_request, context)
+        else:
+            result = tool.execute(normalized_request)
         if not isinstance(result, ToolResult):
             raise TypeError(
                 f"Tool '{action}' returned {type(result).__name__}; "
