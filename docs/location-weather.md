@@ -1,7 +1,8 @@
 # Location and weather
 
 Named weather requests resolve the location spoken by the user at request
-time; the weather location does not need to be stored in `config.json`. The
+time; the weather location does not need to be stored in
+`config/settings.json`. The
 agent does not infer the household's location from its public IP address.
 Current weather and place-name lookup use Open-Meteo over HTTPS and require an
 internet connection, but no API key.

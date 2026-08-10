@@ -146,7 +146,9 @@ class SetupScriptTests(unittest.TestCase):
         script = SETUP_SCRIPT.read_text(encoding="utf-8")
         model_match = re.search(r'^TEXT_MODEL="([^"]+)"$', script, re.MULTILINE)
         example = loads(
-            (REPOSITORY_ROOT / "example.config.json").read_text(encoding="utf-8")
+            (REPOSITORY_ROOT / "config/example.settings.json").read_text(
+                encoding="utf-8"
+            )
         )
 
         self.assertIsNotNone(model_match)

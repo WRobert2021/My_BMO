@@ -6,7 +6,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-CONFIG_FILE = Path("config.json")
+CONFIG_DIRECTORY = Path("config")
+SETTINGS_CONFIG_FILE = CONFIG_DIRECTORY / "settings.json"
+FEATURES_CONFIG_FILE = CONFIG_DIRECTORY / "features.json"
+FEATURE_CONFIG_KEYS = frozenset({"features", "modes"})
+# Retain the old public constant name for callers that import it. It now points
+# at the user-settings file in the split configuration layout.
+CONFIG_FILE = SETTINGS_CONFIG_FILE
 MEMORY_FILE = Path("memory.json")
 BMO_IMAGE_FILE = Path("current_image.jpg")
 WAKE_WORD_MODEL = Path("wakeword.onnx")
@@ -48,18 +54,77 @@ SOUND_DIRECTORIES = {
 }
 
 
-def load_config(path: Path = CONFIG_FILE) -> dict[str, Any]:
-    """Load JSON configuration over known defaults."""
-    config = DEFAULT_CONFIG.copy()
+def _load_config_file(path: Path) -> dict[str, Any]:
+    """Load one optional JSON configuration object."""
     if not path.exists():
-        return config
+        return {}
 
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            user_config = json.load(handle)
-        if not isinstance(user_config, dict):
-            raise ValueError("configuration root must be a JSON object")
-        config.update(user_config)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(f"Config Error: {exc}. Using defaults.", flush=True)
+    with path.open("r", encoding="utf-8") as handle:
+        values = json.load(handle)
+    if not isinstance(values, dict):
+        raise ValueError("configuration root must be a JSON object")
+    return values
+
+
+def _validate_settings_config(
+    values: dict[str, Any],
+    features_path: Path,
+) -> None:
+    misplaced_keys = FEATURE_CONFIG_KEYS.intersection(values)
+    if misplaced_keys:
+        names = ", ".join(sorted(misplaced_keys))
+        raise ValueError(f"{names} must be configured in {features_path}")
+
+
+def _validate_features_config(
+    values: dict[str, Any],
+    settings_path: Path,
+) -> None:
+    unexpected_keys = set(values).difference(FEATURE_CONFIG_KEYS)
+    if unexpected_keys:
+        names = ", ".join(sorted(unexpected_keys))
+        raise ValueError(f"{names} must be configured in {settings_path}")
+
+
+def load_config(
+    settings_path: Path = SETTINGS_CONFIG_FILE,
+    features_path: Path | None = None,
+) -> dict[str, Any]:
+    """Load user settings and extension configuration over known defaults.
+
+    When a custom settings path is supplied without a feature path, the
+    feature file is resolved beside it. This keeps isolated tests and alternate
+    deployments from unexpectedly reading the repository's local config.
+    """
+    settings_path = Path(settings_path)
+    if features_path is None:
+        features_path = (
+            FEATURES_CONFIG_FILE
+            if settings_path == SETTINGS_CONFIG_FILE
+            else settings_path.with_name(FEATURES_CONFIG_FILE.name)
+        )
+    else:
+        features_path = Path(features_path)
+
+    config = DEFAULT_CONFIG.copy()
+    sources = (
+        (
+            settings_path,
+            lambda values: _validate_settings_config(values, features_path),
+        ),
+        (
+            features_path,
+            lambda values: _validate_features_config(values, settings_path),
+        ),
+    )
+    for path, validate in sources:
+        try:
+            values = _load_config_file(path)
+            validate(values)
+            config.update(values)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(
+                f"Config Error in {path}: {exc}. Using defaults for that file.",
+                flush=True,
+            )
     return config

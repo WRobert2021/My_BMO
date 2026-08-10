@@ -27,8 +27,10 @@
 
 - Do not read, print, expose, or modify `.env` files, credentials,
   private keys, tokens, or passwords.
-- Treat `config.json` as private local configuration.
-- Use `example.config.json` when documentation or tests need configuration examples.
+- Treat `config/settings.json`, `config/features.json`, and the legacy
+  `config.json` as private local configuration.
+- Use the `config/example.*.json` files when documentation or tests need
+  configuration examples.
 - Do not add ignored files or directories to Git.
 - `graphics/` contains local copyrighted fan-project assets and must never be
   staged, committed, uploaded, copied, or modified.

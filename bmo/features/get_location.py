@@ -47,7 +47,7 @@ class GetLocationTool:
         except LocationNotConfigured:
             return ToolResult.model_summarized(
                 "I do not have a home location configured yet. "
-                "Add one in config.json."
+                "Add one in config/settings.json."
             )
         except (LocationError, OSError, TimeoutError) as exc:
             print(f"[LOCATION] Lookup failed: {exc}", flush=True)

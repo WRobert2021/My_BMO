@@ -34,9 +34,10 @@ The application keeps `agent.py` as the stable startup command while implementat
 ## Runtime flow
 
 1. `agent.py` creates Tkinter and `BotGUI`.
-2. `BotGUI` creates services using defaults overlaid by `config.json`, then
-   loads enabled feature and mode modules. A missing config file is not created;
-   defaults remain in memory only.
+2. `BotGUI` creates services using defaults overlaid by
+   `config/settings.json`, then loads feature and mode wiring from
+   `config/features.json`. Missing config files are not created; defaults remain
+   in memory only.
 3. The wake-word service waits for wake word or push-to-talk.
 4. A unique dated interaction archive is created.
 5. The recorder captures a WAV directly into that archive.
@@ -52,7 +53,8 @@ The same Python entry point is used on macOS and Raspberry Pi.
 
 - Piper uses `./piper/piper` when the bundled Pi binary exists.
 - Otherwise Piper runs through the active environment with `python -m piper`.
-- Whisper paths can be overridden with `whisper_binary` and `whisper_model` in `config.json`.
+- Whisper paths can be overridden with `whisper_binary` and `whisper_model` in
+  `config/settings.json`.
 - Raspberry Pi camera matching, execution, timeout, configured rotation, and
   result ownership all live in the optional `bmo.features.capture_image`
   module. When disabled, that module is never imported and contributes no
@@ -76,9 +78,9 @@ Features and modes solve different routing problems:
 
 ### Feature module contract
 
-`features` is an ordered list. Omitting the key loads the six modules in
-`DEFAULT_FEATURE_MODULES`; providing the key replaces that default list. Each
-entry supports:
+The `features` list lives in `config/features.json`. Omitting the key loads the
+six modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.
 - `enabled`: a JSON boolean, defaulting to `true`. A false entry is skipped
@@ -149,9 +151,9 @@ The mode's `InputPolicy` selects one of three main-loop behaviors:
   mode's timeout, status messages, and archive trigger source.
 - `SUSPENDED`: pause speech capture while a separate UI owns interaction.
 
-`modes` is an ordered list with the same allowlist semantics as `features`.
-Omitting it loads `bmo.modes.matching_game` followed by
-`bmo.modes.twenty_questions`, preserving the historical matching order.
+The `modes` list also lives in `config/features.json` and has the same allowlist
+semantics as `features`. Omitting it loads `bmo.modes.matching_game` followed
+by `bmo.modes.twenty_questions`, preserving the historical matching order.
 Providing the key replaces those defaults; an empty list disables every mode.
 Each entry supports:
 
@@ -219,7 +221,8 @@ The exact minimal workflow for an optional feature is:
    the local `features` list. No edit to `tools.py`, `intent.py`, `prompts.py`,
    `app.py`, or `bmo.features.__init__` is required. Edit
    `DEFAULT_FEATURE_MODULES` only when deliberately adding a built-in that must
-   load when the key is omitted; keep `example.config.json` synchronized then.
+   load when the key is omitted; keep `config/example.features.json`
+   synchronized then.
 3. **Add tests:** cover registration, settings, model and direct routing,
    normalization, presentation/result kinds, expected failures, disablement,
    and cleanup as applicable. Run focused tests and
@@ -267,10 +270,11 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
     )
 ```
 
-The disabled `bmo.features.say_hello` entry in `example.config.json` is safe to
+The disabled `bmo.features.say_hello` entry in
+`config/example.features.json` is safe to
 leave in place because disabled modules are never imported. After creating the
-module, copy the example to `config.json` if needed and set that entry's
-`enabled` value to `true`.
+module, copy the example to `config/features.json` if needed and set that
+entry's `enabled` value to `true`.
 
 ### Add a mode
 

@@ -79,7 +79,8 @@ class LocationService:
             return self._geocode(configured_name)
 
         raise LocationNotConfigured(
-            "Set location.name or location latitude/longitude in config.json."
+            "Set location.name or location latitude/longitude in "
+            "config/settings.json."
         )
 
     def _geocode(self, place_name: str) -> Location:

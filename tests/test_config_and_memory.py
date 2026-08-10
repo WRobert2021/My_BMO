@@ -3,12 +3,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bmo.config import DEFAULT_CONFIG, load_config
+from bmo.config import (
+    DEFAULT_CONFIG,
+    FEATURES_CONFIG_FILE,
+    SETTINGS_CONFIG_FILE,
+    load_config,
+)
 from bmo.memory import load_chat_history, save_chat_history
 from bmo.prompts import BASE_SYSTEM_PROMPT, build_system_prompt
 
 
 class ConfigTests(unittest.TestCase):
+    def test_default_paths_use_split_config_directory(self):
+        self.assertEqual(SETTINGS_CONFIG_FILE, Path("config/settings.json"))
+        self.assertEqual(FEATURES_CONFIG_FILE, Path("config/features.json"))
+
     def test_missing_config_uses_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = load_config(Path(temp_dir) / "missing.json")
@@ -21,11 +30,89 @@ class ConfigTests(unittest.TestCase):
 
     def test_user_config_overrides_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "config.json"
+            path = Path(temp_dir) / "settings.json"
             path.write_text(json.dumps({"text_model": "gemma:2b"}), encoding="utf-8")
             config = load_config(path)
         self.assertEqual(config["text_model"], "gemma:2b")
         self.assertEqual(config["vision_model"], DEFAULT_CONFIG["vision_model"])
+
+    def test_feature_config_is_merged_with_user_settings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            settings_path = directory / "settings.json"
+            features_path = directory / "features.json"
+            settings_path.write_text(
+                json.dumps({"text_model": "gemma:2b"}),
+                encoding="utf-8",
+            )
+            features = [{"module": "tests.example", "enabled": False}]
+            modes = [{"module": "tests.example_mode", "enabled": False}]
+            features_path.write_text(
+                json.dumps({"features": features, "modes": modes}),
+                encoding="utf-8",
+            )
+
+            config = load_config(settings_path, features_path)
+
+        self.assertEqual(config["text_model"], "gemma:2b")
+        self.assertEqual(config["features"], features)
+        self.assertEqual(config["modes"], modes)
+
+    def test_invalid_settings_do_not_prevent_feature_config_loading(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            settings_path = directory / "settings.json"
+            features_path = directory / "features.json"
+            settings_path.write_text("[]", encoding="utf-8")
+            features_path.write_text(
+                json.dumps({"features": []}),
+                encoding="utf-8",
+            )
+
+            config = load_config(settings_path, features_path)
+
+        self.assertEqual(config["text_model"], DEFAULT_CONFIG["text_model"])
+        self.assertEqual(config["features"], [])
+
+    def test_extension_lists_are_rejected_from_user_settings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            settings_path = directory / "settings.json"
+            features_path = directory / "features.json"
+            settings_path.write_text(
+                json.dumps({"text_model": "gemma:2b", "features": []}),
+                encoding="utf-8",
+            )
+            features_path.write_text(
+                json.dumps({"modes": []}),
+                encoding="utf-8",
+            )
+
+            config = load_config(settings_path, features_path)
+
+        self.assertEqual(config["text_model"], DEFAULT_CONFIG["text_model"])
+        self.assertNotIn("features", config)
+        self.assertEqual(config["modes"], [])
+
+    def test_user_settings_are_rejected_from_feature_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            settings_path = directory / "settings.json"
+            features_path = directory / "features.json"
+            settings_path.write_text(
+                json.dumps({"text_model": "gemma:2b"}),
+                encoding="utf-8",
+            )
+            features_path.write_text(
+                json.dumps({"features": [], "voice_model": "other.onnx"}),
+                encoding="utf-8",
+            )
+
+            config = load_config(settings_path, features_path)
+
+        self.assertEqual(config["text_model"], "gemma:2b")
+        self.assertEqual(config["voice_model"], DEFAULT_CONFIG["voice_model"])
+        self.assertNotIn("features", config)
 
     def test_explicit_prompt_and_extras_are_combined(self):
         prompt = build_system_prompt(

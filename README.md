@@ -35,7 +35,11 @@ be-more-agent/
 ├── agent.py                   # The main brain script
 ├── setup.sh                   # Auto-installer script
 ├── wakeword.onnx              # OpenWakeWord model (The "Ear")
-├── config.json                # Local user settings (copied from the example)
+├── config/                    # Split user and extension configuration
+│   ├── example.settings.json  # Tracked user-settings example
+│   ├── example.features.json  # Tracked feature/mode example
+│   ├── settings.json          # Local user settings (ignored by Git)
+│   └── features.json          # Local feature/mode wiring (ignored by Git)
 ├── chat_memory.json           # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -104,19 +108,31 @@ python agent.py
 
 ---
 
-## 📂 Configuration (`config.json`)
+## 📂 Configuration (`config/`)
 
-The application reads local settings from `config.json`, but it does **not**
-create that file. If the file is absent or invalid, BMO reports a parsing error
-when applicable and runs with the defaults in `bmo/config.py` without writing
-anything. To keep a local configuration, copy the tracked example and edit the
-copy:
+Configuration is split by audience:
+
+- `config/settings.json` contains user-relevant runtime choices such as models,
+  audio, camera, prompt, weather, and interaction logging.
+- `config/features.json` contains extension wiring: the ordered `features` and
+  `modes` lists and their module-specific settings.
+
+The application does **not** create either local file. If a file is absent or
+invalid, BMO reports a parsing error when applicable and uses defaults for that
+file without writing anything. To keep local configuration, copy both tracked
+examples and edit the copies:
 
 ```bash
-cp example.config.json config.json
+cp config/example.settings.json config/settings.json
+cp config/example.features.json config/features.json
 ```
 
-For example:
+When upgrading from the former root `config.json`, move its `features` and
+`modes` entries into `config/features.json` and put every other entry in
+`config/settings.json`. The legacy file remains ignored by Git but is no longer
+read by the application.
+
+For example, `config/settings.json` can contain:
 
 ```json
 {
@@ -135,7 +151,7 @@ For example:
 
 A **feature** is a short-lived, model-routable action such as checking the time
 or setting a timer. Feature modules are selected by the ordered `features` list
-shown in `example.config.json`:
+shown in `config/example.features.json`:
 
 - Omitting `features` enables all built-in feature modules. Once the list is
   present, it is an allowlist: only entries with `"enabled": true` are loaded,
@@ -225,7 +241,7 @@ and places them in the local `voices/` directory.
 1. Download `bmo.onnx` and `bmo.onnx.json` from the [`v1.0-voice` release](https://github.com/brenpoly/be-more-agent/releases/tag/v1.0-voice).
 2. Create a folder named `voices/` in the root directory of this repository.
 3. Place both downloaded files inside the `voices/` folder.
-4. Ensure your `config.json` file points to the new model:
+4. Ensure your `config/settings.json` file points to the new model:
    ```json
    {
      "voice_model": "voices/bmo.onnx"
@@ -238,7 +254,7 @@ and places them in the local `voices/` directory.
 
 * **"No search library found":** If web search fails, ensure you are in the virtual environment and `ddgs` is installed via pip.
 * **Shutdown Errors:** When you exit the script (Ctrl+C), you might see `Expression 'alsa_snd_pcm_mmap_begin' failed`. **This is normal.** It just means the audio stream was cut off mid-sample. It does not affect the functionality.
-* **Audio Glitches:** If the voice sounds fast or slow, the script attempts to auto-detect sample rates. Ensure your `config.json` points to a valid `.onnx` voice model in the `piper/` folder.
+* **Audio Glitches:** If the voice sounds fast or slow, the script attempts to auto-detect sample rates. Ensure your `config/settings.json` points to a valid `.onnx` voice model in the `piper/` folder.
 If your custom BMO voice sounds incredibly deep, slow, or "demonic," don't panic! This is not an issue with the Piper installation or the setup script. It is almost always caused by a **Sample Rate (Hz)** mismatch between the model and the audio player.
 
 Here is how to fix it:

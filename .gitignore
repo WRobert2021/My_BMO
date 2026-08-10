@@ -46,6 +46,8 @@ memory.json
 chat_memory.json
 interaction_logs/
 config.json
+config/settings.json
+config/features.json
 
 # --- Generated media ---
 camera_capture.jpg

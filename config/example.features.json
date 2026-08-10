@@ -1,17 +1,4 @@
 {
-  "text_model": "gemma3:1b",
-  "vision_model": "moondream",
-  "voice_model": "piper/en_GB-semaine-medium.onnx",
-  "chat_memory": true,
-  "camera_rotation": 180,
-  "system_prompt": null,
-  "system_prompt_extras": "",
-  "input_device": null,
-  "input_sample_rate": 44100,
-  "weather_units": "imperial",
-  "online_timeout_seconds": 6,
-  "interaction_logging": true,
-  "interaction_log_directory": "interaction_logs",
   "modes": [
     {
       "module": "bmo.modes.matching_game",

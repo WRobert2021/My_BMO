@@ -110,8 +110,8 @@ class GetWeatherTool:
             )
         except LocationNotConfigured:
             return ToolResult.model_summarized(
-                "I need a home location in config.json, or you can ask "
-                "for the weather in a named city."
+                "I need a home location in config/settings.json, or you can "
+                "ask for the weather in a named city."
             )
         except LocationError as exc:
             print(f"[LOCATION] Weather place lookup failed: {exc}", flush=True)

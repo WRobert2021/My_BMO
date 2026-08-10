@@ -213,7 +213,7 @@ class RoutingVocabularyCharacterizationTests(unittest.TestCase):
 class ToolExecutionCharacterizationTests(unittest.TestCase):
     @staticmethod
     def make_router() -> ToolRouter:
-        # A nonempty explicit config ensures tests never consult config.json.
+        # A nonempty explicit config ensures tests never consult local config.
         return ToolRouter({"online_timeout_seconds": 6})
 
     def test_every_canonical_tool_name_executes_its_current_branch(self) -> None:
@@ -315,7 +315,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
             (
                 LocationNotConfigured("missing"),
                 "I do not have a home location configured yet. "
-                "Add one in config.json.",
+                "Add one in config/settings.json.",
             ),
             (
                 LocationError("lookup failed"),
@@ -345,7 +345,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         cases = (
             (
                 LocationNotConfigured("missing"),
-                "I need a home location in config.json, or you can ask "
+                "I need a home location in config/settings.json, or you can ask "
                 "for the weather in a named city.",
             ),
             (
