@@ -30,6 +30,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
 - `bmo.prompts` — system-prompt construction.
 - `bmo.state` — shared UI/application states.
+- `bmo.ui.gestures` — UI-independent tap and horizontal-swipe recognition.
+- `bmo.ui.menu` — ordered menu-page navigation and the touch menu overlay.
 
 ## Runtime flow
 
@@ -46,6 +48,21 @@ The application keeps `agent.py` as the stable startup command while implementat
 8. Tool calls, full web results, and camera images are stored under the same interaction.
 9. Piper streams speech through `sounddevice` while also writing archival WAVs.
 10. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
+
+## Display navigation
+
+The full-screen face recognizes taps separately from horizontal swipes. A
+right-to-left swipe opens the menu without coupling menu behavior to the
+conversation, feature-tool, or interaction-mode registries. The menu keeps a
+live 140×84 BMO face in the same upper-right position used by Pup Pairs. Tapping
+that face returns immediately to the full-screen face.
+
+Menu pages satisfy the small `bmo.ui.menu.MenuPage` rendering contract and are
+supplied to `MenuApp` in display order. Left swipes advance through that tuple.
+Right swipes decrement the current page index, so every visited page is
+retraced in reverse order; a right swipe from the first page closes the menu.
+The built-in tuple currently contains only an intentionally blank page, ready
+for later feature icons without adding feature-specific branches to `BotGUI`.
 
 ## Platform behavior
 

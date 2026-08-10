@@ -55,6 +55,7 @@ from bmo.prompts import build_system_prompt
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
+from bmo.ui import GestureKind, HorizontalSwipeRecognizer, MenuApp
 
 
 class BotGUI:
@@ -113,6 +114,8 @@ class BotGUI:
         self.animations: dict[str, list[ImageTk.PhotoImage]] = {}
         self.current_frame_index = 0
         self.current_overlay_image: ImageTk.PhotoImage | None = None
+        self.face_gesture = HorizontalSwipeRecognizer()
+        self.menu_ui: MenuApp | None = None
 
         self.permanent_memory = load_chat_history(MEMORY_FILE, self.system_prompt)
         self.session_memory: list[dict[str, str]] = []
@@ -171,10 +174,10 @@ class BotGUI:
             width=self.BG_WIDTH,
             height=self.BG_HEIGHT,
         )
-        self.background_label.bind("<Button-1>", self.toggle_hud_visibility)
+        self._bind_face_gestures(self.background_label)
 
         self.overlay_label = tk.Label(self.master, bg="black")
-        self.overlay_label.bind("<Button-1>", self.toggle_hud_visibility)
+        self._bind_face_gestures(self.overlay_label)
 
         self.response_text = tk.Text(
             self.master,
@@ -204,6 +207,10 @@ class BotGUI:
             return
         self.exiting = True
         print("\n--- SHUTDOWN SEQUENCE ---", flush=True)
+
+        menu_ui = getattr(self, "menu_ui", None)
+        if menu_ui is not None:
+            menu_ui.close()
 
         # Cooperative cancellation is critical on macOS. Never call the global
         # sounddevice.stop() while the wake-word thread owns an InputStream.
@@ -266,6 +273,39 @@ class BotGUI:
                 self.exit_button.place(x=10, y=10)
         except tk.TclError:
             pass
+
+    def _bind_face_gestures(self, widget: tk.Misc) -> None:
+        widget.bind("<ButtonPress-1>", self._handle_face_press)
+        widget.bind("<ButtonRelease-1>", self._handle_face_release)
+
+    @staticmethod
+    def _gesture_event_point(event: tk.Event) -> tuple[int, int]:
+        return int(event.x_root), int(event.y_root)
+
+    def _handle_face_press(self, event: tk.Event) -> str:
+        self.face_gesture.press(*self._gesture_event_point(event))
+        return "break"
+
+    def _handle_face_release(self, event: tk.Event) -> str:
+        gesture = self.face_gesture.release(*self._gesture_event_point(event))
+        if gesture == GestureKind.SWIPE_LEFT:
+            self.open_menu()
+        elif gesture == GestureKind.TAP:
+            self.toggle_hud_visibility()
+        return "break"
+
+    def open_menu(self) -> None:
+        """Open the first menu page over the full-screen face."""
+        if self.exiting or self.menu_ui is not None:
+            return
+        self.menu_ui = MenuApp(
+            self.master,
+            on_close=self._handle_menu_close,
+            face_provider=self._current_mode_face,
+        )
+
+    def _handle_menu_close(self) -> None:
+        self.menu_ui = None
 
     def handle_ptt_toggle(self, event: tk.Event | None = None) -> None:
         del event
