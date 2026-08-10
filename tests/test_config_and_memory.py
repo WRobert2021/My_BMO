@@ -13,6 +13,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config = load_config(Path(temp_dir) / "missing.json")
         self.assertEqual(config["text_model"], DEFAULT_CONFIG["text_model"])
+        self.assertEqual(config["text_model"], "gemma3:1b")
         self.assertIn("whisper_binary", config)
         self.assertEqual(config["game_answer_wait_seconds"], 12)
         self.assertTrue(config["interaction_logging"])

@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 import subprocess
 import unittest
+from json import loads
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from bmo.config import DEFAULT_CONFIG
 
@@ -47,11 +49,87 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn('git clone --depth 1 --branch "$WHISPER_CPP_VERSION"', script)
         self.assertIn('cmake -S "$WHISPER_DIR" -B "$WHISPER_DIR/build"', script)
         self.assertIn('cmake --build "$WHISPER_DIR/build"', script)
-        self.assertIn(
-            'sh "$WHISPER_DIR/models/download-ggml-model.sh" base.en', script
-        )
+        self.assertIn('"$WHISPER_MODEL_URL" "$WHISPER_MODEL" 100000000', script)
         self.assertIn('[ ! -x "$WHISPER_BINARY" ]', script)
-        self.assertIn('[ ! -s "$WHISPER_MODEL" ]', script)
+
+    def test_download_helper_is_atomic_and_reuses_valid_files(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            source = directory / "source.bin"
+            destination = directory / "destination.bin"
+            source.write_bytes(b"first payload")
+            command = (
+                f'source "{SETUP_SCRIPT}"; '
+                f'download_file "file://{source}" "{destination}" 5 fixture'
+            )
+
+            first = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(destination.read_bytes(), b"first payload")
+
+            source.write_bytes(b"second payload")
+            second = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(destination.read_bytes(), b"first payload")
+            self.assertEqual(list(directory.glob("destination.bin.part.*")), [])
+
+    def test_download_helper_rejects_small_files_without_overwriting(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            source = directory / "source.bin"
+            destination = directory / "destination.bin"
+            source.write_bytes(b"tiny")
+            destination.write_bytes(b"old")
+            command = (
+                f'source "{SETUP_SCRIPT}"; '
+                f'download_file "file://{source}" "{destination}" 10 fixture'
+            )
+
+            result = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(destination.read_bytes(), b"old")
+            self.assertEqual(list(directory.glob("destination.bin.part.*")), [])
+
+    def test_setup_installs_commands_it_uses(self) -> None:
+        script = SETUP_SCRIPT.read_text(encoding="utf-8")
+
+        for package in ("ca-certificates", "curl", "python3-venv"):
+            self.assertRegex(script, rf"(?m)^\s*{re.escape(package)}$", package)
+
+    def test_setup_uses_supported_model_sources(self) -> None:
+        script = SETUP_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('BMO_VOICE_RELEASE="v1.0-voice"', script)
+        self.assertIn('download_models(model_names=["hey_jarvis_v0.1"])', script)
+        self.assertNotIn("releases/latest/download", script)
+        self.assertNotIn("openWakeWord/raw/main", script)
+
+    def test_ollama_model_matches_runtime_and_example_defaults(self) -> None:
+        script = SETUP_SCRIPT.read_text(encoding="utf-8")
+        model_match = re.search(r'^TEXT_MODEL="([^"]+)"$', script, re.MULTILINE)
+        example = loads(
+            (REPOSITORY_ROOT / "example.config.json").read_text(encoding="utf-8")
+        )
+
+        self.assertIsNotNone(model_match)
+        self.assertEqual(model_match.group(1), DEFAULT_CONFIG["text_model"])
+        self.assertEqual(example["text_model"], DEFAULT_CONFIG["text_model"])
 
 
 if __name__ == "__main__":

@@ -69,11 +69,11 @@ sudo apt install git -y
 ### 2. Install Ollama
 This agent relies on [Ollama](https://ollama.com) to run the brain.
 ```bash
-curl -fsSL https://ollama.com/install.sh| sh
+curl -fsSL https://ollama.com/install.sh | sh
 ```
 *Pull the required models:*
 ```bash
-ollama pull gemma:2b
+ollama pull gemma3:1b
 ollama pull moondream
 ```
 
@@ -84,9 +84,11 @@ cd be-more-agent
 chmod +x setup.sh
 ./setup.sh
 ```
-*The setup script will install system libraries, create necessary folders, build
-Whisper.cpp, download its `base.en` speech model, download Piper TTS, and set up
-the Python virtual environment.*
+*The setup script supports 64-bit Raspberry Pi OS. It installs the required
+system libraries, creates local folders, builds Whisper.cpp, downloads the
+`base.en` speech model and Piper voices, creates the Python environment, pulls
+the Ollama models, and installs the default wake-word model. It is safe to run
+again and reuses valid existing downloads.*
 
 ### 4. Configure the Wake Word
 The setup script downloads a default wake word ("Hey Jarvis"). To use your own:
@@ -214,10 +216,13 @@ This software is a generic framework. You can give it a new personality by repla
 
 This project features a custom, locally fine-tuned text-to-speech model to make the agent sound authentic! 
 
-When you run the `setup.sh` script, it will automatically download the compiled `.onnx` model and its `.json` configuration file from the [Releases page](https://github.com/brenpoly/be-more-agent/releases) and place them into a local `voices/` directory.
+When you run the `setup.sh` script, it downloads the compiled `.onnx` model and
+its `.json` configuration file from the pinned
+[`v1.0-voice` release](https://github.com/brenpoly/be-more-agent/releases/tag/v1.0-voice)
+and places them in the local `voices/` directory.
 
 **Manual Installation (if you are not using setup.sh):**
-1. Download `bmo.onnx` and `bmo.onnx.json` from the [Latest Release](https://github.com/brenpoly/be-more-agent/releases).
+1. Download `bmo.onnx` and `bmo.onnx.json` from the [`v1.0-voice` release](https://github.com/brenpoly/be-more-agent/releases/tag/v1.0-voice).
 2. Create a folder named `voices/` in the root directory of this repository.
 3. Place both downloaded files inside the `voices/` folder.
 4. Ensure your `config.json` file points to the new model:
@@ -231,7 +236,7 @@ When you run the `setup.sh` script, it will automatically download the compiled 
 
 ## ⚠️ Troubleshooting
 
-* **"No search library found":** If web search fails, ensure you are in the virtual environment and `duckduckgo-search` is installed via pip.
+* **"No search library found":** If web search fails, ensure you are in the virtual environment and `ddgs` is installed via pip.
 * **Shutdown Errors:** When you exit the script (Ctrl+C), you might see `Expression 'alsa_snd_pcm_mmap_begin' failed`. **This is normal.** It just means the audio stream was cut off mid-sample. It does not affect the functionality.
 * **Audio Glitches:** If the voice sounds fast or slow, the script attempts to auto-detect sample rates. Ensure your `config.json` points to a valid `.onnx` voice model in the `piper/` folder.
 If your custom BMO voice sounds incredibly deep, slow, or "demonic," don't panic! This is not an issue with the Piper installation or the setup script. It is almost always caused by a **Sample Rate (Hz)** mismatch between the model and the audio player.
@@ -239,11 +244,14 @@ If your custom BMO voice sounds incredibly deep, slow, or "demonic," don't panic
 Here is how to fix it:
 
 **Fix 1: Match the Sample Rate**
-By default, `agent.py` expects "medium" quality models and plays audio at 22050 Hz. If your custom model was trained at a different quality (like 48000 Hz or 16000 Hz), playing it at the default rate will stretch or compress the audio, severely altering the pitch.
+By default, the application expects "medium" quality models and plays audio at
+22050 Hz. If your custom model was trained at a different quality (like 48000 Hz
+or 16000 Hz), playing it at the default rate will stretch or compress the audio,
+severely altering the pitch.
 
 1. Open your model's configuration file (e.g., `voices/bmo.onnx.json`).
 2. Look for the `"sample_rate"` property and note the number (e.g., `22050`, `16000`, `48000`).
-3. Open `agent.py` and find the line: `PIPER_RATE = 22050`.
+3. Open `bmo/audio.py` and find the line: `PIPER_RATE = 22050`.
 4. Change that number to match the sample rate in your `.json` file.
 5. Save the file and restart the agent.
 

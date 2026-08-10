@@ -13,7 +13,7 @@ WAKE_WORD_MODEL = Path("wakeword.onnx")
 WAKE_WORD_THRESHOLD = 0.5
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "text_model": "gemma:2b",
+    "text_model": "gemma3:1b",
     "vision_model": "moondream",
     "voice_model": "piper/en_GB-semaine-medium.onnx",
     "chat_memory": True,
