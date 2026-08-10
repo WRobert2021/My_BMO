@@ -9,7 +9,30 @@
 - Add or update tests whenever behavior changes.
 - Run `python -m pytest -q` after code changes.
 - Do not weaken, skip, or delete tests merely to make them pass.
-- Ask before adding, removing, or upgrading dependencies.
+
+## Dependency policy
+
+- Ask before removing or upgrading an existing dependency.
+- A new dependency may be added without separate approval only when both of
+  these conditions are satisfied:
+  1. It is compatible with the primary deployment target: Raspberry Pi 5 with
+     16 GB RAM, 64-bit Raspberry Pi OS (`aarch64`), and Python 3.13.5.
+  2. It is absolutely necessary, materially reduces the project-owned code
+     needed for the planned feature, provides a measurable performance
+     improvement, or makes the implementation or runtime materially cleaner
+     and more reliable.
+- Establish target compatibility before adding the dependency. Check upstream
+  support and Python 3.13/aarch64 wheel or source-build availability, and run
+  an install/import smoke test on the target when practical. A successful
+  macOS installation alone is not sufficient. Do not add a dependency whose
+  target compatibility cannot be established.
+- Keep the dependency surface minimal. Identify the license, constrain the
+  supported version where needed, and update `requirements.txt`, `setup.sh`,
+  documentation, and tests that own installation behavior.
+- In the handoff, state which justification applies and report compatibility
+  evidence. Include before/after measurements when performance is the reason;
+  for code reduction or cleaner execution, summarize the concrete reduction
+  in project-owned code or runtime complexity.
 
 ## Git and GitHub restrictions
 

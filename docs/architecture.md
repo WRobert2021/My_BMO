@@ -115,12 +115,30 @@ vision turn on the normal interaction worker. The feature never receives
 
 ## Platform behavior
 
-The same Python entry point is used on macOS and Raspberry Pi.
+The primary deployment baseline is a Raspberry Pi 5 with 16 GB RAM running
+64-bit Raspberry Pi OS (`aarch64`) and Python 3.13.5. macOS is a supported
+development and test environment, but a successful macOS install is not proof
+that a native or Python dependency works on the deployment target. New
+dependencies must satisfy the compatibility and justification policy in
+`AGENTS.md` before they are added.
+
+The same Python entry point is used on macOS and Raspberry Pi. The Python
+virtual environment owns Python packages only. Whisper.cpp, Piper and its voice
+models, and the wake-word model are project-local native/model artifacts;
+Ollama and its downloaded models are system-level services. Replacing a virtual
+environment therefore requires reinstalling Python packages, but it does not
+require rebuilding or downloading those separate artifacts when their expected
+paths remain valid.
 
 - Piper uses `./piper/piper` when the bundled Pi binary exists.
 - Otherwise Piper runs through the active environment with `python -m piper`.
 - Whisper paths can be overridden with `whisper_binary` and `whisper_model` in
   `config/settings.json`.
+- On Linux with Python 3.13, BMO uses OpenWakeWord 0.6 in ONNX-only mode.
+  `setup.sh` deliberately installs it without the unused TFLite dependency,
+  whose compatible Python 3.13 wheel is unavailable, after installing the ONNX
+  runtime dependencies. Installer verification must instantiate the configured
+  wake-word model; checking that the package merely imports is not sufficient.
 - Raspberry Pi camera matching, execution, timeout, configured rotation, and
   result ownership all live in the optional `bmo.features.capture_image`
   module. Its `save_directory` setting selects a persistent capture folder;

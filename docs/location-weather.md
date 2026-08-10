@@ -2,22 +2,39 @@
 
 Named weather requests resolve the location spoken by the user at request
 time; the weather location does not need to be stored in
-`config/settings.json`. The
-agent does not infer the household's location from its public IP address.
-Current weather and place-name lookup use Open-Meteo over HTTPS and require an
-internet connection, but no API key.
-Weather data is provided by Open-Meteo under its CC BY 4.0 data license.
+`config/settings.json`. The agent does not infer the household's location from
+its public IP address.
+Place-name lookup uses the public Nominatim service and OpenStreetMap data;
+the resulting coordinates are sent to Open-Meteo for current weather. Both
+requests use HTTPS and require an internet connection, but neither requires an
+API key.
 
-An optional `location` object can be added only if generic requests such as
-"What's the weather?" should use a home location:
+These are external services. A named-place lookup sends the spoken place name
+to Nominatim, and every weather lookup sends coordinates to Open-Meteo. Keep a
+real home location only in the ignored `config/settings.json`, never in tracked
+examples, documentation, or tests. Do not submit exact addresses or other
+confidential location data. The public Nominatim endpoint is intended only for
+low-volume, user-triggered lookups; do not reuse this feature for bulk,
+periodic, or autocomplete geocoding. See the
+[Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/).
+
+Geocoding data is © OpenStreetMap contributors and available under the
+[ODbL](https://www.openstreetmap.org/copyright). Weather data is provided by
+Open-Meteo under its
+[CC BY 4.0 data license](https://open-meteo.com/).
+
+An optional `location` object can be added to the private
+`config/settings.json` only if generic requests such as "What's the weather?"
+should use a home location. The values below are public example coordinates,
+not a project default:
 
 ```json
 {
   "location": {
-    "name": "Dallas, Texas",
-    "latitude": 32.7767,
-    "longitude": -96.797,
-    "timezone": "America/Chicago"
+    "name": "New York, New York",
+    "latitude": 40.7128,
+    "longitude": -74.006,
+    "timezone": "America/New_York"
   },
   "weather_units": "imperial",
   "online_timeout_seconds": 6
@@ -25,9 +42,10 @@ An optional `location` object can be added only if generic requests such as
 ```
 
 Coordinates are preferred because home-location requests then skip geocoding.
-You can omit latitude, longitude, and timezone and set only `name`; the agent
-will geocode that name when needed. Use `"weather_units": "metric"` for Celsius
-and km/h.
+The coordinates are still sent to Open-Meteo for the weather request. You can
+omit latitude, longitude, and timezone and set only `name`; the agent will send
+that name to Nominatim when it needs to geocode it. Use
+`"weather_units": "metric"` for Celsius and km/h.
 
 Supported examples:
 
@@ -45,5 +63,5 @@ conversation loop.
 Run the unit tests without Pi hardware:
 
 ```bash
-python -m unittest tests.test_location_weather
+python -m pytest -q tests/test_location_weather.py
 ```
