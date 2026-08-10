@@ -76,8 +76,12 @@ class ToolRegistry:
 
     @property
     def actions(self) -> set[str]:
-        """Return a snapshot of canonical registered action names."""
-        return set(self._tools)
+        """Return canonical names exposed to voice and model routing."""
+        return {
+            action
+            for action, tool in self._tools.items()
+            if not self._is_menu_only(tool)
+        }
 
     @property
     def aliases(self) -> dict[str, str]:
@@ -98,6 +102,8 @@ class ToolRegistry:
         """Return prompt metadata in registration order."""
         capabilities = []
         for action, tool in self._tools.items():
+            if self._is_menu_only(tool):
+                continue
             schemas = tuple(getattr(tool, "schemas", ())) or (
                 json.dumps({"action": action}, separators=(",", ":")),
             )
@@ -168,6 +174,15 @@ class ToolRegistry:
             for alias in tool.aliases
         ]
         menu_item = getattr(tool, "menu_item", None)
+        menu_only = getattr(tool, "menu_only", False)
+        if not isinstance(menu_only, bool):
+            raise TypeError(f"Tool '{action}' menu_only must be true or false.")
+        if menu_only and aliases:
+            raise ValueError(f"Menu-only tool '{action}' cannot define aliases.")
+        if menu_only and menu_item is None:
+            raise ValueError(
+                f"Menu-only tool '{action}' must define a menu item."
+            )
 
         if action in self._tools:
             raise DuplicateToolError(
@@ -265,7 +280,7 @@ class ToolRegistry:
         normalized_request = self.normalize_request(request)
         action = str(normalized_request["action"])
         tool = self._tools.get(action)
-        if tool is None:
+        if tool is None or self._is_menu_only(tool):
             return None
 
         preparer = getattr(tool, "prepare_model_request", None)
@@ -294,6 +309,10 @@ class ToolRegistry:
             raise UnknownToolError(
                 f"No tool is registered for action '{action}'."
             ) from exc
+        if self._is_menu_only(tool):
+            raise UnknownToolError(
+                f"Tool '{action}' is available only from the menu."
+            )
         if getattr(tool, "uses_context", False):
             result = tool.execute(normalized_request, context)
         else:
@@ -308,6 +327,8 @@ class ToolRegistry:
     def match_direct_action(self, user_text: str) -> DirectAction | None:
         """Return the first direct phrase match from registered tools."""
         for tool in self._tools.values():
+            if self._is_menu_only(tool):
+                continue
             matcher = getattr(tool, "match_direct_action", None)
             if not callable(matcher):
                 continue
@@ -331,3 +352,7 @@ class ToolRegistry:
         if not normalized:
             raise ValueError(f"Tool {label} cannot be empty.")
         return normalized
+
+    @staticmethod
+    def _is_menu_only(tool: Tool) -> bool:
+        return getattr(tool, "menu_only", False) is True

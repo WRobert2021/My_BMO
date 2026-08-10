@@ -64,6 +64,45 @@ class ToolRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "must define open_menu"):
             ToolRegistry([MenuToolWithoutOpen()])
 
+    def test_menu_only_tool_is_excluded_from_every_action_surface(self) -> None:
+        class MenuOnlyTool:
+            action = "album"
+            aliases = ()
+            menu_only = True
+            menu_item = FeatureMenuItem(
+                "album",
+                "Album",
+                Path("icons/album.png"),
+            )
+            description = "must not be prompted"
+            schemas = ('{"action":"album"}',)
+            prompt_guidance = ("must not be prompted",)
+            prompt_examples = ()
+
+            def open_menu(self, context):
+                del context
+
+            def execute(self, request):
+                del request
+                return ToolResult.success("must not execute")
+
+            def match_direct_action(self, user_text):
+                del user_text
+                return {"action": "album"}
+
+        registry = ToolRegistry((MenuOnlyTool(),))
+
+        self.assertEqual(registry.actions, set())
+        self.assertEqual(registry.aliases, {})
+        self.assertEqual(len(registry.menu_items), 1)
+        self.assertEqual(registry.capabilities, ())
+        self.assertIsNone(registry.match_direct_action("open album"))
+        self.assertIsNone(
+            registry.prepare_model_request({"action": "album"})
+        )
+        with self.assertRaisesRegex(UnknownToolError, "only from the menu"):
+            registry.execute({"action": "album"})
+
     def test_tool_result_rejects_invalid_kind_and_content_combinations(
         self,
     ) -> None:

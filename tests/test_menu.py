@@ -306,18 +306,20 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui = BotGUI.__new__(BotGUI)
         gui.exiting = False
         gui.menu_mode_requests = queue.Queue()
-        gui.menu_mode_event = threading.Event()
+        gui.menu_action_event = threading.Event()
 
         gui._select_menu_item("mode:matching_game")
 
         self.assertEqual(gui.menu_mode_requests.get_nowait(), "matching_game")
-        self.assertTrue(gui.menu_mode_event.is_set())
+        self.assertTrue(gui.menu_action_event.is_set())
 
     def test_feature_selection_opens_view_and_returns_to_same_menu(self) -> None:
         gui = BotGUI.__new__(BotGUI)
         gui.master = Mock()
         gui.menu_ui = Mock()
         gui.tool_router = Mock()
+        gui._current_mode_face = Mock(return_value=None)
+        gui._queue_menu_vision = Mock()
         originating_menu = gui.menu_ui
 
         gui._select_menu_item("feature:set_timer")
@@ -327,6 +329,14 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         self.assertEqual(name, "set_timer")
         self.assertIsInstance(context, FeatureMenuContext)
         self.assertIs(context.master, gui.master)
+        self.assertIsNone(context.current_face())
+        gui._current_mode_face.assert_called_once_with()
+        completion = Mock()
+        context.request_vision(Path("/tmp/photo.jpg"), completion)
+        gui._queue_menu_vision.assert_called_once_with(
+            Path("/tmp/photo.jpg"),
+            completion,
+        )
         originating_menu.finish_selection.assert_not_called()
 
         context.on_close()
@@ -338,8 +348,8 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui = BotGUI.__new__(BotGUI)
         gui.menu_mode_requests = queue.Queue()
         gui.menu_mode_requests.put("matching_game")
-        gui.menu_mode_event = threading.Event()
-        gui.menu_mode_event.set()
+        gui.menu_action_event = threading.Event()
+        gui.menu_action_event.set()
         gui.mode_registry = Mock()
         gui.menu_ui = Mock()
         gui.menu_ui.navigator.page_index = 1
@@ -351,14 +361,42 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         originating_menu.finish_selection.assert_called_once_with()
         self.assertIs(gui.menu_ui, originating_menu)
         self.assertEqual(gui.menu_ui.navigator.page_index, 1)
-        self.assertFalse(gui.menu_mode_event.is_set())
+        self.assertFalse(gui.menu_action_event.is_set())
+
+    def test_menu_vision_runs_on_interaction_worker_and_completes_on_tk(
+        self,
+    ) -> None:
+        gui = BotGUI.__new__(BotGUI)
+        gui.menu_vision_requests = queue.Queue()
+        gui.menu_mode_requests = queue.Queue()
+        gui.menu_action_event = threading.Event()
+        gui.menu_action_event.set()
+        gui.interrupted = threading.Event()
+        gui.master = Mock()
+        gui._start_interaction = Mock()
+        gui.chat_and_respond = Mock()
+        gui._finish_interaction = Mock()
+        completion = Mock()
+        path = Path("/tmp/photo.jpg")
+        gui.menu_vision_requests.put((path, completion))
+
+        self.assertTrue(gui._start_pending_menu_vision())
+
+        gui._start_interaction.assert_called_once_with("MENU_VISION")
+        gui.chat_and_respond.assert_called_once_with(
+            "What do you see in this image?",
+            image_path=str(path),
+        )
+        gui._finish_interaction.assert_called_once_with("completed")
+        gui.master.after.assert_called_once_with(0, completion)
+        self.assertFalse(gui.menu_action_event.is_set())
 
     def test_typed_debug_loop_also_starts_pending_menu_mode(self) -> None:
         gui = TypedBotGUI.__new__(TypedBotGUI)
         gui.menu_mode_requests = queue.Queue()
         gui.menu_mode_requests.put("matching_game")
-        gui.menu_mode_event = threading.Event()
-        gui.menu_mode_event.set()
+        gui.menu_action_event = threading.Event()
+        gui.menu_action_event.set()
         gui.mode_registry = Mock()
 
         self.assertTrue(gui._run_typed_interaction())

@@ -11,7 +11,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import ollama
 import tkinter as tk
@@ -125,7 +125,10 @@ class BotGUI:
         self.face_gesture = HorizontalSwipeRecognizer()
         self.menu_ui: MenuApp | None = None
         self.menu_mode_requests: queue.Queue[str] = queue.Queue()
-        self.menu_mode_event = threading.Event()
+        self.menu_vision_requests: queue.Queue[
+            tuple[Path, Callable[[], None]]
+        ] = queue.Queue()
+        self.menu_action_event = threading.Event()
 
         self.permanent_memory = load_chat_history(MEMORY_FILE, self.system_prompt)
         self.session_memory: list[dict[str, str]] = []
@@ -362,15 +365,32 @@ class BotGUI:
             FeatureMenuContext(
                 master=self.master,
                 on_close=finish_selection,
+                face_provider=self._current_mode_face,
+                vision_requester=self._queue_menu_vision,
             ),
         )
+
+    def _queue_menu_vision(
+        self,
+        image_path: Path,
+        on_complete: Callable[[], None],
+    ) -> None:
+        """Wake the interaction worker for a feature-requested vision turn."""
+        if self.exiting:
+            try:
+                self.master.after(0, on_complete)
+            except tk.TclError:
+                pass
+            return
+        self.menu_vision_requests.put((image_path, on_complete))
+        self.menu_action_event.set()
 
     def _queue_menu_mode(self, name: str) -> None:
         """Wake the interaction worker to start a mode selected by touch."""
         if self.exiting:
             return
         self.menu_mode_requests.put(name)
-        self.menu_mode_event.set()
+        self.menu_action_event.set()
 
     def _start_pending_menu_mode(self) -> bool:
         """Start one queued menu mode on the normal interaction thread."""
@@ -381,8 +401,7 @@ class BotGUI:
             name = requests.get_nowait()
         except queue.Empty:
             return False
-        if requests.empty():
-            self.menu_mode_event.clear()
+        self._clear_menu_event_if_idle()
         try:
             self.mode_registry.start_menu_item(name)
         finally:
@@ -390,6 +409,51 @@ class BotGUI:
             if menu_ui is not None:
                 menu_ui.finish_selection()
         return True
+
+    def _start_pending_menu_vision(self) -> bool:
+        """Run one queued menu image through the normal vision pipeline."""
+        requests = getattr(self, "menu_vision_requests", None)
+        if requests is None:
+            return False
+        try:
+            image_path, on_complete = requests.get_nowait()
+        except queue.Empty:
+            return False
+        self._clear_menu_event_if_idle()
+        self._start_interaction("MENU_VISION")
+        self.interrupted.clear()
+        try:
+            self.chat_and_respond(
+                "What do you see in this image?",
+                image_path=str(image_path),
+            )
+        except Exception as exc:
+            self._finish_interaction("error", str(exc))
+            raise
+        else:
+            self._finish_interaction("completed")
+        finally:
+            try:
+                self.master.after(0, on_complete)
+            except tk.TclError:
+                pass
+        return True
+
+    def _start_pending_menu_action(self) -> bool:
+        """Start the next generic feature or mode request from the touch menu."""
+        return (
+            self._start_pending_menu_vision()
+            or self._start_pending_menu_mode()
+        )
+
+    def _clear_menu_event_if_idle(self) -> None:
+        """Clear the shared wake event only after every menu queue drains."""
+        mode_requests = getattr(self, "menu_mode_requests", None)
+        vision_requests = getattr(self, "menu_vision_requests", None)
+        mode_empty = mode_requests is None or mode_requests.empty()
+        vision_empty = vision_requests is None or vision_requests.empty()
+        if mode_empty and vision_empty:
+            self.menu_action_event.clear()
 
     def handle_ptt_toggle(self, event: tk.Event | None = None) -> None:
         del event
@@ -578,7 +642,7 @@ class BotGUI:
 
     def _run_voice_interaction(self) -> bool:
         """Run one voice-loop iteration, returning false when it should stop."""
-        if self._start_pending_menu_mode():
+        if self._start_pending_menu_action():
             return True
         input_policy = self.mode_registry.input_policy()
         while (
@@ -598,7 +662,7 @@ class BotGUI:
         else:
             trigger_source = self.detect_wake_word_or_ptt()
         if trigger_source == "MENU":
-            self._start_pending_menu_mode()
+            self._start_pending_menu_action()
             return True
         if self.exiting:
             return False
@@ -742,7 +806,7 @@ class BotGUI:
         trigger = self.wake_word.wait_for_trigger(
             self.ptt_event,
             self.shutdown_event,
-            alternate_event=self.menu_mode_event,
+            alternate_event=self.menu_action_event,
         )
         return "MENU" if trigger == "ALTERNATE" else trigger
 

@@ -16,6 +16,11 @@ RequestNormalizer: TypeAlias = Callable[[ToolRequest], Mapping[str, Any]]
 ModelRequestPreparer: TypeAlias = Callable[
     [ToolRequest], Mapping[str, Any] | None
 ]
+FeatureFaceProvider: TypeAlias = Callable[[], Any | None]
+FeatureVisionCompletion: TypeAlias = Callable[[], None]
+FeatureVisionRequester: TypeAlias = Callable[
+    [Path, FeatureVisionCompletion], None
+]
 
 
 @dataclass(frozen=True)
@@ -61,10 +66,36 @@ class FeatureMenuContext:
 
     master: Any
     on_close: Callable[[], None]
+    face_provider: FeatureFaceProvider | None = None
+    vision_requester: FeatureVisionRequester | None = None
 
     def __post_init__(self) -> None:
         if not callable(self.on_close):
             raise TypeError("Feature menu on_close must be callable.")
+        for name in ("face_provider", "vision_requester"):
+            callback = getattr(self, name)
+            if callback is not None and not callable(callback):
+                raise TypeError(f"Feature menu {name} must be callable.")
+
+    def current_face(self) -> Any | None:
+        """Return the current runtime-owned BMO face, when available."""
+        if self.face_provider is None:
+            return None
+        return self.face_provider()
+
+    def request_vision(
+        self,
+        image_path: Path,
+        on_complete: FeatureVisionCompletion,
+    ) -> None:
+        """Queue generic vision processing without exposing the coordinator."""
+        if not isinstance(image_path, Path):
+            raise TypeError("Feature vision image_path must be pathlib.Path.")
+        if not callable(on_complete):
+            raise TypeError("Feature vision on_complete must be callable.")
+        if self.vision_requester is None:
+            raise RuntimeError("Feature vision requests are not available.")
+        self.vision_requester(image_path, on_complete)
 
 
 class ToolResultKind(str, Enum):

@@ -405,6 +405,7 @@ class CoreCouplingAuditTests(unittest.TestCase):
             "get_weather",
             "search_web",
             "capture_image",
+            "album",
             "matching_game",
             "twenty_questions",
         }

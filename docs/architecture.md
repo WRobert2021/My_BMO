@@ -17,6 +17,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.features.capture_image` — configured camera routing, Raspberry Pi still
   capture, rotation, interaction archival, optional persistent copies, event
   recording, and vision follow-up results.
+- `bmo.features.album` — menu-only photo discovery, root-containment checks,
+  FreeDesktop Wastebasket moves, and album-view registration.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
 - `bmo.modes` — typed lifecycle contracts and exclusive input ownership for
@@ -35,6 +37,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.ui.menu` — ordered menu-page navigation and the touch menu overlay.
 - `bmo.ui.timer` — live countdown rendering, touch deletion, and vertical
   drag-scrolling for the menu-launched timer view.
+- `bmo.ui.album` — paginated photo thumbnails, horizontal swipe navigation,
+  fullscreen image actions, and BMO vision-state presentation.
 
 ## Runtime flow
 
@@ -96,6 +100,19 @@ the originating menu page. Timer cancellation removes the timer from both the
 active index and priority queue immediately, so a deleted row cannot later
 expire or retain scheduler state.
 
+The album feature contributes `graphics/Icons/album.png` by reference and has
+no voice, model, prompt, alias, or executable-tool surface. Its full-screen
+view recursively lists only resolved regular image files contained by the
+configured `photo_root`. The grid shows multiple images per page, retraces its
+pages with horizontal swipes, and retains the live BMO face in the upper-right
+corner. Selecting a thumbnail hides BMO and shows the image full screen; a
+second tap opens Back, Wastebasket, and BMO-analysis actions. Back restores the
+album, and Wastebasket uses the recoverable FreeDesktop `Trash/files` plus
+`Trash/info` layout. The analysis action validates containment again, restores
+the full-screen image with BMO in the upper-right corner, and queues a generic
+vision turn on the normal interaction worker. The feature never receives
+`BotGUI`, model objects, or an interaction archive.
+
 ## Platform behavior
 
 The same Python entry point is used on macOS and Raspberry Pi.
@@ -133,7 +150,7 @@ Features and modes solve different routing problems:
 ### Feature module contract
 
 The `features` list lives in `config/features.json`. Omitting the key loads the
-six modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+seven modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
 default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.
@@ -177,9 +194,12 @@ contract in `bmo.features.contracts`:
   `registry.notify_runtime`; it must stop its workers in `close()`.
 - A feature may expose a `FeatureMenuItem` whose normalized name matches its
   action and an `open_menu(context)` hook. The registry validates and exposes
-  this pair transactionally. `FeatureMenuContext` supplies only the Tk master
-  and the callback that reveals the originating menu; it does not expose
-  `BotGUI` or interaction archives.
+  this pair transactionally. A tool marked `menu_only = True` must have a menu
+  item and no aliases; the registry excludes it from actions, capabilities,
+  prompts, direct matching, model preparation, and executable dispatch.
+  `FeatureMenuContext` supplies only the Tk master, the callback that reveals
+  the originating menu, a current-face provider, and a queued generic vision
+  request. It does not expose `BotGUI`, models, or interaction archives.
 
 Registration order controls prompt order and the first matching direct action.
 Only successfully registered tools appear in prompts or dispatch. The
@@ -371,6 +391,8 @@ generic runtime concepts:
 - `ToolAttachmentKind.IMAGE` and `ToolFollowUpKind.VISION` select application
   services for typed artifacts; they do not identify the feature that produced
   them.
+- `FeatureMenuContext.request_vision` queues any contained feature-owned image
+  for the same core vision flow without naming the requesting feature.
 - `InputPolicyKind` selects wake-word, continuous, or suspended input behavior;
   it does not identify the active mode.
 - `ToolResultKind` validates semantic outcomes independently of action names.

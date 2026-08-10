@@ -19,6 +19,7 @@ DEFAULT_FEATURE_MODULES = (
     "bmo.features.get_weather",
     "bmo.features.search_web",
     "bmo.features.capture_image",
+    "bmo.features.album",
 )
 
 

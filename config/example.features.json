@@ -54,6 +54,16 @@
       }
     },
     {
+      "module": "bmo.features.album",
+      "enabled": true,
+      "settings": {
+        "photo_root": "/home/pi-bmo/Pictures",
+        "wastebasket_root": "/home/pi-bmo/.local/share/Trash",
+        "bmo_button_image": "/home/pi-bmo/My_BMO/faces/capturing/capturing 01.png",
+        "photos_per_page": 6
+      }
+    },
+    {
       "module": "bmo.features.say_hello",
       "enabled": false,
       "settings": {
