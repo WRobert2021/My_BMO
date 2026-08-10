@@ -117,8 +117,30 @@ class SetupScriptTests(unittest.TestCase):
 
         self.assertIn('BMO_VOICE_RELEASE="v1.0-voice"', script)
         self.assertIn('download_models(model_names=["hey_jarvis_v0.1"])', script)
+        self.assertIn('models_directory / "melspectrogram.onnx"', script)
+        self.assertIn('models_directory / "embedding_model.onnx"', script)
+        self.assertIn('version("openwakeword") != "0.6.0"', script)
+        self.assertIn('inference_framework="onnx"', script)
         self.assertNotIn("releases/latest/download", script)
         self.assertNotIn("openWakeWord/raw/main", script)
+
+    def test_python_setup_forces_onnx_compatible_openwakeword(self) -> None:
+        script = SETUP_SCRIPT.read_text(encoding="utf-8")
+        requirements = (REPOSITORY_ROOT / "requirements.txt").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            'pip install --no-deps --upgrade "openwakeword==0.6.0"', script
+        )
+        self.assertIn("requests>=2,<3", requirements)
+        self.assertIn("tqdm>=4,<5", requirements)
+        self.assertIn("scikit-learn>=1,<2", requirements)
+        self.assertIn(
+            'openwakeword==0.6.0; platform_system != "Linux" or '
+            'python_version < "3.12"',
+            requirements,
+        )
 
     def test_ollama_model_matches_runtime_and_example_defaults(self) -> None:
         script = SETUP_SCRIPT.read_text(encoding="utf-8")

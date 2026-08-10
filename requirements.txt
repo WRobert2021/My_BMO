@@ -1,8 +1,13 @@
 sounddevice
 numpy<2.5
 scipy
-openwakeword
 onnxruntime
+requests>=2,<3
+tqdm>=4,<5
+scikit-learn>=1,<2
+# Linux Python 3.12+ uses the ONNX-only install in setup.sh because
+# tflite-runtime does not publish compatible wheels for those interpreters.
+openwakeword==0.6.0; platform_system != "Linux" or python_version < "3.12"
 ollama
 ddgs>=9.14,<10
 Pillow

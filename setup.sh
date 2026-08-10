@@ -234,6 +234,10 @@ setup_python_environment() {
     "$VENV_PYTHON" -m pip install --upgrade pip
     "$VENV_PYTHON" -m pip install --force-reinstall --no-cache-dir sounddevice
     "$VENV_PYTHON" -m pip install -r "$BASE_DIR/requirements.txt"
+    # OpenWakeWord declares a Linux TFLite dependency that has no Python 3.13
+    # wheel. BMO uses ONNX exclusively, so install the compatible API without
+    # that unused dependency after pip has installed the remaining packages.
+    "$VENV_PYTHON" -m pip install --no-deps --upgrade "openwakeword==0.6.0"
 }
 
 setup_ollama_models() {
@@ -247,42 +251,49 @@ setup_ollama_models() {
 }
 
 setup_wake_word() {
-    local current_size=0
-    if [ -f "$WAKE_WORD_MODEL" ]; then
-        current_size="$(file_size "$WAKE_WORD_MODEL")"
-    fi
-    if [ "$current_size" -ge 10000 ]; then
-        echo -e "${GREEN}Wake-word model is already present.${NC}"
-        return 0
-    fi
-
     "$VENV_PYTHON" - "$WAKE_WORD_MODEL" <<'PY'
+from importlib.metadata import version
 from pathlib import Path
 import shutil
 import sys
 import tempfile
 
 import openwakeword
+from openwakeword.model import Model
+from openwakeword.utils import download_models
 
 destination = Path(sys.argv[1])
-source = Path(openwakeword.__file__).parent / "resources/models/hey_jarvis_v0.1.onnx"
-if not source.is_file():
-    from openwakeword.utils import download_models
+models_directory = Path(openwakeword.__file__).parent / "resources/models"
+source = models_directory / "hey_jarvis_v0.1.onnx"
+required_package_models = (
+    models_directory / "melspectrogram.onnx",
+    models_directory / "embedding_model.onnx",
+    source,
+)
 
+if version("openwakeword") != "0.6.0":
+    raise RuntimeError("openWakeWord 0.6.0 is required")
+if not all(path.is_file() for path in required_package_models):
     download_models(model_names=["hey_jarvis_v0.1"])
-if not source.is_file() or source.stat().st_size < 10_000:
-    raise RuntimeError("openWakeWord did not provide hey_jarvis_v0.1.onnx")
+if not all(path.is_file() for path in required_package_models):
+    raise RuntimeError("openWakeWord did not provide its required ONNX models")
 
-destination.parent.mkdir(parents=True, exist_ok=True)
-with tempfile.NamedTemporaryFile(
-    dir=destination.parent,
-    prefix=f".{destination.name}.part.",
-    delete=False,
-) as temporary:
-    with source.open("rb") as source_file:
-        shutil.copyfileobj(source_file, temporary)
-    temporary_path = Path(temporary.name)
-temporary_path.replace(destination)
+if not destination.is_file() or destination.stat().st_size < 10_000:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=destination.parent,
+        prefix=f".{destination.name}.part.",
+        delete=False,
+    ) as temporary:
+        with source.open("rb") as source_file:
+            shutil.copyfileobj(source_file, temporary)
+        temporary_path = Path(temporary.name)
+    temporary_path.replace(destination)
+
+Model(
+    wakeword_models=[str(destination)],
+    inference_framework="onnx",
+)
 PY
 
     if [ ! -s "$WAKE_WORD_MODEL" ]; then

@@ -168,6 +168,8 @@ class WakeWordDetector:
                 "Retrying with loose settings...",
                 flush=True,
             )
+            if self.model:
+                self.model.reset()
             try:
                 stream_args["blocksize"] = 1024
                 stream_args["latency"] = "high"
@@ -205,6 +207,14 @@ class WakeWordDetector:
         if self.model is None:
             raise RuntimeError("wake-word model is unavailable")
 
+        input_rate = int(stream_args["samplerate"])
+        model_input_size = (
+            int(round(target_chunk_size * input_rate / self.SAMPLE_RATE))
+            if use_resampling
+            else target_chunk_size
+        )
+        pending_audio = np.empty(0, dtype=np.int16)
+
         with sd.InputStream(**stream_args) as stream:
             print(
                 f"[AUDIO] Listening with rate {stream_args['samplerate']} "
@@ -229,45 +239,54 @@ class WakeWordDetector:
                     if shutdown_event and shutdown_event.is_set():
                         return
                     if overflow:
-                        print("!", end="", flush=True)
-                        raise RuntimeError(
-                            "Audio Buffer Overflow - Triggering Safe Mode"
+                        print(
+                            "[AUDIO] Input overflow; discarding stale audio.",
+                            flush=True,
                         )
+                        pending_audio = np.empty(0, dtype=np.int16)
+                        self.model.reset()
+                        continue
                 except Exception as exc:
                     raise RuntimeError(f"Audio read failed: {exc}") from exc
 
                 audio_data = np.frombuffer(data, dtype=np.int16)
                 if audio_data.ndim > 1:
                     audio_data = audio_data.flatten()
+                pending_audio = np.concatenate((pending_audio, audio_data))
 
-                if use_resampling:
-                    step = len(audio_data) / target_chunk_size
-                    indices = np.arange(0, len(audio_data), step)[
-                        :target_chunk_size
-                    ].astype(int)
-                    audio_data = audio_data[indices]
+                while len(pending_audio) >= model_input_size:
+                    model_audio = pending_audio[:model_input_size]
+                    pending_audio = pending_audio[model_input_size:]
 
-                current_max = int(np.max(np.abs(audio_data)))
-                if current_max <= 200:
-                    continue
+                    if use_resampling:
+                        step = len(model_audio) / target_chunk_size
+                        indices = np.arange(0, len(model_audio), step)[
+                            :target_chunk_size
+                        ].astype(int)
+                        model_audio = model_audio[indices]
 
-                self.model.predict(audio_data)
-                for model_name in self.model.prediction_buffer.keys():
-                    score = list(self.model.prediction_buffer[model_name])[-1]
-                    if score > 0.1:
-                        print(
-                            f"\r[Oww] Score: {score:.3f} | Vol: {current_max}   ",
-                            end="",
-                            flush=True,
-                        )
-                    if score > self.threshold:
-                        print(
-                            f"\n[WAKE] Triggered on '{model_name}' "
-                            f"with score: {score:.2f}",
-                            flush=True,
-                        )
-                        self.model.reset()
-                        return
+                    current_max = int(np.max(np.abs(model_audio)))
+                    # OpenWakeWord is a streaming model. Feed quiet chunks too so
+                    # its temporal context matches real time instead of joining
+                    # unrelated loud fragments from different moments.
+                    self.model.predict(model_audio)
+                    for model_name in self.model.prediction_buffer.keys():
+                        score = list(self.model.prediction_buffer[model_name])[-1]
+                        if score > 0.1:
+                            print(
+                                f"\r[Oww] Score: {score:.3f} | Vol: "
+                                f"{current_max}   ",
+                                end="",
+                                flush=True,
+                            )
+                        if score > self.threshold:
+                            print(
+                                f"\n[WAKE] Triggered on '{model_name}' "
+                                f"with score: {score:.2f}",
+                                flush=True,
+                            )
+                            self.model.reset()
+                            return
 
 
 def extract_json_from_text(text: str) -> dict[str, Any] | None:
