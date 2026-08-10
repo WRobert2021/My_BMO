@@ -84,7 +84,9 @@ cd be-more-agent
 chmod +x setup.sh
 ./setup.sh
 ```
-*The setup script will install system libraries, create necessary folders, download Piper TTS, and set up the Python virtual environment.*
+*The setup script will install system libraries, create necessary folders, build
+Whisper.cpp, download its `base.en` speech model, download Piper TTS, and set up
+the Python virtual environment.*
 
 ### 4. Configure the Wake Word
 The setup script downloads a default wake word ("Hey Jarvis"). To use your own:
