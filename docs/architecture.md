@@ -90,7 +90,7 @@ reveals the same live menu instance with its original page index. Voice-launched
 modes still return to the full-screen face because no menu instance owns their
 launch path.
 
-The timer tool contributes `graphics/Icons/timer.png` by reference and opens a
+The timer tool contributes `graphics/icons/timer.png` by reference and opens a
 full-screen list only when that icon is selected. The list polls immutable
 snapshots of the same scheduler used by voice commands, refreshes countdowns
 four times per second, and cancels through the scheduler when a delete button is
@@ -100,7 +100,7 @@ the originating menu page. Timer cancellation removes the timer from both the
 active index and priority queue immediately, so a deleted row cannot later
 expire or retain scheduler state.
 
-The album feature contributes `graphics/Icons/album.png` by reference and has
+The album feature contributes `graphics/icons/album.png` by reference and has
 no voice, model, prompt, alias, or executable-tool surface. Its full-screen
 view recursively lists only resolved regular image files contained by the
 configured `photo_root`. The grid shows multiple images per page, retraces its
@@ -276,7 +276,7 @@ A mode can expose an optional `ModeMenuItem` with the same normalized name as
 the mode, a label, icon path, and synthetic start request. Registration validates
 and rolls back that metadata with the mode, so disabled, failed, and quarantined
 modes cannot leave stale menu pages. The matching-game adapter contributes the
-existing `graphics/Icons/Matching_Game.png` asset by reference. Its
+existing `graphics/icons/matching_game.png` asset by reference. Its
 `show_in_menu` setting defaults to `true`; setting it to `false` hides only the
 menu page and leaves voice matching enabled.
 

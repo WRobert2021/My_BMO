@@ -291,7 +291,7 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         self.assertEqual(pages[0].items[0].name, "mode:matching_game")
         self.assertEqual(
             pages[0].items[0].icon_path,
-            Path("graphics/icons/matching_Game.png"),
+            Path("graphics/icons/matching_game.png"),
         )
         self.assertEqual(pages[0].items[1].name, "feature:set_timer")
         self.assertEqual(

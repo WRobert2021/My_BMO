@@ -452,7 +452,7 @@ class MatchingGameModeTests(unittest.TestCase):
         self.assertEqual(mode.menu_item.label, "Matching Game")
         self.assertEqual(
             mode.menu_item.icon_path.name,
-            "Matching_Game.png",
+            "matching_game.png",
         )
         mode.start("Start a memory game")
 

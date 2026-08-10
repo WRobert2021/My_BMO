@@ -176,7 +176,7 @@ shown in `config/example.features.json`:
   `/home/pi-bmo/Pictures/bmo/what_do_you_see`. If the setting is omitted, it
   defaults to `~/Pictures/bmo/what_do_you_see`; set it to `null` to keep only
   the per-interaction archive copy.
-- The menu-only album feature uses `graphics/Icons/album.png` and recursively
+- The menu-only album feature uses `graphics/icons/album.png` and recursively
   browses supported images under its configured `photo_root` (default:
   `~/Pictures`). It supports swipeable thumbnail pages, fullscreen viewing,
   recoverable Wastebasket moves, and BMO vision analysis of a selected image.
