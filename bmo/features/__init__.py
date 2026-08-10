@@ -7,9 +7,9 @@ from importlib import import_module
 from bmo.features.contracts import (
     DirectAction,
     DirectMatcher,
+    FeatureFaceProvider,
     FeatureMenuContext,
     FeatureMenuItem,
-    FeatureFaceProvider,
     FeatureVisionCompletion,
     FeatureVisionRequester,
     ModelRequestPreparer,

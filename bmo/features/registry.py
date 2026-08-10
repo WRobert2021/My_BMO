@@ -32,7 +32,7 @@ class UnknownToolError(LookupError):
 
 @dataclass(frozen=True)
 class ToolCapability:
-    """Prompt metadata for one registered tool."""
+    """Prompt metadata for one registered routable tool."""
 
     action: str
     description: str

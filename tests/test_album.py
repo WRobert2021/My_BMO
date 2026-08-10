@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from PIL import Image
 
-from bmo.features import FeatureMenuContext, ToolResult
+from bmo.features import FeatureMenuContext, ToolResult, load_feature_registry
 from bmo.features.album import (
     ALBUM_MENU_ITEM,
     AlbumLibrary,
@@ -236,6 +236,22 @@ class AlbumAppInteractionTests(unittest.TestCase):
         self.assertEqual(app.view, "photo")
         app._draw_fullscreen_photo.assert_called_with(show_bmo=False)
 
+    def test_album_stays_above_runtime_overlay_during_vision(self) -> None:
+        app = AlbumApp.__new__(AlbumApp)
+        app.closed = False
+        app.canvas = Mock()
+        app.root = Mock()
+        app.face_item = None
+        app.face_fallback_item = None
+
+        app._refresh_face()
+
+        app.canvas.lift.assert_called_once_with()
+        app.root.after.assert_called_once_with(
+            AlbumApp.FACE_REFRESH_MS,
+            app._refresh_face,
+        )
+
 
 class AlbumFeatureTests(unittest.TestCase):
     def test_album_is_registered_for_menu_but_not_voice_or_model_routing(
@@ -275,6 +291,25 @@ class AlbumFeatureTests(unittest.TestCase):
                 "album",
                 build_system_prompt(config, router.registry).lower(),
             )
+
+    def test_invalid_album_settings_are_isolated_at_registration(self) -> None:
+        result = load_feature_registry(
+            {
+                "features": [
+                    {
+                        "module": "bmo.features.album",
+                        "enabled": True,
+                        "settings": {"photos_per_page": 1},
+                    }
+                ]
+            },
+            reporter=Mock(),
+        )
+
+        self.assertEqual(result.registry.actions, set())
+        self.assertEqual(result.registry.menu_items, ())
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].stage, "register")
 
     def test_album_open_wires_contained_services_from_feature_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

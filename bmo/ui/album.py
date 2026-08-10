@@ -436,6 +436,10 @@ class AlbumApp:
     def _refresh_face(self) -> None:
         if self.closed:
             return
+        try:
+            self.canvas.lift()
+        except tk.TclError:
+            pass
         if self.face_item is not None and self.face_fallback_item is not None:
             try:
                 face = self.face_provider()

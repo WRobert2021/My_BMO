@@ -42,7 +42,7 @@ RuntimeCallback: TypeAlias = Callable[[RuntimeNotification], None]
 
 @dataclass(frozen=True)
 class FeatureMenuItem:
-    """Optional touch-menu metadata contributed by a feature tool."""
+    """Optional touch-menu metadata contributed by a feature module."""
 
     name: str
     label: str

@@ -66,6 +66,11 @@ class FeatureLoadingTests(unittest.TestCase):
             },
         )
         self.assertEqual(result.failures, ())
+        self.assertIn("bmo.features.album", result.modules)
+        self.assertIn(
+            "album",
+            {item.name for item in result.registry.menu_items},
+        )
 
     def test_disabled_entry_is_not_imported_or_registered(self) -> None:
         config = {

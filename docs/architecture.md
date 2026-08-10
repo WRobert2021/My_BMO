@@ -145,6 +145,7 @@ Features and modes solve different routing problems:
 | Extension | Lifetime | Selection | Input ownership |
 | --- | --- | --- | --- |
 | Feature tool | One action request | Enabled module list, direct matcher, or model-produced action JSON | Does not retain it |
+| Menu-only feature | While its view is open | Enabled module list, then touch-menu item | UI only; queued vision uses the normal interaction worker |
 | Interaction mode | Multiple turns or a dedicated UI | Enabled module list, then first registered start matcher | Exclusive until `is_active()` is false |
 
 ### Feature module contract
@@ -202,9 +203,11 @@ contract in `bmo.features.contracts`:
   request. It does not expose `BotGUI`, models, or interaction archives.
 
 Registration order controls prompt order and the first matching direct action.
-Only successfully registered tools appear in prompts or dispatch. The
+Only successfully registered routable tools appear in prompts or dispatch;
+successfully registered menu-only tools appear only in menu contributions. The
 compatibility router rejects unregistered actions, so disabling a feature also
-removes its aliases, direct phrases, prompt metadata, and execution path.
+removes its aliases, direct phrases, prompt metadata, menu item, and execution
+path.
 
 The importable `tests.extension_modules.proof_feature` fixture is the
 end-to-end contract proof. A single enabled config entry supplies its custom
