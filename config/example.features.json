@@ -26,6 +26,7 @@
       "module": "bmo.features.set_timer",
       "enabled": true,
       "settings": {
+        "show_in_menu": true,
         "max_timers": 20,
         "max_duration_seconds": 604800
       }

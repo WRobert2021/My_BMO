@@ -10,6 +10,8 @@ from typing import Any
 
 from bmo.features.contracts import (
     DirectAction,
+    FeatureMenuContext,
+    FeatureMenuItem,
     RuntimeCallback,
     RuntimeNotification,
     Tool,
@@ -50,6 +52,7 @@ class ToolRegistry:
     ) -> None:
         self._tools: dict[str, Tool] = {}
         self._aliases: dict[str, str] = {}
+        self._menu_items: dict[str, FeatureMenuItem] = {}
         self._runtime_callback = runtime_callback
         self._closed = False
         for tool in tools:
@@ -82,6 +85,15 @@ class ToolRegistry:
         return dict(self._aliases)
 
     @property
+    def menu_items(self) -> tuple[FeatureMenuItem, ...]:
+        """Return feature menu contributions in tool-registration order."""
+        return tuple(
+            self._menu_items[action]
+            for action in self._tools
+            if action in self._menu_items
+        )
+
+    @property
     def capabilities(self) -> tuple[ToolCapability, ...]:
         """Return prompt metadata in registration order."""
         capabilities = []
@@ -111,6 +123,7 @@ class ToolRegistry:
         """Roll back and close tools registered by a failing hook."""
         tools_before = self._tools.copy()
         aliases_before = self._aliases.copy()
+        menu_items_before = self._menu_items.copy()
         try:
             yield
         except Exception:
@@ -129,6 +142,7 @@ class ToolRegistry:
                 rolled_back_ids.add(tool_id)
             self._tools = tools_before
             self._aliases = aliases_before
+            self._menu_items = menu_items_before
             for tool in reversed(rolled_back):
                 self._close_tool(tool, action="roll back")
             raise
@@ -153,6 +167,7 @@ class ToolRegistry:
             self._normalize_identifier(alias, "alias")
             for alias in tool.aliases
         ]
+        menu_item = getattr(tool, "menu_item", None)
 
         if action in self._tools:
             raise DuplicateToolError(
@@ -189,8 +204,42 @@ class ToolRegistry:
                     f"registered for '{owner}'."
                 )
 
+        if menu_item is not None:
+            if not isinstance(menu_item, FeatureMenuItem):
+                raise TypeError(
+                    f"Tool '{action}' menu_item must be a FeatureMenuItem."
+                )
+            if menu_item.name != action:
+                raise ValueError(
+                    f"Tool '{action}' menu item must use the same name."
+                )
+            if not callable(getattr(tool, "open_menu", None)):
+                raise TypeError(
+                    f"Tool '{action}' with a menu item must define open_menu()."
+                )
+
         self._tools[action] = tool
         self._aliases.update({alias: action for alias in aliases})
+        if menu_item is not None:
+            self._menu_items[action] = menu_item
+
+    def open_menu_item(self, name: str, context: FeatureMenuContext) -> None:
+        """Open the registered feature view represented by a menu item."""
+        if not isinstance(context, FeatureMenuContext):
+            raise TypeError("Feature menu launches require FeatureMenuContext.")
+        if self._closed:
+            raise RuntimeError(
+                "Cannot open feature menus after closing the registry."
+            )
+        normalized = str(name).strip().lower()
+        tool = self._tools.get(normalized)
+        item = self._menu_items.get(normalized)
+        if tool is None or item is None:
+            raise LookupError(
+                f"No registered feature menu item named '{normalized}'."
+            )
+        open_menu = getattr(tool, "open_menu")
+        open_menu(context)
 
     def normalize_action(self, request: ToolRequest) -> str:
         """Return the canonical action for a request."""

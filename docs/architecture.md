@@ -32,6 +32,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.state` — shared UI/application states.
 - `bmo.ui.gestures` — UI-independent tap and horizontal-swipe recognition.
 - `bmo.ui.menu` — ordered menu-page navigation and the touch menu overlay.
+- `bmo.ui.timer` — live countdown rendering, touch deletion, and vertical
+  drag-scrolling for the menu-launched timer view.
 
 ## Runtime flow
 
@@ -61,14 +63,17 @@ Menu pages satisfy the small `bmo.ui.menu.MenuPage` rendering contract and are
 supplied to `MenuApp` in display order. Left swipes advance through that tuple.
 Right swipes decrement the current page index, so every visited page is
 retraced in reverse order; a right swipe from the first page closes the menu.
-An enabled mode may optionally contribute typed menu metadata. The mode registry
-exposes those contributions in configuration order, and `BotGUI` maps them to
-generic three-column, two-row icon-grid pages without checking concrete mode
-names. Each page holds up to six actions; additional actions are placed on later
-swipeable pages. A tap queues the selected mode for the normal interaction
-worker, interrupting wake-word waiting without starting mode lifecycle work on
-Tk's event thread. When no enabled mode contributes an item, the menu retains
-its intentionally blank fallback page.
+Enabled modes and feature tools may optionally contribute typed menu metadata.
+Their registries expose those contributions in configuration order, and
+`BotGUI` maps them to generic three-column, two-row icon-grid pages without
+checking concrete extension names. Each page holds up to six actions;
+additional actions are placed on later swipeable pages. A mode tap queues the
+selected mode for the normal interaction worker, interrupting wake-word waiting
+without starting mode lifecycle work on Tk's event thread. A feature tap opens
+its view on Tk's event thread with a narrow `FeatureMenuContext`; voice and
+model routing remain unchanged because opening a view is a separate hook. When
+no enabled extension contributes an item, the menu retains its intentionally
+blank fallback page.
 
 Selecting a menu item does not destroy or navigate away from `MenuApp`. The
 originating grid page remains placed below the launched mode's newer embedded
@@ -77,6 +82,16 @@ launch and while covered. Closing the game destroys only the game canvas, which
 reveals the same live menu instance with its original page index. Voice-launched
 modes still return to the full-screen face because no menu instance owns their
 launch path.
+
+The timer tool contributes `graphics/Icons/timer.png` by reference and opens a
+full-screen list only when that icon is selected. The list polls immutable
+snapshots of the same scheduler used by voice commands, refreshes countdowns
+four times per second, and cancels through the scheduler when a delete button is
+tapped. Vertical finger drags move a bounded list viewport when the active timer
+rows exceed the display. Closing the view destroys only its canvases and reveals
+the originating menu page. Timer cancellation removes the timer from both the
+active index and priority queue immediately, so a deleted row cannot later
+expire or retain scheduler state.
 
 ## Platform behavior
 
@@ -152,6 +167,11 @@ contract in `bmo.features.contracts`:
   `None` from `prepare_model_request` rejects that model-produced request.
 - A background feature sends `RuntimeNotification` values through
   `registry.notify_runtime`; it must stop its workers in `close()`.
+- A feature may expose a `FeatureMenuItem` whose normalized name matches its
+  action and an `open_menu(context)` hook. The registry validates and exposes
+  this pair transactionally. `FeatureMenuContext` supplies only the Tk master
+  and the callback that reveals the originating menu; it does not expose
+  `BotGUI` or interaction archives.
 
 Registration order controls prompt order and the first matching direct action.
 Only successfully registered tools appear in prompts or dispatch. The

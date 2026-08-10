@@ -8,6 +8,8 @@ from unittest.mock import Mock
 
 from bmo.features import (
     DuplicateToolError,
+    FeatureMenuContext,
+    FeatureMenuItem,
     GetLocationTool,
     GetTimeTool,
     GetWeatherTool,
@@ -27,6 +29,41 @@ from bmo.tools import ToolRouter
 
 
 class ToolRegistryTests(unittest.TestCase):
+    def test_feature_menu_metadata_and_launch_stay_registry_driven(self) -> None:
+        class MenuTool:
+            action = "status"
+            aliases = ()
+            menu_item = FeatureMenuItem(
+                "status",
+                "Status",
+                Path("icons/status.png"),
+            )
+
+            def __init__(self) -> None:
+                self.open_menu = Mock()
+
+        tool = MenuTool()
+        registry = ToolRegistry([tool])
+        context = FeatureMenuContext(master="ROOT", on_close=Mock())
+
+        self.assertEqual(registry.menu_items, (tool.menu_item,))
+        registry.open_menu_item(" STATUS ", context)
+
+        tool.open_menu.assert_called_once_with(context)
+
+    def test_feature_menu_requires_an_open_hook(self) -> None:
+        class MenuToolWithoutOpen:
+            action = "status"
+            aliases = ()
+            menu_item = FeatureMenuItem(
+                "status",
+                "Status",
+                Path("icons/status.png"),
+            )
+
+        with self.assertRaisesRegex(TypeError, "must define open_menu"):
+            ToolRegistry([MenuToolWithoutOpen()])
+
     def test_tool_result_rejects_invalid_kind_and_content_combinations(
         self,
     ) -> None:

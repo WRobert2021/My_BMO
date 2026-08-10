@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import heapq
 import math
+from pathlib import Path
 import re
 import threading
 import time
@@ -13,16 +14,26 @@ from typing import Any
 
 from bmo.features.contracts import (
     DirectAction,
+    FeatureMenuContext,
+    FeatureMenuItem,
     RuntimeCallback,
     RuntimeNotification,
     ToolRequest,
     ToolResult,
     normalize_direct_text,
 )
+from bmo.ui.timer import TimerApp, TimerViewItem
 
 
 DEFAULT_MAX_TIMERS = 20
 DEFAULT_MAX_DURATION_SECONDS = 7 * 24 * 60 * 60
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+TIMER_MENU_ITEM = FeatureMenuItem(
+    name="set_timer",
+    label="Timers",
+    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "timer.png",
+)
+TimerAppFactory = Callable[..., TimerApp]
 
 _SMALL_NUMBERS = {
     "zero": 0,
@@ -265,6 +276,10 @@ class TimerScheduler:
         with self._condition:
             timer = self._active.pop(timer_id, None)
             if timer is not None:
+                self._heap = [
+                    entry for entry in self._heap if entry[2] is not timer
+                ]
+                heapq.heapify(self._heap)
                 self._condition.notify()
             return timer
 
@@ -275,6 +290,7 @@ class TimerScheduler:
                 sorted(self._active.values(), key=lambda timer: timer.timer_id)
             )
             self._active.clear()
+            self._heap.clear()
             self._condition.notify()
             return timers
 
@@ -373,10 +389,15 @@ class SetTimerTool:
         clock: Callable[[], float] = time.monotonic,
         max_timers: int = DEFAULT_MAX_TIMERS,
         max_duration_seconds: float = DEFAULT_MAX_DURATION_SECONDS,
+        app_factory: TimerAppFactory = TimerApp,
+        menu_item: FeatureMenuItem | None = TIMER_MENU_ITEM,
     ) -> None:
         self._runtime_callback = runtime_callback
         self._clock = clock
         self._max_duration_seconds = max_duration_seconds
+        self._app_factory = app_factory
+        self.menu_item = menu_item
+        self._menu_ui: TimerApp | None = None
         self.scheduler = TimerScheduler(
             self._timer_expired,
             clock=clock,
@@ -404,7 +425,45 @@ class SetTimerTool:
         return normalized
 
     def close(self) -> None:
+        menu_ui = self._menu_ui
+        if menu_ui is not None:
+            menu_ui.close()
         self.scheduler.close()
+
+    def open_menu(self, context: FeatureMenuContext) -> None:
+        """Open the timer list only through its registered menu contribution."""
+        if self._menu_ui is not None:
+            return
+
+        def handle_close() -> None:
+            self._menu_ui = None
+            context.on_close()
+
+        try:
+            self._menu_ui = self._app_factory(
+                context.master,
+                timer_provider=self._menu_timer_items,
+                cancel_timer=self._cancel_from_menu,
+                on_close=handle_close,
+            )
+        except Exception:
+            self._menu_ui = None
+            context.on_close()
+            raise
+
+    def _menu_timer_items(self) -> tuple[TimerViewItem, ...]:
+        now = self._clock()
+        return tuple(
+            TimerViewItem(
+                timer_id=timer.timer_id,
+                label=timer.label,
+                remaining_seconds=max(timer.deadline - now, 0.0),
+            )
+            for timer in self.scheduler.active_timers()
+        )
+
+    def _cancel_from_menu(self, timer_id: int) -> bool:
+        return self.scheduler.cancel(timer_id) is not None
 
     def _set(self, request: ToolRequest) -> ToolResult:
         raw_duration = request.get("duration_seconds")
@@ -695,10 +754,14 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
         minimum=1,
         maximum=100,
     )
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("timer show_in_menu must be true or false")
     registry.register(
         SetTimerTool(
             registry.notify_runtime,
             max_timers=max_timers,
             max_duration_seconds=_duration_setting(settings),
+            menu_item=TIMER_MENU_ITEM if show_in_menu else None,
         )
     )

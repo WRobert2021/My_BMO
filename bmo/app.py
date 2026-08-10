@@ -36,6 +36,7 @@ from bmo.config import (
     load_config,
 )
 from bmo.features.contracts import (
+    FeatureMenuContext,
     RuntimeNotification,
     ToolAttachmentKind,
     ToolContext,
@@ -307,19 +308,62 @@ class BotGUI:
         """Open the first menu page over the full-screen face."""
         if self.exiting or self.menu_ui is not None:
             return
+        mode_items = tuple(self.mode_registry.menu_items)
+        feature_items = tuple(self.tool_router.registry.menu_items)
         self.menu_ui = MenuApp(
             self.master,
             on_close=self._handle_menu_close,
             face_provider=self._current_mode_face,
-            on_select=self._queue_menu_mode,
+            on_select=self._select_menu_item,
             pages=IconMenuPage.paginate(
-                IconMenuItem(item.name, item.label, item.icon_path)
-                for item in self.mode_registry.menu_items
+                tuple(
+                    IconMenuItem(
+                        f"mode:{item.name}",
+                        item.label,
+                        item.icon_path,
+                    )
+                    for item in mode_items
+                )
+                + tuple(
+                    IconMenuItem(
+                        f"feature:{item.name}",
+                        item.label,
+                        item.icon_path,
+                    )
+                    for item in feature_items
+                )
             ),
         )
 
     def _handle_menu_close(self) -> None:
         self.menu_ui = None
+
+    def _select_menu_item(self, selection: str) -> None:
+        """Route a namespaced menu selection to its owning extension registry."""
+        kind, separator, name = str(selection).partition(":")
+        if not separator or not name:
+            raise LookupError(f"Invalid menu selection '{selection}'.")
+        if kind == "mode":
+            self._queue_menu_mode(name)
+            return
+        if kind != "feature":
+            raise LookupError(f"Unknown menu selection kind '{kind}'.")
+
+        menu_ui = self.menu_ui
+        if menu_ui is None:
+            return
+
+        def finish_selection() -> None:
+            if self.menu_ui is menu_ui:
+                menu_ui.finish_selection()
+
+        self.tool_router.registry.open_menu_item(
+            name,
+            FeatureMenuContext(
+                master=self.master,
+                on_close=finish_selection,
+            ),
+        )
 
     def _queue_menu_mode(self, name: str) -> None:
         """Wake the interaction worker to start a mode selected by touch."""

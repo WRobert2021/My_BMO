@@ -8,9 +8,14 @@ import unittest
 from unittest.mock import Mock
 
 from bmo.app import BotGUI
-from bmo.features import RuntimeNotification, ToolRegistry, ToolResult
+from bmo.features import (
+    FeatureMenuContext,
+    RuntimeNotification,
+    ToolRegistry,
+    ToolResult,
+)
 from bmo.features.loader import load_feature_registry
-from bmo.features.set_timer import SetTimerTool, parse_duration
+from bmo.features.set_timer import TIMER_MENU_ITEM, SetTimerTool, parse_duration
 from bmo.state import BotStates
 
 
@@ -129,15 +134,20 @@ class TimerSchedulerTests(unittest.TestCase):
         *,
         max_timers: int = 20,
         max_duration_seconds: float = 7 * 24 * 60 * 60,
+        app_factory=None,
     ):
         clock = FakeClock()
         notifications: queue.Queue[RuntimeNotification] = queue.Queue()
         registry = ToolRegistry(runtime_callback=notifications.put)
+        kwargs = {}
+        if app_factory is not None:
+            kwargs["app_factory"] = app_factory
         tool = SetTimerTool(
             registry.notify_runtime,
             clock=clock,
             max_timers=max_timers,
             max_duration_seconds=max_duration_seconds,
+            **kwargs,
         )
         registry.register(tool)
         self.addCleanup(registry.close)
@@ -246,6 +256,27 @@ class TimerSchedulerTests(unittest.TestCase):
         registry.close()
         self.assertTrue(notifications.empty())
 
+    def test_cancellation_removes_all_scheduler_references_immediately(self) -> None:
+        tool, _clock, _notifications, registry = self.make_tool()
+        registry.execute({"action": "set_timer", "duration": "1 minute"})
+        registry.execute({"action": "set_timer", "duration": "2 minutes"})
+
+        tool.scheduler.cancel(2)
+
+        self.assertEqual(
+            tuple(timer.timer_id for timer in tool.scheduler.active_timers()),
+            (1,),
+        )
+        self.assertEqual(
+            tuple(entry[2].timer_id for entry in tool.scheduler._heap),
+            (1,),
+        )
+
+        tool.scheduler.cancel_all()
+
+        self.assertEqual(tool.scheduler.active_timers(), ())
+        self.assertEqual(tool.scheduler._heap, [])
+
     def test_registry_shutdown_wakes_and_joins_the_scheduler(self) -> None:
         tool, _clock, notifications, registry = self.make_tool()
         registry.execute({"action": "set_timer", "duration": "1 day"})
@@ -298,6 +329,47 @@ class TimerSchedulerTests(unittest.TestCase):
         )
         self.assertIsNone(tool.scheduler.thread)
 
+    def test_menu_launch_shows_voice_timers_and_deletes_same_timer(self) -> None:
+        opened_ui = Mock()
+        app_factory = Mock(return_value=opened_ui)
+        tool, clock, _notifications, registry = self.make_tool(
+            app_factory=app_factory
+        )
+        registry.execute(
+            {
+                "action": "set_timer",
+                "duration": "10 seconds",
+                "label": "tea",
+            }
+        )
+        app_factory.assert_not_called()
+        on_close = Mock()
+
+        registry.open_menu_item(
+            "set_timer",
+            FeatureMenuContext(master="ROOT", on_close=on_close),
+        )
+
+        app_factory.assert_called_once()
+        self.assertEqual(registry.menu_items, (TIMER_MENU_ITEM,))
+        kwargs = app_factory.call_args.kwargs
+        items = kwargs["timer_provider"]()
+        self.assertEqual(len(items), 1)
+        item = items[0]
+        self.assertEqual(
+            (item.timer_id, item.label, item.remaining_seconds),
+            (1, "tea", 10.0),
+        )
+
+        clock.advance(3)
+        self.assertEqual(kwargs["timer_provider"]()[0].remaining_seconds, 7.0)
+        self.assertTrue(kwargs["cancel_timer"](1))
+        self.assertEqual(kwargs["timer_provider"](), ())
+        self.assertEqual(tool.scheduler._heap, [])
+
+        kwargs["on_close"]()
+        on_close.assert_called_once_with()
+
 
 class TimerIntegrationTests(unittest.TestCase):
     def test_disabled_timer_feature_is_absent_and_starts_no_scheduler(self) -> None:
@@ -316,6 +388,29 @@ class TimerIntegrationTests(unittest.TestCase):
         self.assertEqual(result.registry.actions, set())
         self.assertEqual(result.modules, ())
         self.assertEqual(result.failures, ())
+
+    def test_timer_menu_can_be_hidden_without_disabling_voice_actions(self) -> None:
+        result = load_feature_registry(
+            {
+                "features": [
+                    {
+                        "module": "bmo.features.set_timer",
+                        "enabled": True,
+                        "settings": {"show_in_menu": False},
+                    }
+                ]
+            }
+        )
+        self.addCleanup(result.registry.close)
+
+        self.assertEqual(result.registry.menu_items, ())
+        self.assertEqual(result.registry.actions, {"set_timer"})
+        self.assertEqual(
+            result.registry.execute(
+                {"action": "set_timer", "duration": "1 minute"}
+            ),
+            ToolResult.success("Timer 1 is set for 1 minute."),
+        )
 
     def test_runtime_notification_uses_ui_and_tts_entry_points(self) -> None:
         gui = BotGUI.__new__(BotGUI)

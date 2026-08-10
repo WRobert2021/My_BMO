@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
+from bmo.features import FeatureMenuContext, FeatureMenuItem
 from bmo.modes import ModeMenuItem
 from bmo.ui import (
     EmptyMenuPage,
@@ -254,6 +255,14 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui.exiting = False
         gui.menu_ui = None
         gui.master = Mock()
+        gui.tool_router = Mock()
+        gui.tool_router.registry.menu_items = (
+            FeatureMenuItem(
+                name="set_timer",
+                label="Timers",
+                icon_path=Path("graphics/Icons/timer.png"),
+            ),
+        )
         gui.mode_registry = Mock()
         gui.mode_registry.menu_items = (
             ModeMenuItem(
@@ -274,15 +283,20 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         kwargs = menu_app.call_args.kwargs
         self.assertEqual(kwargs["on_close"], gui._handle_menu_close)
         self.assertEqual(kwargs["face_provider"], gui._current_mode_face)
-        self.assertEqual(kwargs["on_select"], gui._queue_menu_mode)
+        self.assertEqual(kwargs["on_select"], gui._select_menu_item)
         pages = tuple(kwargs["pages"])
         self.assertEqual(len(pages), 1)
         self.assertIsInstance(pages[0], IconMenuPage)
-        self.assertEqual(len(pages[0].items), 1)
-        self.assertEqual(pages[0].items[0].name, "matching_game")
+        self.assertEqual(len(pages[0].items), 2)
+        self.assertEqual(pages[0].items[0].name, "mode:matching_game")
         self.assertEqual(
             pages[0].items[0].icon_path,
             Path("graphics/Icons/Matching_Game.png"),
+        )
+        self.assertEqual(pages[0].items[1].name, "feature:set_timer")
+        self.assertEqual(
+            pages[0].items[1].icon_path,
+            Path("graphics/Icons/timer.png"),
         )
 
         kwargs["on_close"]()
@@ -294,10 +308,31 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui.menu_mode_requests = queue.Queue()
         gui.menu_mode_event = threading.Event()
 
-        gui._queue_menu_mode("matching_game")
+        gui._select_menu_item("mode:matching_game")
 
         self.assertEqual(gui.menu_mode_requests.get_nowait(), "matching_game")
         self.assertTrue(gui.menu_mode_event.is_set())
+
+    def test_feature_selection_opens_view_and_returns_to_same_menu(self) -> None:
+        gui = BotGUI.__new__(BotGUI)
+        gui.master = Mock()
+        gui.menu_ui = Mock()
+        gui.tool_router = Mock()
+        originating_menu = gui.menu_ui
+
+        gui._select_menu_item("feature:set_timer")
+
+        gui.tool_router.registry.open_menu_item.assert_called_once()
+        name, context = gui.tool_router.registry.open_menu_item.call_args.args
+        self.assertEqual(name, "set_timer")
+        self.assertIsInstance(context, FeatureMenuContext)
+        self.assertIs(context.master, gui.master)
+        originating_menu.finish_selection.assert_not_called()
+
+        context.on_close()
+
+        originating_menu.finish_selection.assert_called_once_with()
+        self.assertIs(gui.menu_ui, originating_menu)
 
     def test_mode_launch_preserves_originating_menu_and_page(self) -> None:
         gui = BotGUI.__new__(BotGUI)

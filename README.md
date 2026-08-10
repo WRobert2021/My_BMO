@@ -166,6 +166,10 @@ shown in `config/example.features.json`:
 - The system and routing prompts advertise only tools that registered
   successfully. Disabling `set_timer`, for example, removes timer routing and
   avoids constructing its scheduler.
+- Enabled features may contribute a touch-menu icon and a menu-only view without
+  changing their voice actions. The timer feature does this by default; its
+  `show_in_menu` setting hides or shows the timer icon independently from voice
+  routing.
 
 A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
 Pairs UI. Modes have an active/inactive lifecycle and choose whether input uses
@@ -186,9 +190,9 @@ configuration-driven loading rules as features:
   Historical top-level `game_answer_wait_seconds` and
   `twenty_questions_debug` values remain supported when mode settings do not
   override them.
-- Enabled modes may contribute touch-menu pages. Pup Pairs contributes its
-  Matching Game icon by default; set its `show_in_menu` setting to `false` to
-  keep voice launch enabled while hiding that page.
+- Enabled modes and features may contribute touch-menu items. Pup Pairs
+  contributes its Matching Game icon by default; set its `show_in_menu` setting
+  to `false` to keep voice launch enabled while hiding that page.
 - Menu actions are arranged in six-item grid pages. A game launched from the
   menu leaves that live page underneath it, so exiting the game returns to the
   same page instead of briefly showing BMO's full-screen face.

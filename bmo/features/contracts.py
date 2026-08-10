@@ -35,6 +35,38 @@ class RuntimeNotification:
 RuntimeCallback: TypeAlias = Callable[[RuntimeNotification], None]
 
 
+@dataclass(frozen=True)
+class FeatureMenuItem:
+    """Optional touch-menu metadata contributed by a feature tool."""
+
+    name: str
+    label: str
+    icon_path: Path
+
+    def __post_init__(self) -> None:
+        normalized_name = str(self.name).strip().lower()
+        label = str(self.label).strip()
+        if not normalized_name:
+            raise ValueError("Feature menu item name cannot be empty.")
+        if not label:
+            raise ValueError("Feature menu item label cannot be empty.")
+        object.__setattr__(self, "name", normalized_name)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "icon_path", Path(self.icon_path))
+
+
+@dataclass(frozen=True)
+class FeatureMenuContext:
+    """Narrow application services supplied when a feature view is opened."""
+
+    master: Any
+    on_close: Callable[[], None]
+
+    def __post_init__(self) -> None:
+        if not callable(self.on_close):
+            raise TypeError("Feature menu on_close must be callable.")
+
+
 class ToolResultKind(str, Enum):
     """Semantic outcomes returned by executable tools."""
 
