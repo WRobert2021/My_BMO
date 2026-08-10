@@ -7,6 +7,7 @@ from bmo.config import (
     DEFAULT_CONFIG,
     FEATURES_CONFIG_FILE,
     SETTINGS_CONFIG_FILE,
+    WEATHER_CONFIG_FILE,
     load_config,
 )
 from bmo.memory import load_chat_history, save_chat_history
@@ -17,6 +18,7 @@ class ConfigTests(unittest.TestCase):
     def test_default_paths_use_split_config_directory(self):
         self.assertEqual(SETTINGS_CONFIG_FILE, Path("config/settings.json"))
         self.assertEqual(FEATURES_CONFIG_FILE, Path("config/features.json"))
+        self.assertEqual(WEATHER_CONFIG_FILE, Path("config/weather.json"))
 
     def test_missing_config_uses_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -35,6 +37,18 @@ class ConfigTests(unittest.TestCase):
             config = load_config(path)
         self.assertEqual(config["text_model"], "gemma:2b")
         self.assertEqual(config["vision_model"], DEFAULT_CONFIG["vision_model"])
+
+    def test_custom_settings_resolve_weather_config_beside_them(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings_path = Path(temp_dir) / "settings.json"
+            settings_path.write_text("{}", encoding="utf-8")
+
+            config = load_config(settings_path)
+
+        self.assertEqual(
+            config["weather_config_path"],
+            settings_path.with_name("weather.json"),
+        )
 
     def test_feature_config_is_merged_with_user_settings(self):
         with tempfile.TemporaryDirectory() as temp_dir:

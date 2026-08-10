@@ -48,6 +48,7 @@ interaction_logs/
 config.json
 config/settings.json
 config/features.json
+config/weather.json
 
 # --- Generated media ---
 camera_capture.jpg

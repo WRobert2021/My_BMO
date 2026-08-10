@@ -39,7 +39,9 @@
     {
       "module": "bmo.features.get_weather",
       "enabled": true,
-      "settings": {}
+      "settings": {
+        "show_in_menu": true
+      }
     },
     {
       "module": "bmo.features.search_web",

@@ -7,6 +7,8 @@ from importlib import import_module
 from bmo.features.contracts import (
     DirectAction,
     DirectMatcher,
+    FeatureAnnouncer,
+    FeatureAnnouncementCompletion,
     FeatureFaceProvider,
     FeatureMenuContext,
     FeatureMenuItem,
@@ -85,6 +87,8 @@ __all__ = [
     "DEFAULT_FEATURE_MODULES",
     "FeatureLoadFailure",
     "FeatureLoadResult",
+    "FeatureAnnouncer",
+    "FeatureAnnouncementCompletion",
     "FeatureFaceProvider",
     "FeatureMenuContext",
     "FeatureMenuItem",

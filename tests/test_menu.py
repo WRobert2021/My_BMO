@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from bmo.app import BotGUI
+from bmo.app import BotGUI, _FeatureMenuAnnouncer, _SpeechQueueItem
 from bmo.features import FeatureMenuContext, FeatureMenuItem
 from bmo.modes import ModeMenuItem
 from bmo.ui import (
@@ -121,6 +121,29 @@ class IconMenuPageTests(unittest.TestCase):
         self.assertEqual(page.action_at((318, 169), self.BOUNDS), "game-1")
         self.assertEqual(page.action_at((514, 355), self.BOUNDS), "game-5")
         self.assertIsNone(page.action_at((620, 300), self.BOUNDS))
+
+    @patch("bmo.ui.menu.ImageTk.PhotoImage", return_value=object())
+    @patch("bmo.ui.menu.Image.open")
+    def test_icon_rendering_is_unframed_and_preserves_png_alpha(
+        self,
+        open_image: Mock,
+        _photo_image: Mock,
+    ) -> None:
+        source = open_image.return_value.__enter__.return_value
+        converted = source.convert.return_value
+        page = IconMenuPage((icon_item(),))
+        canvas = Mock()
+
+        page.draw(canvas, self.BOUNDS)
+
+        source.convert.assert_called_once_with("RGBA")
+        converted.thumbnail.assert_called_once_with(
+            (IconMenuPage.ICON_SIZE, IconMenuPage.ICON_SIZE),
+            unittest.mock.ANY,
+        )
+        canvas.create_image.assert_called_once()
+        canvas.create_rectangle.assert_not_called()
+        canvas.create_text.assert_not_called()
 
 
 class MenuViewGestureTests(unittest.TestCase):
@@ -402,6 +425,91 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         self.assertTrue(gui._run_typed_interaction())
 
         gui.mode_registry.start_menu_item.assert_called_once_with("matching_game")
+
+
+class FeatureMenuAnnouncementTests(unittest.TestCase):
+    def make_gui(self) -> BotGUI:
+        gui = BotGUI.__new__(BotGUI)
+        gui.exiting = False
+        gui.speaker = Mock()
+        gui.current_interaction = None
+        gui.tts_queue_lock = threading.Lock()
+        gui.tts_queue = []
+        gui.active_tts_item = None
+        return gui
+
+    def test_new_tap_coalesces_only_speech_from_the_same_view(self) -> None:
+        gui = self.make_gui()
+        unrelated = _SpeechQueueItem("normal reply", None)
+        gui.tts_queue.append(unrelated)
+        announcer = _FeatureMenuAnnouncer(gui)
+
+        self.assertTrue(announcer.speak("first weather card"))
+        first = gui.tts_queue[-1]
+        self.assertTrue(announcer.speak("second weather card"))
+
+        self.assertTrue(first.cancelled.is_set())
+        self.assertEqual(
+            [item.text for item in gui.tts_queue],
+            ["normal reply", "second weather card"],
+        )
+        self.assertFalse(unrelated.cancelled.is_set())
+
+    def test_cancel_stops_active_scoped_speech_but_preserves_other_scopes(self) -> None:
+        gui = self.make_gui()
+        weather = _FeatureMenuAnnouncer(gui)
+        album = _FeatureMenuAnnouncer(gui)
+        weather.speak("weather talking")
+        weather_item = gui.tts_queue.pop()
+        gui.active_tts_item = weather_item
+        album.speak("album talking")
+
+        weather.cancel()
+
+        self.assertTrue(weather_item.cancelled.is_set())
+        self.assertEqual([item.text for item in gui.tts_queue], ["album talking"])
+        self.assertTrue(weather.available)
+
+    def test_context_visibly_disables_announcements_without_runtime_speech(self) -> None:
+        context = FeatureMenuContext(master=object(), on_close=lambda: None)
+
+        self.assertFalse(context.announcements_available)
+        self.assertFalse(context.announce("Weather card text"))
+
+    def test_tts_worker_speaks_queue_items_and_completes_on_tk_thread(self) -> None:
+        gui = self.make_gui()
+        gui.interrupted = threading.Event()
+        gui.shutdown_event = threading.Event()
+        gui.tts_active = threading.Event()
+        gui.master = Mock()
+        completion = Mock()
+        gui.tts_queue.append(
+            _SpeechQueueItem(
+                "Weather card text",
+                Path("speech.wav"),
+                scope=object(),
+                on_complete=completion,
+            )
+        )
+
+        def finish_callback(*args: object, **kwargs: object) -> str:
+            gui.exiting = True
+            return "callback"
+
+        gui.master.after.side_effect = finish_callback
+
+        gui._tts_worker()
+
+        args = gui.speaker.speak.call_args.args
+        self.assertEqual(args[0], "Weather card text")
+        self.assertFalse(args[1].is_set())
+        self.assertIs(args[2], gui.shutdown_event)
+        self.assertEqual(
+            gui.speaker.speak.call_args.kwargs["archive_path"],
+            Path("speech.wav"),
+        )
+        gui.master.after.assert_called_once_with(0, completion)
+        self.assertFalse(gui.tts_active.is_set())
 
 
 if __name__ == "__main__":

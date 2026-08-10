@@ -12,7 +12,14 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.features.loader` — standard-library module loading from `features` config.
 - `bmo.features.get_time` — current-time action, alias, and direct phrases.
 - `bmo.features.get_location` — configured-location action and failure handling.
-- `bmo.features.get_weather` — weather action, place cleanup, and failures.
+- `bmo.features.get_weather` — weather voice/menu registration, provider
+  ownership, place cleanup, optional-alert isolation, and view lifecycle.
+- `bmo.features.weather_config` — private weather-file validation and safe
+  legacy fallback without merging location data into global settings.
+- `bmo.features.weather_narration` — deterministic condition mapping,
+  hemisphere-aware seasons, and child-friendly BMO tap narration.
+- `bmo.features.weather_alerts` — optional cached National Weather Service
+  point-alert adapter.
 - `bmo.features.search_web` — web-search action, formatting, and archive details.
 - `bmo.features.capture_image` — configured camera routing, Raspberry Pi still
   capture, rotation, interaction archival, optional persistent copies, event
@@ -39,6 +46,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   drag-scrolling for the menu-launched timer view.
 - `bmo.ui.album` — paginated photo thumbnails, horizontal swipe navigation,
   fullscreen image actions, and BMO vision-state presentation.
+- `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
+  code-drawn weather animation, and tappable forecast presentation.
 
 ## Runtime flow
 
@@ -46,7 +55,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 2. `BotGUI` creates services using defaults overlaid by
    `config/settings.json`, then loads feature and mode wiring from
    `config/features.json`. Missing config files are not created; defaults remain
-   in memory only.
+   in memory only. The enabled weather feature separately reads
+   `config/weather.json`; its private location contents are never merged into
+   the global settings mapping.
 3. The wake-word service waits for wake word or push-to-talk.
 4. A unique dated interaction archive is created.
 5. The recorder captures a WAV directly into that archive.
@@ -74,7 +85,9 @@ Enabled modes and feature tools may optionally contribute typed menu metadata.
 Their registries expose those contributions in configuration order, and
 `BotGUI` maps them to generic three-column, two-row icon-grid pages without
 checking concrete extension names. Each page holds up to six actions;
-additional actions are placed on later swipeable pages. A mode tap queues the
+additional actions are placed on later swipeable pages. Grid cells render only
+their alpha-preserving icons, without tile backgrounds, borders, or labels;
+each invisible cell remains the full touch target. A mode tap queues the
 selected mode for the normal interaction worker, interrupting wake-word waiting
 without starting mode lifecycle work on Tk's event thread. A feature tap opens
 its view on Tk's event thread with a narrow `FeatureMenuContext`; voice and
@@ -112,6 +125,32 @@ album, and Wastebasket uses the recoverable FreeDesktop `Trash/files` plus
 the full-screen image with BMO in the upper-right corner, and queues a generic
 vision turn on the normal interaction worker. The feature never receives
 `BotGUI`, model objects, or an interaction archive.
+
+The weather tool contributes `graphics/Icons/weather.png` by reference while
+retaining its existing voice/model action. Opening its icon creates a separate
+800×480 Canvas view over the same originating menu. Horizontal swipes wrap
+through the weather-owned ordered location tuple instead of navigating the
+underlying menu. Each location is loaded on a bounded daemon worker; the Tk
+thread polls a result queue, caches successful pages for the view lifetime, and
+accepts a result only when its per-location request token is current. A late
+worker can therefore finish safely after navigation or close without touching
+destroyed widgets or replacing newer data.
+
+`WeatherSnapshot` is the immutable neutral data boundary used by both the
+historical short spoken report and the GUI. Open-Meteo supplies current values,
+the daily high/low and precipitation total, sunrise/sunset, and upcoming hourly
+values. The report calls `precipitation_probability_max` the “highest hourly
+rain chance today”; it is not rainfall volume. The scene composes season,
+day/night, primary WMO condition, and measured modifiers such as heat, cold,
+humidity, and high gusts. Seasons affect only scenery—winter never implies
+snow. All tap speech uses deterministic templates rather than a model.
+
+Optional National Weather Service alerts are fetched by forecast coordinates
+and cached independently. An alert-provider error is reported generically and
+never removes an otherwise valid Open-Meteo page. Alert banners and narration
+use direct safety language; configured automatic warning announcements speak
+only warnings or severe/extreme alerts. No weather or location component uses
+IP geolocation.
 
 ## Platform behavior
 
@@ -217,8 +256,11 @@ contract in `bmo.features.contracts`:
   item and no aliases; the registry excludes it from actions, capabilities,
   prompts, direct matching, model preparation, and executable dispatch.
   `FeatureMenuContext` supplies only the Tk master, the callback that reveals
-  the originating menu, a current-face provider, and a queued generic vision
-  request. It does not expose `BotGUI`, models, or interaction archives.
+  the originating menu, a current-face provider, a queued generic vision
+  request, and optional scoped announcements. It does not expose `BotGUI`,
+  Piper, models, or interaction archives. A scoped announcement replaces only
+  older speech from that open feature view; closing the view cancels that
+  scope without clearing unrelated speech.
 
 Registration order controls prompt order and the first matching direct action.
 Only successfully registered routable tools appear in prompts or dispatch;
@@ -414,6 +456,8 @@ generic runtime concepts:
   them.
 - `FeatureMenuContext.request_vision` queues any contained feature-owned image
   for the same core vision flow without naming the requesting feature.
+- `FeatureMenuContext.announce` queues speech under a unique view scope without
+  exposing Piper or naming the requesting feature.
 - `InputPolicyKind` selects wake-word, continuous, or suspended input behavior;
   it does not identify the active mode.
 - `ToolResultKind` validates semantic outcomes independently of action names.

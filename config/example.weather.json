@@ -1,0 +1,27 @@
+{
+  "units": "imperial",
+  "default_location": "home",
+  "season_style": "auto",
+  "animations": true,
+  "alerts": {
+    "enabled": false,
+    "provider": "nws",
+    "announce_warnings": false
+  },
+  "locations": [
+    {
+      "id": "home",
+      "label": "Home",
+      "name": "Tomball, Texas",
+      "latitude": 30.0972,
+      "longitude": -95.6161,
+      "timezone": "America/Chicago"
+    },
+    {
+      "id": "family",
+      "label": "Family",
+      "name": "Austin, Texas",
+      "timezone": "America/Chicago"
+    }
+  ]
+}

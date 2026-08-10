@@ -9,6 +9,7 @@ from typing import Any
 CONFIG_DIRECTORY = Path("config")
 SETTINGS_CONFIG_FILE = CONFIG_DIRECTORY / "settings.json"
 FEATURES_CONFIG_FILE = CONFIG_DIRECTORY / "features.json"
+WEATHER_CONFIG_FILE = CONFIG_DIRECTORY / "weather.json"
 FEATURE_CONFIG_KEYS = frozenset({"features", "modes"})
 # Retain the old public constant name for callers that import it. It now points
 # at the user-settings file in the split configuration layout.
@@ -31,6 +32,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "whisper_binary": "whisper.cpp/build/bin/whisper-cli",
     "whisper_model": "whisper.cpp/models/ggml-base.en.bin",
     "weather_units": "imperial",
+    "weather_config_path": None,
     "online_timeout_seconds": 6,
     "game_answer_wait_seconds": 12,
     "twenty_questions_debug": False,
@@ -127,4 +129,10 @@ def load_config(
                 f"Config Error in {path}: {exc}. Using defaults for that file.",
                 flush=True,
             )
+    if config.get("weather_config_path") is None:
+        config["weather_config_path"] = (
+            WEATHER_CONFIG_FILE
+            if settings_path == SETTINGS_CONFIG_FILE
+            else settings_path.with_name(WEATHER_CONFIG_FILE.name)
+        )
     return config

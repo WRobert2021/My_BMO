@@ -345,7 +345,7 @@ class ToolExecutionCharacterizationTests(unittest.TestCase):
         cases = (
             (
                 LocationNotConfigured("missing"),
-                "I need a home location in config/settings.json, or you can ask "
+                "I need a location in config/weather.json, or you can ask "
                 "for the weather in a named city.",
             ),
             (

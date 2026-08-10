@@ -155,20 +155,11 @@ class IconMenuPage:
         item: IconMenuItem,
     ) -> None:
         left, top, right, bottom = self._tile_bounds(index, bounds)
-        canvas.create_rectangle(
-            left,
-            top,
-            right,
-            bottom,
-            fill=MenuApp.WHITE,
-            outline="#98bfd7",
-            width=3,
-        )
         icon_center_x = (left + right) // 2
-        icon_center_y = top + 65
+        icon_center_y = (top + bottom) // 2
         try:
             with Image.open(item.icon_path) as source:
-                icon = source.convert("RGB")
+                icon = source.convert("RGBA")
             icon.thumbnail(
                 (self.ICON_SIZE, self.ICON_SIZE),
                 Image.Resampling.LANCZOS,
@@ -197,14 +188,6 @@ class IconMenuPage:
                 fill=MenuApp.WHITE,
                 font=("Arial Rounded MT Bold", 42, "bold"),
             )
-        canvas.create_text(
-            icon_center_x,
-            bottom - 20,
-            text=item.label,
-            fill=MenuApp.NAVY,
-            font=("Arial Rounded MT Bold", 11, "bold"),
-            width=(right - left) - 10,
-        )
 
     def action_at(
         self,

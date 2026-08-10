@@ -21,6 +21,25 @@ FeatureVisionCompletion: TypeAlias = Callable[[], None]
 FeatureVisionRequester: TypeAlias = Callable[
     [Path, FeatureVisionCompletion], None
 ]
+FeatureAnnouncementCompletion: TypeAlias = Callable[[], None]
+
+
+class FeatureAnnouncer(Protocol):
+    """Scoped speech supplied to an open feature menu without exposing TTS."""
+
+    @property
+    def available(self) -> bool:
+        """Return whether feature-menu announcements can currently be spoken."""
+
+    def speak(
+        self,
+        text: str,
+        on_complete: FeatureAnnouncementCompletion | None = None,
+    ) -> bool:
+        """Replace queued speech in this scope and announce the supplied text."""
+
+    def cancel(self) -> None:
+        """Cancel queued or active speech owned by this feature-menu scope."""
 
 
 @dataclass(frozen=True)
@@ -68,6 +87,7 @@ class FeatureMenuContext:
     on_close: Callable[[], None]
     face_provider: FeatureFaceProvider | None = None
     vision_requester: FeatureVisionRequester | None = None
+    announcer: FeatureAnnouncer | None = None
 
     def __post_init__(self) -> None:
         if not callable(self.on_close):
@@ -76,6 +96,11 @@ class FeatureMenuContext:
             callback = getattr(self, name)
             if callback is not None and not callable(callback):
                 raise TypeError(f"Feature menu {name} must be callable.")
+        if self.announcer is not None and not all(
+            hasattr(self.announcer, attribute)
+            for attribute in ("available", "speak", "cancel")
+        ):
+            raise TypeError("Feature menu announcer must satisfy FeatureAnnouncer.")
 
     def current_face(self) -> Any | None:
         """Return the current runtime-owned BMO face, when available."""
@@ -96,6 +121,31 @@ class FeatureMenuContext:
         if self.vision_requester is None:
             raise RuntimeError("Feature vision requests are not available.")
         self.vision_requester(image_path, on_complete)
+
+    @property
+    def announcements_available(self) -> bool:
+        """Return whether the runtime supplied scoped menu speech."""
+        return self.announcer is not None and bool(self.announcer.available)
+
+    def announce(
+        self,
+        text: str,
+        on_complete: FeatureAnnouncementCompletion | None = None,
+    ) -> bool:
+        """Speak one menu-owned message without exposing application internals."""
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Feature announcement text cannot be empty.")
+        if on_complete is not None and not callable(on_complete):
+            raise TypeError("Feature announcement completion must be callable.")
+        if not self.announcements_available:
+            return False
+        assert self.announcer is not None
+        return self.announcer.speak(text, on_complete)
+
+    def cancel_announcements(self) -> None:
+        """Cancel speech scoped to the currently open feature view."""
+        if self.announcer is not None:
+            self.announcer.cancel()
 
 
 class ToolResultKind(str, Enum):

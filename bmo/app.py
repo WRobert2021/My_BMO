@@ -10,6 +10,7 @@ import re
 import threading
 import time
 import traceback
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -64,6 +65,66 @@ from bmo.ui import (
     IconMenuPage,
     MenuApp,
 )
+
+
+@dataclass
+class _SpeechQueueItem:
+    """One queued utterance, optionally owned by a feature-menu scope."""
+
+    text: str
+    archive_path: Path | None
+    scope: object | None = None
+    on_complete: Callable[[], None] | None = None
+    cancelled: threading.Event = field(default_factory=threading.Event)
+
+
+class _ScopedInterrupt:
+    """Present the Event interface while combining global and scoped stops."""
+
+    def __init__(
+        self,
+        global_event: threading.Event,
+        scoped_event: threading.Event,
+    ) -> None:
+        self.global_event = global_event
+        self.scoped_event = scoped_event
+
+    def is_set(self) -> bool:
+        return self.global_event.is_set() or self.scoped_event.is_set()
+
+
+class _FeatureMenuAnnouncer:
+    """Narrow, cancellable access to BMO speech for one open feature view."""
+
+    def __init__(self, gui: BotGUI) -> None:
+        self.gui = gui
+        self.scope = object()
+
+    @property
+    def available(self) -> bool:
+        return (
+            not getattr(self.gui, "exiting", True)
+            and hasattr(self.gui, "speaker")
+            and hasattr(self.gui, "tts_queue_lock")
+        )
+
+    def speak(
+        self,
+        text: str,
+        on_complete: Callable[[], None] | None = None,
+    ) -> bool:
+        if not self.available:
+            return False
+        self.gui._enqueue_scoped_speech(
+            text,
+            scope=self.scope,
+            on_complete=on_complete,
+        )
+        return True
+
+    def cancel(self) -> None:
+        if hasattr(self.gui, "tts_queue_lock"):
+            self.gui._cancel_speech_scope(self.scope)
 
 
 class BotGUI:
@@ -139,10 +200,11 @@ class BotGUI:
         self.recording_active = threading.Event()
         self.interrupted = threading.Event()
 
-        self.tts_queue: list[tuple[str, Path | None]] = []
+        self.tts_queue: list[_SpeechQueueItem] = []
         self.tts_queue_lock = threading.Lock()
         self.tts_thread: threading.Thread | None = None
         self.tts_active = threading.Event()
+        self.active_tts_item: _SpeechQueueItem | None = None
         self.exiting = False
         self.main_thread: threading.Thread | None = None
         mode_result = load_mode_registry(
@@ -235,7 +297,12 @@ class BotGUI:
         self.recording_active.clear()
         self.thinking_sound_active.clear()
         with self.tts_queue_lock:
+            for item in self.tts_queue:
+                item.cancelled.set()
             self.tts_queue.clear()
+            active_item = getattr(self, "active_tts_item", None)
+            if active_item is not None:
+                active_item.cancelled.set()
         self.speaker.stop()
 
         current_thread = threading.current_thread()
@@ -357,8 +424,11 @@ class BotGUI:
             return
 
         def finish_selection() -> None:
+            announcer.cancel()
             if self.menu_ui is menu_ui:
                 menu_ui.finish_selection()
+
+        announcer = _FeatureMenuAnnouncer(self)
 
         self.tool_router.registry.open_menu_item(
             name,
@@ -367,6 +437,7 @@ class BotGUI:
                 on_close=finish_selection,
                 face_provider=self._current_mode_face,
                 vision_requester=self._queue_menu_vision,
+                announcer=announcer,
             ),
         )
 
@@ -478,7 +549,12 @@ class BotGUI:
         self.interrupted.set()
         self.thinking_sound_active.clear()
         with self.tts_queue_lock:
+            for item in self.tts_queue:
+                item.cancelled.set()
             self.tts_queue.clear()
+            active_item = getattr(self, "active_tts_item", None)
+            if active_item is not None:
+                active_item.cancelled.set()
         self.speaker.stop()
         self.set_state(BotStates.IDLE, "Interrupted.")
 
@@ -1241,7 +1317,54 @@ class BotGUI:
             else None
         )
         with self.tts_queue_lock:
-            self.tts_queue.append((text, speech_path))
+            self.tts_queue.append(_SpeechQueueItem(text, speech_path))
+
+    def _enqueue_scoped_speech(
+        self,
+        text: str,
+        *,
+        scope: object,
+        on_complete: Callable[[], None] | None = None,
+    ) -> None:
+        """Replace pending speech owned by one feature-menu view."""
+        speech_path = (
+            self.current_interaction.speech_path()
+            if self.current_interaction
+            else None
+        )
+        with self.tts_queue_lock:
+            retained: list[_SpeechQueueItem] = []
+            for item in self.tts_queue:
+                if item.scope is scope:
+                    item.cancelled.set()
+                else:
+                    retained.append(item)
+            self.tts_queue[:] = retained
+            active_item = getattr(self, "active_tts_item", None)
+            if active_item is not None and active_item.scope is scope:
+                active_item.cancelled.set()
+            self.tts_queue.append(
+                _SpeechQueueItem(
+                    text,
+                    speech_path,
+                    scope=scope,
+                    on_complete=on_complete,
+                )
+            )
+
+    def _cancel_speech_scope(self, scope: object) -> None:
+        """Cancel only speech owned by the supplied feature-menu scope."""
+        with self.tts_queue_lock:
+            retained: list[_SpeechQueueItem] = []
+            for item in self.tts_queue:
+                if item.scope is scope:
+                    item.cancelled.set()
+                else:
+                    retained.append(item)
+            self.tts_queue[:] = retained
+            active_item = getattr(self, "active_tts_item", None)
+            if active_item is not None and active_item.scope is scope:
+                active_item.cancelled.set()
 
     def wait_for_tts(self) -> None:
         while self.tts_queue or self.tts_active.is_set():
@@ -1251,20 +1374,34 @@ class BotGUI:
 
     def _tts_worker(self) -> None:
         while not self.exiting:
-            queued_speech: tuple[str, Path | None] | None = None
+            queued_speech: _SpeechQueueItem | None = None
             with self.tts_queue_lock:
                 if self.tts_queue:
                     queued_speech = self.tts_queue.pop(0)
-                    self.tts_active.set()
+                    if not queued_speech.cancelled.is_set():
+                        self.active_tts_item = queued_speech
+                        self.tts_active.set()
             if queued_speech:
-                text, speech_path = queued_speech
-                self.speaker.speak(
-                    text,
-                    self.interrupted,
-                    self.shutdown_event,
-                    archive_path=speech_path,
-                )
-                self.tts_active.clear()
+                if not queued_speech.cancelled.is_set():
+                    self.speaker.speak(
+                        queued_speech.text,
+                        _ScopedInterrupt(
+                            self.interrupted,
+                            queued_speech.cancelled,
+                        ),
+                        self.shutdown_event,
+                        archive_path=queued_speech.archive_path,
+                    )
+                with self.tts_queue_lock:
+                    if self.active_tts_item is queued_speech:
+                        self.active_tts_item = None
+                    self.tts_active.clear()
+                if (
+                    queued_speech.on_complete is not None
+                    and not queued_speech.cancelled.is_set()
+                    and not self.exiting
+                ):
+                    self.master.after(0, queued_speech.on_complete)
             else:
                 time.sleep(0.05)
         self.tts_active.clear()

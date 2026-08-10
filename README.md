@@ -113,18 +113,21 @@ python agent.py
 Configuration is split by audience:
 
 - `config/settings.json` contains user-relevant runtime choices such as models,
-  audio, camera, prompt, weather, and interaction logging.
+  audio, camera, prompt, the weather-config path, and interaction logging.
 - `config/features.json` contains extension wiring: the ordered `features` and
   `modes` lists and their module-specific settings.
+- `config/weather.json` is owned only by the weather feature. It contains the
+  ordered private locations shown in the weather carousel.
 
-The application does **not** create either local file. If a file is absent or
+The application does **not** create these local files. If a file is absent or
 invalid, BMO reports a parsing error when applicable and uses defaults for that
-file without writing anything. To keep local configuration, copy both tracked
+file without writing anything. To keep local configuration, copy the tracked
 examples and edit the copies:
 
 ```bash
 cp config/example.settings.json config/settings.json
 cp config/example.features.json config/features.json
+cp config/example.weather.json config/weather.json
 ```
 
 When upgrading from the former root `config.json`, move its `features` and
@@ -141,6 +144,7 @@ For example, `config/settings.json` can contain:
     "voice_model": "piper/en_GB-semaine-medium.onnx",
     "chat_memory": true,
     "camera_rotation": 0,
+    "weather_config_path": "config/weather.json",
     "interaction_logging": true,
     "interaction_log_directory": "interaction_logs",
     "system_prompt_extras": "You are a helpful robot assistant. Keep responses short and cute."
@@ -170,6 +174,24 @@ shown in `config/example.features.json`:
   changing their voice actions. The timer feature does this by default; its
   `show_in_menu` setting hides or shows the timer icon independently from voice
   routing.
+- The weather feature contributes `graphics/Icons/weather.png` by reference
+  and keeps the existing spoken “what is the weather” action. Its full-screen
+  child-friendly view draws animated sun, cloud, fog, rain, sleet, snow,
+  thunder, hail, wind, season, and day/night layers in code. Temperature,
+  feels-like, high/low, precipitation chance, condition, alert, and hourly
+  cards are tappable BMO announcements. Swiping left or right wraps through
+  the ordered locations in `config/weather.json`; `show_in_menu: false` hides
+  only the icon. Forecasts come from Open-Meteo. Optional U.S. official alerts
+  come from the National Weather Service and fail independently of the normal
+  forecast. BMO does not infer a location from the device IP address.
+- `config/weather.json` supports `units`, `default_location`, `season_style`,
+  `animations`, `alerts`, and `locations`. A location may provide coordinates
+  to avoid geocoding or only a place name to resolve at lookup time. If the
+  file is missing or malformed, weather safely falls back to the legacy
+  `location` and `weather_units` settings when available. The local weather
+  file is ignored by Git; only `config/example.weather.json` is tracked. The
+  spoken rain-chance value is explicitly the highest hourly precipitation
+  probability for the day, not forecast rainfall volume.
 - The camera feature saves its interaction image for vision processing and also
   copies it to persistent storage. Configure `save_directory` in that feature's
   `settings`; the tracked example uses

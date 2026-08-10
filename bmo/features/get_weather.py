@@ -1,20 +1,44 @@
-"""Current-weather tool and its deterministic direct phrases."""
+"""Current-weather voice action and child-friendly menu view."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 from bmo.features.contracts import (
     DirectAction,
+    FeatureMenuContext,
+    FeatureMenuItem,
     ToolRequest,
     ToolResult,
     normalize_direct_text,
 )
-from bmo.location import LocationError, LocationNotConfigured, LocationService
+from bmo.features.weather_alerts import NWSAlertService
+from bmo.features.weather_config import (
+    DEFAULT_WEATHER_CONFIG_PATH,
+    WeatherFeatureConfig,
+    WeatherLocationConfig,
+    load_weather_config,
+)
+from bmo.location import (
+    Location,
+    LocationError,
+    LocationNotConfigured,
+    LocationService,
+)
+from bmo.ui.weather import WeatherApp, WeatherPageData
 from bmo.weather import WeatherError, WeatherService
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WEATHER_MENU_ITEM = FeatureMenuItem(
+    name="get_weather",
+    label="Weather",
+    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "weather.png",
+)
+WeatherAppFactory = Callable[..., WeatherApp]
 
 WEATHER_AT_HOME = frozenset(
     {
@@ -72,7 +96,7 @@ def clean_weather_location(place_name: str) -> str:
 
 
 class GetWeatherTool:
-    """Report current weather for a named or configured place."""
+    """Report current weather and own the optional weather menu lifecycle."""
 
     action = "get_weather"
     aliases = ("weather", "forecast", "check_weather")
@@ -96,8 +120,21 @@ class GetWeatherTool:
     direct_phrases = WEATHER_AT_HOME
     direct_prefixes = WEATHER_PREFIXES
 
-    def __init__(self, weather_service: WeatherService) -> None:
+    def __init__(
+        self,
+        weather_service: WeatherService,
+        *,
+        feature_config: WeatherFeatureConfig | None = None,
+        alert_service: NWSAlertService | None = None,
+        app_factory: WeatherAppFactory = WeatherApp,
+        menu_item: FeatureMenuItem | None = None,
+    ) -> None:
         self.weather_service = weather_service
+        self.feature_config = feature_config or WeatherFeatureConfig()
+        self.alert_service = alert_service
+        self._app_factory = app_factory
+        self.menu_item = menu_item
+        self._menu_ui: WeatherApp | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
         value = request.get("value") or request.get("query")
@@ -110,8 +147,8 @@ class GetWeatherTool:
             )
         except LocationNotConfigured:
             return ToolResult.model_summarized(
-                "I need a home location in config/settings.json, or you can "
-                "ask for the weather in a named city."
+                "I need a location in config/weather.json, or you can ask "
+                "for the weather in a named city."
             )
         except LocationError as exc:
             print(f"[LOCATION] Weather place lookup failed: {exc}", flush=True)
@@ -127,13 +164,74 @@ class GetWeatherTool:
                 "I cannot reach the weather service right now."
             )
 
+    def open_menu(self, context: FeatureMenuContext) -> None:
+        """Open one weather carousel while leaving voice routing unchanged."""
+        if self._menu_ui is not None:
+            return
+
+        def handle_close() -> None:
+            self._menu_ui = None
+            context.cancel_announcements()
+            context.on_close()
+
+        try:
+            self._menu_ui = self._app_factory(
+                context.master,
+                locations=self.feature_config.locations,
+                default_index=self.feature_config.default_index,
+                page_provider=self._weather_page,
+                face_provider=context.current_face,
+                announce=context.announce,
+                cancel_announcements=context.cancel_announcements,
+                announcements_available=context.announcements_available,
+                season_style=self.feature_config.season_style,
+                animations=self.feature_config.animations,
+                announce_warnings=self.feature_config.alerts.announce_warnings,
+                on_close=handle_close,
+            )
+        except Exception:
+            self._menu_ui = None
+            context.cancel_announcements()
+            context.on_close()
+            raise
+
+    def _weather_page(self, configured: WeatherLocationConfig) -> WeatherPageData:
+        """Load one location and isolate optional official-alert failures."""
+        if configured.latitude is not None and configured.longitude is not None:
+            location = Location(
+                configured.name,
+                configured.latitude,
+                configured.longitude,
+                configured.timezone,
+            )
+        else:
+            location = self.weather_service.location_service.resolve(
+                configured.name
+            )
+        snapshot = self.weather_service.current_snapshot(location=location)
+        alerts = ()
+        if self.alert_service is not None:
+            try:
+                alerts = self.alert_service.active_alerts(snapshot.location)
+            except Exception as exc:
+                print(
+                    f"[WEATHER] Official alerts unavailable: {type(exc).__name__}",
+                    flush=True,
+                )
+        return WeatherPageData(snapshot, alerts)
+
+    def close(self) -> None:
+        """Close the view and release feature-owned provider caches."""
+        if self._menu_ui is not None:
+            self._menu_ui.close()
+        if self.alert_service is not None:
+            self.alert_service.clear()
+
     @staticmethod
     def normalize_request(request: ToolRequest) -> dict[str, Any]:
         """Normalize a model-supplied place without changing other fields."""
         normalized = dict(request)
-        location = clean_weather_location(
-            str(request.get("location") or "")
-        )
+        location = clean_weather_location(str(request.get("location") or ""))
         if location:
             normalized["location"] = location
         else:
@@ -169,16 +267,62 @@ def _online_timeout(settings: Mapping[str, Any]) -> float:
     return min(max(timeout, 1.0), 30.0)
 
 
+def _weather_config_path(settings: Mapping[str, Any]) -> Path | None:
+    value = settings.get("weather_config_path")
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        print(
+            "[CONFIG] weather_config_path must not be empty; "
+            "using config/weather.json.",
+            flush=True,
+        )
+        return DEFAULT_WEATHER_CONFIG_PATH
+    if not isinstance(value, (str, Path)):
+        print(
+            "[CONFIG] weather_config_path must be a path; using config/weather.json.",
+            flush=True,
+        )
+        return DEFAULT_WEATHER_CONFIG_PATH
+    return Path(value)
+
+
 def register(registry: Any, settings: Mapping[str, Any]) -> None:
-    """Register current-weather lookup with configured dependencies."""
+    """Register voice and menu weather behavior with owned dependencies."""
     timeout = _online_timeout(settings)
-    location_service = LocationService(
-        settings.get("location"),
-        timeout=timeout,
+    feature_config = load_weather_config(
+        _weather_config_path(settings),
+        legacy_location=settings.get("location"),
+        legacy_units=settings.get("weather_units", "imperial"),
     )
+    for issue in feature_config.issues:
+        print(f"[CONFIG] Weather: {issue}.", flush=True)
+
+    default_location = feature_config.default_location
+    home_location = (
+        default_location.home_location()
+        if default_location is not None
+        else settings.get("location")
+    )
+    location_service = LocationService(home_location, timeout=timeout)
     weather_service = WeatherService(
         location_service,
         timeout=timeout,
-        units=str(settings.get("weather_units", "imperial")),
+        units=feature_config.units,
     )
-    registry.register(GetWeatherTool(weather_service))
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("weather show_in_menu must be true or false")
+    alert_service = (
+        NWSAlertService(timeout=timeout)
+        if feature_config.alerts.enabled
+        else None
+    )
+    registry.register(
+        GetWeatherTool(
+            weather_service,
+            feature_config=feature_config,
+            alert_service=alert_service,
+            menu_item=WEATHER_MENU_ITEM if show_in_menu else None,
+        )
+    )
