@@ -111,6 +111,24 @@ class ModeLoadingTests(unittest.TestCase):
             result.registry.input_policy().kind,
             InputPolicyKind.WAKE_WORD,
         )
+        self.assertEqual(result.registry.menu_items, ())
+
+    def test_matching_game_menu_item_can_be_hidden_by_mode_settings(self) -> None:
+        result = load_mode_registry(
+            {
+                "modes": [
+                    {
+                        "module": "bmo.modes.matching_game",
+                        "settings": {"show_in_menu": False},
+                    }
+                ]
+            },
+            context=make_context(),
+        )
+
+        self.assertEqual(result.failures, ())
+        self.assertEqual(result.registry.names, ("matching_game",))
+        self.assertEqual(result.registry.menu_items, ())
 
     def test_malformed_modes_list_reports_configuration_failure(self) -> None:
         result = load_mode_registry(

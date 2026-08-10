@@ -3,6 +3,8 @@
 from bmo.ui.gestures import GestureKind, HorizontalSwipeRecognizer
 from bmo.ui.menu import (
     EmptyMenuPage,
+    IconMenuItem,
+    IconMenuPage,
     MenuApp,
     MenuBounds,
     MenuNavigation,
@@ -14,6 +16,8 @@ __all__ = [
     "EmptyMenuPage",
     "GestureKind",
     "HorizontalSwipeRecognizer",
+    "IconMenuItem",
+    "IconMenuPage",
     "MenuApp",
     "MenuBounds",
     "MenuNavigation",

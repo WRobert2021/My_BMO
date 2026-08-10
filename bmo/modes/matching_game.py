@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 import threading
 from typing import Any
 
@@ -11,6 +12,7 @@ from PIL import Image
 from bmo.matching_game import MatchingGameApp, is_matching_game_start_request
 from bmo.modes.contracts import (
     InputPolicy,
+    ModeMenuItem,
     ModeRuntimeContext,
     RememberTurn,
     SetState,
@@ -20,6 +22,13 @@ from bmo.state import BotStates
 
 
 MatchingAppFactory = Callable[..., MatchingGameApp]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MATCHING_GAME_MENU_ITEM = ModeMenuItem(
+    name="matching_game",
+    label="Matching Game",
+    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "Matching_Game.png",
+    start_request="Start the matching game",
+)
 
 
 class MatchingGameMode:
@@ -38,6 +47,7 @@ class MatchingGameMode:
         announce: Callable[[str], None],
         face_provider: Callable[[], Image.Image | None],
         app_factory: MatchingAppFactory = MatchingGameApp,
+        menu_item: ModeMenuItem | None = MATCHING_GAME_MENU_ITEM,
     ) -> None:
         self.master = master
         self.speak_response = speak_response
@@ -47,6 +57,7 @@ class MatchingGameMode:
         self.announce = announce
         self.face_provider = face_provider
         self.app_factory = app_factory
+        self.menu_item = menu_item
         self._active = threading.Event()
         self.ui: MatchingGameApp | None = None
 
@@ -119,7 +130,9 @@ def register(
     settings: Mapping[str, Any],
 ) -> None:
     """Construct and register the existing embedded matching-game UI."""
-    del settings
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("matching-game show_in_menu must be true or false")
     registry.register(
         MatchingGameMode(
             context.master,
@@ -129,5 +142,6 @@ def register(
             set_state=context.set_state,
             announce=context.announce,
             face_provider=context.face_provider,
+            menu_item=MATCHING_GAME_MENU_ITEM if show_in_menu else None,
         )
     )

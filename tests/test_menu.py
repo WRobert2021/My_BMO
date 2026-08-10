@@ -2,18 +2,38 @@
 
 from __future__ import annotations
 
+import queue
+import threading
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
+from bmo.modes import ModeMenuItem
 from bmo.ui import (
+    EmptyMenuPage,
     GestureKind,
     HorizontalSwipeRecognizer,
+    IconMenuItem,
+    IconMenuPage,
     MenuApp,
+    MenuBounds,
     MenuNavigation,
     MenuNavigator,
 )
+from typed_agent import TypedBotGUI
+
+
+def icon_item(
+    name: str = "matching_game",
+    label: str = "Matching Game",
+) -> IconMenuItem:
+    return IconMenuItem(
+        name,
+        label,
+        Path(f"graphics/Icons/{name}.png"),
+    )
 
 
 class HorizontalSwipeRecognizerTests(unittest.TestCase):
@@ -78,6 +98,30 @@ class MenuNavigatorTests(unittest.TestCase):
             MenuNavigator(page_count=0)
 
 
+class IconMenuPageTests(unittest.TestCase):
+    BOUNDS = MenuBounds(24, 76, 612, 448)
+
+    def test_six_icons_share_one_page_and_seventh_starts_next_page(self) -> None:
+        items = tuple(icon_item(f"game-{index}") for index in range(7))
+
+        pages = IconMenuPage.paginate(items)
+
+        self.assertEqual(len(pages), 2)
+        self.assertEqual(pages[0].items, items[:6])
+        self.assertEqual(pages[1].items, items[6:])
+        self.assertEqual(IconMenuPage.CAPACITY, 6)
+        self.assertLessEqual(IconMenuPage.ICON_SIZE, 120)
+
+    def test_each_grid_tile_maps_to_its_own_action(self) -> None:
+        items = tuple(icon_item(f"game-{index}") for index in range(6))
+        page = IconMenuPage(items)
+
+        self.assertEqual(page.action_at((122, 169), self.BOUNDS), "game-0")
+        self.assertEqual(page.action_at((318, 169), self.BOUNDS), "game-1")
+        self.assertEqual(page.action_at((514, 355), self.BOUNDS), "game-5")
+        self.assertIsNone(page.action_at((620, 300), self.BOUNDS))
+
+
 class MenuViewGestureTests(unittest.TestCase):
     @staticmethod
     def event(x: int, y: int) -> SimpleNamespace:
@@ -87,6 +131,9 @@ class MenuViewGestureTests(unittest.TestCase):
         view = MenuApp.__new__(MenuApp)
         view.gesture = HorizontalSwipeRecognizer()
         view.navigator = MenuNavigator(page_count=3)
+        view.pages = (EmptyMenuPage(), EmptyMenuPage(), EmptyMenuPage())
+        view.on_select = Mock()
+        view.selection_pending = False
         view.close = Mock()
         view._draw_page = Mock()
         return view
@@ -109,6 +156,64 @@ class MenuViewGestureTests(unittest.TestCase):
         view._handle_release(event)
 
         view.close.assert_not_called()
+
+    def test_tapping_an_icon_keeps_menu_open_while_selecting_action(self) -> None:
+        view = self.make_view()
+        view.navigator = MenuNavigator(page_count=1)
+        view.pages = (IconMenuPage((icon_item(),)),)
+        calls = Mock()
+        view.close = calls.close
+        view.on_select = calls.select
+        event = self.event(122, 169)
+
+        view._handle_press(event)
+        view._handle_release(event)
+
+        self.assertEqual(calls.mock_calls, [unittest.mock.call.select("matching_game")])
+        self.assertTrue(view.selection_pending)
+        self.assertEqual(view.navigator.page_index, 0)
+
+        view.finish_selection()
+
+        self.assertFalse(view.selection_pending)
+
+    def test_tapping_outside_icon_page_does_not_select_it(self) -> None:
+        view = self.make_view()
+        view.navigator = MenuNavigator(page_count=1)
+        view.pages = (IconMenuPage((icon_item(),)),)
+        event = self.event(40, 440)
+
+        view._handle_press(event)
+        view._handle_release(event)
+
+        view.close.assert_not_called()
+        view.on_select.assert_not_called()
+
+    def test_pending_launch_keeps_corner_face_and_navigation_in_place(self) -> None:
+        view = self.make_view()
+        view.selection_pending = True
+        view.navigator.page_index = 1
+        event = self.event(714, 123)
+
+        view._handle_press(event)
+        view._handle_release(event)
+
+        view.close.assert_not_called()
+        view.on_select.assert_not_called()
+        self.assertEqual(view.navigator.page_index, 1)
+
+    def test_corner_face_refresh_continues_while_launch_is_pending(self) -> None:
+        view = MenuApp.__new__(MenuApp)
+        view.closed = False
+        view.selection_pending = True
+        view.face_provider = Mock(return_value=None)
+        view.root = Mock()
+
+        view._refresh_face()
+
+        view.face_provider.assert_called_once_with()
+        view.root.after.assert_called_once_with(150, view._refresh_face)
+        self.assertEqual(view.face_after_id, view.root.after.return_value)
 
 
 class BotGuiMenuIntegrationTests(unittest.TestCase):
@@ -149,6 +254,15 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui.exiting = False
         gui.menu_ui = None
         gui.master = Mock()
+        gui.mode_registry = Mock()
+        gui.mode_registry.menu_items = (
+            ModeMenuItem(
+                name="matching_game",
+                label="Matching Game",
+                icon_path=Path("graphics/Icons/Matching_Game.png"),
+                start_request="Start the matching game",
+            ),
+        )
 
         gui.open_menu()
         opened_view = gui.menu_ui
@@ -160,9 +274,61 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         kwargs = menu_app.call_args.kwargs
         self.assertEqual(kwargs["on_close"], gui._handle_menu_close)
         self.assertEqual(kwargs["face_provider"], gui._current_mode_face)
+        self.assertEqual(kwargs["on_select"], gui._queue_menu_mode)
+        pages = tuple(kwargs["pages"])
+        self.assertEqual(len(pages), 1)
+        self.assertIsInstance(pages[0], IconMenuPage)
+        self.assertEqual(len(pages[0].items), 1)
+        self.assertEqual(pages[0].items[0].name, "matching_game")
+        self.assertEqual(
+            pages[0].items[0].icon_path,
+            Path("graphics/Icons/Matching_Game.png"),
+        )
 
         kwargs["on_close"]()
         self.assertIsNone(gui.menu_ui)
+
+    def test_menu_selection_queues_mode_and_wakes_interaction_worker(self) -> None:
+        gui = BotGUI.__new__(BotGUI)
+        gui.exiting = False
+        gui.menu_mode_requests = queue.Queue()
+        gui.menu_mode_event = threading.Event()
+
+        gui._queue_menu_mode("matching_game")
+
+        self.assertEqual(gui.menu_mode_requests.get_nowait(), "matching_game")
+        self.assertTrue(gui.menu_mode_event.is_set())
+
+    def test_mode_launch_preserves_originating_menu_and_page(self) -> None:
+        gui = BotGUI.__new__(BotGUI)
+        gui.menu_mode_requests = queue.Queue()
+        gui.menu_mode_requests.put("matching_game")
+        gui.menu_mode_event = threading.Event()
+        gui.menu_mode_event.set()
+        gui.mode_registry = Mock()
+        gui.menu_ui = Mock()
+        gui.menu_ui.navigator.page_index = 1
+        originating_menu = gui.menu_ui
+
+        self.assertTrue(gui._start_pending_menu_mode())
+
+        gui.mode_registry.start_menu_item.assert_called_once_with("matching_game")
+        originating_menu.finish_selection.assert_called_once_with()
+        self.assertIs(gui.menu_ui, originating_menu)
+        self.assertEqual(gui.menu_ui.navigator.page_index, 1)
+        self.assertFalse(gui.menu_mode_event.is_set())
+
+    def test_typed_debug_loop_also_starts_pending_menu_mode(self) -> None:
+        gui = TypedBotGUI.__new__(TypedBotGUI)
+        gui.menu_mode_requests = queue.Queue()
+        gui.menu_mode_requests.put("matching_game")
+        gui.menu_mode_event = threading.Event()
+        gui.menu_mode_event.set()
+        gui.mode_registry = Mock()
+
+        self.assertTrue(gui._run_typed_interaction())
+
+        gui.mode_registry.start_menu_item.assert_called_once_with("matching_game")
 
 
 if __name__ == "__main__":

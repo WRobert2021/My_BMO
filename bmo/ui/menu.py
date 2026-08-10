@@ -6,6 +6,7 @@ import tkinter as tk
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Protocol
 
 from PIL import Image, ImageTk
@@ -36,6 +37,13 @@ class MenuPage(Protocol):
     def draw(self, canvas: tk.Canvas, bounds: MenuBounds) -> None:
         """Draw page-owned content within the supplied bounds."""
 
+    def action_at(
+        self,
+        point: tuple[int, int],
+        bounds: MenuBounds,
+    ) -> str | None:
+        """Return the selected action name when a tap hits page content."""
+
 
 @dataclass(frozen=True)
 class EmptyMenuPage:
@@ -45,6 +53,169 @@ class EmptyMenuPage:
 
     def draw(self, canvas: tk.Canvas, bounds: MenuBounds) -> None:
         del canvas, bounds
+
+    def action_at(
+        self,
+        point: tuple[int, int],
+        bounds: MenuBounds,
+    ) -> str | None:
+        del point, bounds
+        return None
+
+
+@dataclass(frozen=True)
+class IconMenuItem:
+    """Presentation metadata for one tappable grid item."""
+
+    name: str
+    label: str
+    icon_path: Path
+
+    def __post_init__(self) -> None:
+        name = str(self.name).strip().lower()
+        label = str(self.label).strip()
+        if not name:
+            raise ValueError("Menu item name cannot be empty.")
+        if not label:
+            raise ValueError("Menu item label cannot be empty.")
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "icon_path", Path(self.icon_path))
+
+
+class IconMenuPage:
+    """A page-sized grid of tappable extension-provided menu items."""
+
+    COLUMNS = 3
+    ROWS = 2
+    CAPACITY = COLUMNS * ROWS
+    ICON_SIZE = 118
+    HORIZONTAL_PADDING = 10
+    VERTICAL_PADDING = 8
+
+    def __init__(
+        self,
+        items: Iterable[IconMenuItem],
+        *,
+        page_number: int = 1,
+    ) -> None:
+        self.items = tuple(items)
+        if not self.items:
+            raise ValueError("An icon menu page needs at least one item.")
+        if len(self.items) > self.CAPACITY:
+            raise ValueError(
+                f"An icon menu page supports at most {self.CAPACITY} items."
+            )
+        self.name = f"icons-{page_number}"
+        self.icon_images: list[ImageTk.PhotoImage] = []
+
+    @classmethod
+    def paginate(
+        cls,
+        items: Iterable[IconMenuItem],
+    ) -> tuple[IconMenuPage, ...]:
+        """Group ordered items into fixed-capacity swipeable grid pages."""
+        supplied_items = tuple(items)
+        return tuple(
+            cls(
+                supplied_items[offset : offset + cls.CAPACITY],
+                page_number=(offset // cls.CAPACITY) + 1,
+            )
+            for offset in range(0, len(supplied_items), cls.CAPACITY)
+        )
+
+    @classmethod
+    def _tile_bounds(
+        cls,
+        index: int,
+        bounds: MenuBounds,
+    ) -> tuple[int, int, int, int]:
+        row, column = divmod(index, cls.COLUMNS)
+        cell_width = (bounds.right - bounds.left) // cls.COLUMNS
+        cell_height = (bounds.bottom - bounds.top) // cls.ROWS
+        cell_left = bounds.left + column * cell_width
+        cell_top = bounds.top + row * cell_height
+        return (
+            cell_left + cls.HORIZONTAL_PADDING,
+            cell_top + cls.VERTICAL_PADDING,
+            cell_left + cell_width - cls.HORIZONTAL_PADDING,
+            cell_top + cell_height - cls.VERTICAL_PADDING,
+        )
+
+    def draw(self, canvas: tk.Canvas, bounds: MenuBounds) -> None:
+        self.icon_images.clear()
+        for index, item in enumerate(self.items):
+            self._draw_item(canvas, bounds, index, item)
+
+    def _draw_item(
+        self,
+        canvas: tk.Canvas,
+        bounds: MenuBounds,
+        index: int,
+        item: IconMenuItem,
+    ) -> None:
+        left, top, right, bottom = self._tile_bounds(index, bounds)
+        canvas.create_rectangle(
+            left,
+            top,
+            right,
+            bottom,
+            fill=MenuApp.WHITE,
+            outline="#98bfd7",
+            width=3,
+        )
+        icon_center_x = (left + right) // 2
+        icon_center_y = top + 65
+        try:
+            with Image.open(item.icon_path) as source:
+                icon = source.convert("RGB")
+            icon.thumbnail(
+                (self.ICON_SIZE, self.ICON_SIZE),
+                Image.Resampling.LANCZOS,
+            )
+            icon_image = ImageTk.PhotoImage(icon)
+            self.icon_images.append(icon_image)
+            canvas.create_image(
+                icon_center_x,
+                icon_center_y,
+                image=icon_image,
+                anchor=tk.CENTER,
+            )
+        except (OSError, ValueError, tk.TclError):
+            canvas.create_rectangle(
+                icon_center_x - 45,
+                icon_center_y - 45,
+                icon_center_x + 45,
+                icon_center_y + 45,
+                fill=MenuApp.NAVY,
+                outline="",
+            )
+            canvas.create_text(
+                icon_center_x,
+                icon_center_y,
+                text="?",
+                fill=MenuApp.WHITE,
+                font=("Arial Rounded MT Bold", 42, "bold"),
+            )
+        canvas.create_text(
+            icon_center_x,
+            bottom - 20,
+            text=item.label,
+            fill=MenuApp.NAVY,
+            font=("Arial Rounded MT Bold", 11, "bold"),
+            width=(right - left) - 10,
+        )
+
+    def action_at(
+        self,
+        point: tuple[int, int],
+        bounds: MenuBounds,
+    ) -> str | None:
+        for index, item in enumerate(self.items):
+            left, top, right, bottom = self._tile_bounds(index, bounds)
+            if left <= point[0] <= right and top <= point[1] <= bottom:
+                return item.name
+        return None
 
 
 class MenuNavigation(str, Enum):
@@ -93,11 +264,13 @@ class MenuApp:
         *,
         on_close: Callable[[], None],
         face_provider: Callable[[], Image.Image | None],
+        on_select: Callable[[str], None] | None = None,
         pages: Iterable[MenuPage] = (),
     ) -> None:
         self.root = root
         self.on_close = on_close
         self.face_provider = face_provider
+        self.on_select = on_select or (lambda name: None)
         supplied_pages = tuple(pages)
         self.pages: tuple[MenuPage, ...] = supplied_pages or (EmptyMenuPage(),)
         self.navigator = MenuNavigator(len(self.pages))
@@ -105,6 +278,7 @@ class MenuApp:
         self.face_after_id: str | None = None
         self.face_image: ImageTk.PhotoImage | None = None
         self.closed = False
+        self.selection_pending = False
 
         self.canvas = tk.Canvas(
             root,
@@ -188,8 +362,20 @@ class MenuApp:
     def _handle_release(self, event: tk.Event) -> str:
         point = self._event_point(event)
         gesture = self.gesture.release(*point)
+        if self.selection_pending:
+            return "break"
         if gesture == GestureKind.TAP and self._point_in_face(point):
             self.close()
+        elif gesture == GestureKind.TAP:
+            page = self.pages[self.navigator.page_index]
+            action = page.action_at(point, MenuBounds(*PAGE_BOUNDS))
+            if action is not None:
+                self.selection_pending = True
+                try:
+                    self.on_select(action)
+                except Exception:
+                    self.selection_pending = False
+                    raise
         elif gesture == GestureKind.SWIPE_LEFT:
             if self.navigator.swipe_left() == MenuNavigation.PAGE:
                 self._draw_page()
@@ -199,6 +385,10 @@ class MenuApp:
             else:
                 self._draw_page()
         return "break"
+
+    def finish_selection(self) -> None:
+        """Allow another selection after the launched view covers the menu."""
+        self.selection_pending = False
 
     @staticmethod
     def _point_in_face(point: tuple[int, int]) -> bool:

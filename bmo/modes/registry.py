@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 import threading
 
-from bmo.modes.contracts import InputPolicy, InteractionMode
+from bmo.modes.contracts import InputPolicy, InteractionMode, ModeMenuItem
 
 
 class DuplicateModeError(ValueError):
@@ -18,6 +18,7 @@ class ModeRegistry:
 
     def __init__(self, modes: Iterable[InteractionMode] = ()) -> None:
         self._modes: dict[str, InteractionMode] = {}
+        self._menu_items: dict[str, ModeMenuItem] = {}
         self._active_mode: InteractionMode | None = None
         self._quarantined_modes: dict[int, InteractionMode] = {}
         self._closed_modes: dict[int, InteractionMode] = {}
@@ -38,7 +39,19 @@ class ModeRegistry:
                 raise RuntimeError(f"Mode '{name}' is quarantined.")
             if name in self._modes:
                 raise DuplicateModeError(f"Duplicate mode name '{name}'.")
+            menu_item = getattr(mode, "menu_item", None)
+            if menu_item is not None:
+                if not isinstance(menu_item, ModeMenuItem):
+                    raise TypeError(
+                        f"Mode '{name}' menu_item must be a ModeMenuItem."
+                    )
+                if menu_item.name != name:
+                    raise ValueError(
+                        f"Mode '{name}' menu item must use the same name."
+                    )
             self._modes[name] = mode
+            if menu_item is not None:
+                self._menu_items[name] = menu_item
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -52,11 +65,22 @@ class ModeRegistry:
         with self._lock:
             return self._modes.get(normalized)
 
+    @property
+    def menu_items(self) -> tuple[ModeMenuItem, ...]:
+        """Return menu contributions in configured mode-registration order."""
+        with self._lock:
+            return tuple(
+                self._menu_items[name]
+                for name in self._modes
+                if name in self._menu_items
+            )
+
     @contextmanager
     def registration(self):
         """Roll back and close modes registered by a failing hook."""
         with self._lock:
             modes_before = self._modes.copy()
+            menu_items_before = self._menu_items.copy()
         try:
             yield
         except Exception:
@@ -67,6 +91,7 @@ class ModeRegistry:
                     if name not in modes_before
                 )
                 self._modes = modes_before
+                self._menu_items = menu_items_before
             for mode in reversed(rolled_back):
                 self._close_mode(mode, action="roll back")
             raise
@@ -133,6 +158,16 @@ class ModeRegistry:
         self.start(mode, user_text)
         return True
 
+    def start_menu_item(self, name: str) -> None:
+        """Start the registered mode represented by one contributed menu item."""
+        normalized = str(name).strip().lower()
+        with self._lock:
+            mode = self._modes.get(normalized)
+            item = self._menu_items.get(normalized)
+        if mode is None or item is None:
+            raise LookupError(f"No registered mode menu item named '{normalized}'.")
+        self.start(mode, item.start_request)
+
     def is_active(self) -> bool:
         """Return whether one registered mode currently owns input."""
         with self._lock:
@@ -197,6 +232,7 @@ class ModeRegistry:
             for name, registered in tuple(self._modes.items()):
                 if registered is mode:
                     del self._modes[name]
+                    self._menu_items.pop(name, None)
             self._quarantined_modes[id(mode)] = mode
         print(
             f"[MODE] Unexpected failure in '{mode.name}.{lifecycle}': "

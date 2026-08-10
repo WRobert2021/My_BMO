@@ -61,8 +61,22 @@ Menu pages satisfy the small `bmo.ui.menu.MenuPage` rendering contract and are
 supplied to `MenuApp` in display order. Left swipes advance through that tuple.
 Right swipes decrement the current page index, so every visited page is
 retraced in reverse order; a right swipe from the first page closes the menu.
-The built-in tuple currently contains only an intentionally blank page, ready
-for later feature icons without adding feature-specific branches to `BotGUI`.
+An enabled mode may optionally contribute typed menu metadata. The mode registry
+exposes those contributions in configuration order, and `BotGUI` maps them to
+generic three-column, two-row icon-grid pages without checking concrete mode
+names. Each page holds up to six actions; additional actions are placed on later
+swipeable pages. A tap queues the selected mode for the normal interaction
+worker, interrupting wake-word waiting without starting mode lifecycle work on
+Tk's event thread. When no enabled mode contributes an item, the menu retains
+its intentionally blank fallback page.
+
+Selecting a menu item does not destroy or navigate away from `MenuApp`. The
+originating grid page remains placed below the launched mode's newer embedded
+canvas, and its upper-right face continues its 150 ms refresh schedule during
+launch and while covered. Closing the game destroys only the game canvas, which
+reveals the same live menu instance with its original page index. Voice-launched
+modes still return to the full-screen face because no menu instance owns their
+launch path.
 
 ## Platform behavior
 
@@ -188,6 +202,14 @@ rather than the entire GUI coordinator. Registration order controls the first
 matching start request. The built-in modules construct the existing adapters,
 and the matching UI and Bayesian Twenty Questions engine remain responsible for
 their existing score, history, and learning behavior.
+
+A mode can expose an optional `ModeMenuItem` with the same normalized name as
+the mode, a label, icon path, and synthetic start request. Registration validates
+and rolls back that metadata with the mode, so disabled, failed, and quarantined
+modes cannot leave stale menu pages. The matching-game adapter contributes the
+existing `graphics/Icons/Matching_Game.png` asset by reference. Its
+`show_in_menu` setting defaults to `true`; setting it to `false` hides only the
+menu page and leaves voice matching enabled.
 
 The importable `tests.extension_modules.proof_mode` fixture proves the same
 configuration-only boundary for modes. Its enabled entry registers start

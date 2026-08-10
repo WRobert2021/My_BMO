@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import queue
 import random
 import re
 import threading
@@ -55,7 +56,13 @@ from bmo.prompts import build_system_prompt
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
-from bmo.ui import GestureKind, HorizontalSwipeRecognizer, MenuApp
+from bmo.ui import (
+    GestureKind,
+    HorizontalSwipeRecognizer,
+    IconMenuItem,
+    IconMenuPage,
+    MenuApp,
+)
 
 
 class BotGUI:
@@ -116,6 +123,8 @@ class BotGUI:
         self.current_overlay_image: ImageTk.PhotoImage | None = None
         self.face_gesture = HorizontalSwipeRecognizer()
         self.menu_ui: MenuApp | None = None
+        self.menu_mode_requests: queue.Queue[str] = queue.Queue()
+        self.menu_mode_event = threading.Event()
 
         self.permanent_memory = load_chat_history(MEMORY_FILE, self.system_prompt)
         self.session_memory: list[dict[str, str]] = []
@@ -302,10 +311,41 @@ class BotGUI:
             self.master,
             on_close=self._handle_menu_close,
             face_provider=self._current_mode_face,
+            on_select=self._queue_menu_mode,
+            pages=IconMenuPage.paginate(
+                IconMenuItem(item.name, item.label, item.icon_path)
+                for item in self.mode_registry.menu_items
+            ),
         )
 
     def _handle_menu_close(self) -> None:
         self.menu_ui = None
+
+    def _queue_menu_mode(self, name: str) -> None:
+        """Wake the interaction worker to start a mode selected by touch."""
+        if self.exiting:
+            return
+        self.menu_mode_requests.put(name)
+        self.menu_mode_event.set()
+
+    def _start_pending_menu_mode(self) -> bool:
+        """Start one queued menu mode on the normal interaction thread."""
+        requests = getattr(self, "menu_mode_requests", None)
+        if requests is None:
+            return False
+        try:
+            name = requests.get_nowait()
+        except queue.Empty:
+            return False
+        if requests.empty():
+            self.menu_mode_event.clear()
+        try:
+            self.mode_registry.start_menu_item(name)
+        finally:
+            menu_ui = getattr(self, "menu_ui", None)
+            if menu_ui is not None:
+                menu_ui.finish_selection()
+        return True
 
     def handle_ptt_toggle(self, event: tk.Event | None = None) -> None:
         del event
@@ -494,6 +534,8 @@ class BotGUI:
 
     def _run_voice_interaction(self) -> bool:
         """Run one voice-loop iteration, returning false when it should stop."""
+        if self._start_pending_menu_mode():
+            return True
         input_policy = self.mode_registry.input_policy()
         while (
             input_policy.kind == InputPolicyKind.SUSPENDED
@@ -511,6 +553,9 @@ class BotGUI:
             )
         else:
             trigger_source = self.detect_wake_word_or_ptt()
+        if trigger_source == "MENU":
+            self._start_pending_menu_mode()
+            return True
         if self.exiting:
             return False
         if self.interrupted.is_set():
@@ -650,10 +695,12 @@ class BotGUI:
 
     def detect_wake_word_or_ptt(self) -> str:
         self.set_state(BotStates.IDLE, "Waiting...")
-        return self.wake_word.wait_for_trigger(
+        trigger = self.wake_word.wait_for_trigger(
             self.ptt_event,
             self.shutdown_event,
+            alternate_event=self.menu_mode_event,
         )
+        return "MENU" if trigger == "ALTERNATE" else trigger
 
     def _start_interaction(self, trigger: str) -> None:
         """Create a fresh archive without letting disk errors stop BMO."""

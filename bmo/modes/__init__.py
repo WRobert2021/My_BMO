@@ -4,6 +4,7 @@ from bmo.modes.contracts import (
     InputPolicy,
     InputPolicyKind,
     InteractionMode,
+    ModeMenuItem,
     ModeRuntimeContext,
 )
 from bmo.modes.loader import ModeLoadFailure, ModeLoadResult, load_mode_registry
@@ -14,6 +15,7 @@ __all__ = [
     "InputPolicy",
     "InputPolicyKind",
     "InteractionMode",
+    "ModeMenuItem",
     "ModeLoadFailure",
     "ModeLoadResult",
     "ModeRegistry",

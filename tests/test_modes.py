@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
-from bmo.modes import InputPolicy, InputPolicyKind, ModeRegistry
+from bmo.modes import InputPolicy, InputPolicyKind, ModeMenuItem, ModeRegistry
 from bmo.modes.games import MatchingGameMode, TwentyQuestionsMode
 from bmo.state import BotStates
 from bmo.twenty_questions import TwentyQuestionsGame
@@ -106,6 +106,34 @@ class ModeRegistryTests(unittest.TestCase):
             registry.input_policy().kind,
             InputPolicyKind.WAKE_WORD,
         )
+
+    def test_menu_item_starts_its_configured_registered_mode(self) -> None:
+        mode = StubMode("game", "spoken start phrase")
+        mode.menu_item = ModeMenuItem(
+            name="game",
+            label="Game",
+            icon_path=Path("graphics/Icons/game.png"),
+            start_request="touch start phrase",
+        )
+        registry = ModeRegistry((mode,))
+
+        self.assertEqual(registry.menu_items, (mode.menu_item,))
+
+        registry.start_menu_item("game")
+
+        self.assertEqual(mode.started_with, ["touch start phrase"])
+
+    def test_mode_menu_item_must_match_registered_mode_name(self) -> None:
+        mode = StubMode("game", "start game")
+        mode.menu_item = ModeMenuItem(
+            name="different",
+            label="Game",
+            icon_path=Path("icon.png"),
+            start_request="start game",
+        )
+
+        with self.assertRaisesRegex(ValueError, "same name"):
+            ModeRegistry((mode,))
 
     def test_close_releases_every_registered_mode_once(self) -> None:
         first = StubMode("first", "first")
@@ -420,6 +448,12 @@ class MatchingGameModeTests(unittest.TestCase):
         )
 
         self.assertTrue(mode.matches_start_request("Start a memory game"))
+        self.assertEqual(mode.menu_item.name, "matching_game")
+        self.assertEqual(mode.menu_item.label, "Matching Game")
+        self.assertEqual(
+            mode.menu_item.icon_path.name,
+            "Matching_Game.png",
+        )
         mode.start("Start a memory game")
 
         self.assertTrue(mode.is_active())

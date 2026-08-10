@@ -186,6 +186,12 @@ configuration-driven loading rules as features:
   Historical top-level `game_answer_wait_seconds` and
   `twenty_questions_debug` values remain supported when mode settings do not
   override them.
+- Enabled modes may contribute touch-menu pages. Pup Pairs contributes its
+  Matching Game icon by default; set its `show_in_menu` setting to `false` to
+  keep voice launch enabled while hiding that page.
+- Menu actions are arranged in six-item grid pages. A game launched from the
+  menu leaves that live page underneath it, so exiting the game returns to the
+  same page instead of briefly showing BMO's full-screen face.
 
 Mode registration receives a constrained runtime context containing only the Tk
 master and approved model, speech, memory, state, announcement, and face

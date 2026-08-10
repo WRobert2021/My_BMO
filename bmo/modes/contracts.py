@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, Protocol
 
 from PIL import Image
@@ -14,6 +15,31 @@ SetState = Callable[[str, str], None]
 SpeakResponse = Callable[[str, str | None], None]
 RememberTurn = Callable[[str, str], None]
 Chat = Callable[..., Any]
+
+
+@dataclass(frozen=True)
+class ModeMenuItem:
+    """Optional menu metadata contributed by an interaction mode."""
+
+    name: str
+    label: str
+    icon_path: Path
+    start_request: str
+
+    def __post_init__(self) -> None:
+        normalized_name = str(self.name).strip().lower()
+        label = str(self.label).strip()
+        start_request = str(self.start_request).strip()
+        if not normalized_name:
+            raise ValueError("Mode menu item name cannot be empty.")
+        if not label:
+            raise ValueError("Mode menu item label cannot be empty.")
+        if not start_request:
+            raise ValueError("Mode menu item start request cannot be empty.")
+        object.__setattr__(self, "name", normalized_name)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "icon_path", Path(self.icon_path))
+        object.__setattr__(self, "start_request", start_request)
 
 
 @dataclass(frozen=True)

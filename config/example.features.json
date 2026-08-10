@@ -3,7 +3,9 @@
     {
       "module": "bmo.modes.matching_game",
       "enabled": true,
-      "settings": {}
+      "settings": {
+        "show_in_menu": true
+      }
     },
     {
       "module": "bmo.modes.twenty_questions",

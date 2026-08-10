@@ -123,12 +123,17 @@ class WakeWordDetector:
         self,
         ptt_event: threading.Event,
         shutdown_event: threading.Event | None = None,
+        alternate_event: threading.Event | None = None,
     ) -> str:
         ptt_event.clear()
+        if alternate_event and alternate_event.is_set():
+            return "ALTERNATE"
         if self.model:
             self.model.reset()
         else:
             while not (shutdown_event and shutdown_event.is_set()):
+                if alternate_event and alternate_event.is_set():
+                    return "ALTERNATE"
                 if ptt_event.wait(timeout=0.1):
                     ptt_event.clear()
                     return "PTT"
@@ -157,6 +162,7 @@ class WakeWordDetector:
                 use_resampling,
                 ptt_event,
                 shutdown_event,
+                alternate_event,
             )
         except StopIteration as trigger:
             return str(trigger)
@@ -180,6 +186,7 @@ class WakeWordDetector:
                     True,
                     ptt_event,
                     shutdown_event,
+                    alternate_event,
                 )
             except StopIteration as trigger:
                 return str(trigger)
@@ -188,6 +195,8 @@ class WakeWordDetector:
                     return "STOP"
                 print(f"[CRITICAL] Wake Word Stream Error: {second_exc}", flush=True)
                 while not (shutdown_event and shutdown_event.is_set()):
+                    if alternate_event and alternate_event.is_set():
+                        return "ALTERNATE"
                     if ptt_event.wait(timeout=0.1):
                         ptt_event.clear()
                         return "PTT"
@@ -203,6 +212,7 @@ class WakeWordDetector:
         use_resampling: bool,
         ptt_event: threading.Event,
         shutdown_event: threading.Event | None = None,
+        alternate_event: threading.Event | None = None,
     ) -> None:
         if self.model is None:
             raise RuntimeError("wake-word model is unavailable")
@@ -222,6 +232,8 @@ class WakeWordDetector:
                 flush=True,
             )
             while not (shutdown_event and shutdown_event.is_set()):
+                if alternate_event and alternate_event.is_set():
+                    raise StopIteration("ALTERNATE")
                 if ptt_event.is_set():
                     ptt_event.clear()
                     raise StopIteration("PTT")

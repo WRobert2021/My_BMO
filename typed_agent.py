@@ -53,6 +53,9 @@ class TypedBotGUI(BotGUI):
 
     def _wait_for_typed_input(self) -> str | None:
         while not self.exiting:
+            menu_event = getattr(self, "menu_mode_event", None)
+            if menu_event is not None and menu_event.is_set():
+                return ""
             try:
                 return self.typed_input_queue.get(timeout=0.1)
             except Empty:
@@ -88,6 +91,8 @@ class TypedBotGUI(BotGUI):
 
     def _run_typed_interaction(self) -> bool:
         """Run one typed-loop iteration, returning false when it should stop."""
+        if self._start_pending_menu_mode():
+            return True
         while (
             self.mode_registry.input_policy().kind
             == InputPolicyKind.SUSPENDED
@@ -99,6 +104,9 @@ class TypedBotGUI(BotGUI):
 
         self.set_state(BotStates.IDLE, "Type a command below...")
         user_text = self._wait_for_typed_input()
+
+        if self._start_pending_menu_mode():
+            return True
 
         if self.exiting or user_text is None:
             return False

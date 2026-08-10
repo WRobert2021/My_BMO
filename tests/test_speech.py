@@ -120,6 +120,34 @@ class WakeWordStreamingTests(unittest.TestCase):
             np.zeros(detector.CHUNK_SIZE, dtype=np.int16),
         )
 
+    def test_alternate_event_interrupts_active_wake_word_listening(self) -> None:
+        model = _TriggeringModel()
+        detector = self._detector(model)
+        stream = _InputStream([])
+        alternate_event = threading.Event()
+        alternate_event.set()
+
+        with (
+            patch("bmo.speech.sd.InputStream", return_value=stream),
+            self.assertRaisesRegex(StopIteration, "ALTERNATE"),
+        ):
+            detector._listen_loop(
+                {
+                    "samplerate": detector.SAMPLE_RATE,
+                    "channels": 1,
+                    "dtype": "int16",
+                    "blocksize": detector.CHUNK_SIZE,
+                    "device": None,
+                },
+                detector.CHUNK_SIZE,
+                detector.CHUNK_SIZE,
+                False,
+                threading.Event(),
+                alternate_event=alternate_event,
+            )
+
+        self.assertEqual(stream.read_calls, 0)
+
     def test_one_overflow_resets_state_and_keeps_listening(self) -> None:
         model = _TriggeringModel()
         detector = self._detector(model)
