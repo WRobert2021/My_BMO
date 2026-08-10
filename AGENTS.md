@@ -105,5 +105,6 @@ At the end of every task, report:
 - Remaining risks and assumptions.
 - Manual verification steps.
 - A concise `git diff` summary.
+- A concise suggested commit message describing the completed change.
 
 Do not commit or push as part of the handoff.
