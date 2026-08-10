@@ -33,7 +33,7 @@ def icon_item(
     return IconMenuItem(
         name,
         label,
-        Path(f"graphics/Icons/{name}.png"),
+        Path(f"graphics/icons/{name}.png"),
     )
 
 
@@ -260,7 +260,7 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
             FeatureMenuItem(
                 name="set_timer",
                 label="Timers",
-                icon_path=Path("graphics/Icons/timer.png"),
+                icon_path=Path("graphics/icons/timer.png"),
             ),
         )
         gui.mode_registry = Mock()
@@ -268,7 +268,7 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
             ModeMenuItem(
                 name="matching_game",
                 label="Matching Game",
-                icon_path=Path("graphics/Icons/Matching_Game.png"),
+                icon_path=Path("graphics/icons/matching_game.png"),
                 start_request="Start the matching game",
             ),
         )
@@ -291,12 +291,12 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         self.assertEqual(pages[0].items[0].name, "mode:matching_game")
         self.assertEqual(
             pages[0].items[0].icon_path,
-            Path("graphics/Icons/Matching_Game.png"),
+            Path("graphics/icons/matching_Game.png"),
         )
         self.assertEqual(pages[0].items[1].name, "feature:set_timer")
         self.assertEqual(
             pages[0].items[1].icon_path,
-            Path("graphics/Icons/timer.png"),
+            Path("graphics/icons/timer.png"),
         )
 
         kwargs["on_close"]()

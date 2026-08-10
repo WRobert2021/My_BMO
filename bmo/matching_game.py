@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw, ImageTk
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PAW_PATROL_DIR = PROJECT_ROOT / "graphics" / "Paw Patrol"
-CARD_BACK_PATH = PROJECT_ROOT / "graphics" / "Card Backs" / "Card Back.png"
+CARD_BACK_PATH = PROJECT_ROOT / "graphics" / "card_backs" / "card_back.png"
 SCORE_HISTORY_PATH = PROJECT_ROOT / "matching_game_scores.json"
 
 CHARACTER_FILES = (

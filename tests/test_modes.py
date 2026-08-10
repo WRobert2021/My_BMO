@@ -112,7 +112,7 @@ class ModeRegistryTests(unittest.TestCase):
         mode.menu_item = ModeMenuItem(
             name="game",
             label="Game",
-            icon_path=Path("graphics/Icons/game.png"),
+            icon_path=Path("graphics/icons/game.png"),
             start_request="touch start phrase",
         )
         registry = ModeRegistry((mode,))

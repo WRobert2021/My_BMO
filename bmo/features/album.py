@@ -29,7 +29,7 @@ DEFAULT_BMO_BUTTON = (
 ALBUM_MENU_ITEM = FeatureMenuItem(
     name="album",
     label="Album",
-    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "album.png",
+    icon_path=PROJECT_ROOT / "graphics" / "icons" / "album.png",
 )
 PHOTO_EXTENSIONS = frozenset(
     {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}

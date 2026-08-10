@@ -26,7 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MATCHING_GAME_MENU_ITEM = ModeMenuItem(
     name="matching_game",
     label="Matching Game",
-    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "Matching_Game.png",
+    icon_path=PROJECT_ROOT / "graphics" / "icons" / "matching_game.png",
     start_request="Start the matching game",
 )
 

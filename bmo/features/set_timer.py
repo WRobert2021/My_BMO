@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TIMER_MENU_ITEM = FeatureMenuItem(
     name="set_timer",
     label="Timers",
-    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "timer.png",
+    icon_path=PROJECT_ROOT / "graphics" / "icons" / "timer.png",
 )
 TimerAppFactory = Callable[..., TimerApp]
 
