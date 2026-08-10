@@ -168,7 +168,7 @@ class CameraFeatureTests(unittest.TestCase):
                         {
                             "module": "bmo.features.capture_image",
                             "enabled": True,
-                            "settings": {},
+                            "settings": {"save_directory": None},
                         }
                     ],
                 }
@@ -189,6 +189,119 @@ class CameraFeatureTests(unittest.TestCase):
                 ),
             )
             self.assertEqual(events[0].data["rotation"], 90)
+
+    def test_configured_directory_receives_persistent_capture_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_path = root / "archive" / "images" / "camera.jpg"
+            output_path.parent.mkdir(parents=True)
+            Image.new("RGB", (3, 2), color="blue").save(output_path)
+            save_directory = root / "Pictures" / "bmo" / "what_do_you_see"
+            context, events, _ = self.make_context(output_path)
+            router = ToolRouter(
+                {
+                    "features": [
+                        {
+                            "module": "bmo.features.capture_image",
+                            "enabled": True,
+                            "settings": {
+                                "save_directory": str(save_directory),
+                            },
+                        }
+                    ]
+                }
+            )
+            self.addCleanup(router.close)
+
+            with patch("bmo.features.capture_image.subprocess.run"):
+                result = router.execute(
+                    {"action": "capture_image"},
+                    context=context,
+                )
+
+            saved_paths = list(save_directory.iterdir())
+            self.assertEqual(len(saved_paths), 1)
+            saved_path = saved_paths[0]
+            self.assertRegex(
+                saved_path.name,
+                r"^capture-\d{8}T\d{6}\.\d{6}Z-[0-9a-f]{8}\.jpg$",
+            )
+            with Image.open(saved_path) as saved:
+                self.assertEqual(saved.size, (3, 2))
+            self.assertEqual(
+                result,
+                ToolResult.vision_follow_up(
+                    ToolAttachment.image(output_path)
+                ),
+            )
+            self.assertEqual(events[0].name, "image_captured")
+            self.assertEqual(
+                events[1],
+                ToolEvent(
+                    "image_saved",
+                    {
+                        "path": str(saved_path),
+                        "source_path": str(output_path),
+                    },
+                ),
+            )
+
+    def test_persistent_copy_failure_keeps_vision_follow_up(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_path = root / "camera.jpg"
+            Image.new("RGB", (3, 2), color="blue").save(output_path)
+            invalid_directory = root / "not-a-directory"
+            invalid_directory.write_text("occupied", encoding="utf-8")
+            context, events, _ = self.make_context(output_path)
+            tool = CaptureImageTool(save_directory=invalid_directory)
+
+            with (
+                patch("bmo.features.capture_image.subprocess.run"),
+                patch("builtins.print"),
+            ):
+                result = ToolRegistry((tool,)).execute(
+                    {"action": "capture_image"},
+                    context=context,
+                )
+
+            self.assertEqual(
+                result,
+                ToolResult.vision_follow_up(
+                    ToolAttachment.image(output_path)
+                ),
+            )
+            self.assertEqual(events[0].name, "image_captured")
+            self.assertEqual(events[1].name, "image_save_failed")
+            self.assertEqual(
+                events[1].data["save_directory"],
+                str(invalid_directory),
+            )
+            self.assertIn("File exists", events[1].data["error"])
+
+    def test_invalid_save_directory_setting_isolated_during_loading(self) -> None:
+        messages: list[str] = []
+
+        result = load_feature_registry(
+            {
+                "features": [
+                    {
+                        "module": "bmo.features.capture_image",
+                        "enabled": True,
+                        "settings": {"save_directory": 42},
+                    }
+                ]
+            },
+            reporter=messages.append,
+        )
+
+        self.assertEqual(result.registry.actions, set())
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].stage, "register")
+        self.assertIn(
+            "save_directory must be a path string or null",
+            messages[0],
+        )
 
     def test_missing_execution_context_does_not_start_camera(self) -> None:
         registry = ToolRegistry((CaptureImageTool(),))

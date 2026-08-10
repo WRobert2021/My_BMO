@@ -170,6 +170,12 @@ shown in `config/example.features.json`:
   changing their voice actions. The timer feature does this by default; its
   `show_in_menu` setting hides or shows the timer icon independently from voice
   routing.
+- The camera feature saves its interaction image for vision processing and also
+  copies it to persistent storage. Configure `save_directory` in that feature's
+  `settings`; the tracked example uses
+  `/home/pi-bmo/Pictures/bmo/what_do_you_see`. If the setting is omitted, it
+  defaults to `~/Pictures/bmo/what_do_you_see`; set it to `null` to keep only
+  the per-interaction archive copy.
 
 A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
 Pairs UI. Modes have an active/inactive lifecycle and choose whether input uses

@@ -15,7 +15,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.features.get_weather` — weather action, place cleanup, and failures.
 - `bmo.features.search_web` — web-search action, formatting, and archive details.
 - `bmo.features.capture_image` — configured camera routing, Raspberry Pi still
-  capture, rotation, event recording, and vision follow-up results.
+  capture, rotation, interaction archival, optional persistent copies, event
+  recording, and vision follow-up results.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
 - `bmo.modes` — typed lifecycle contracts and exclusive input ownership for
@@ -47,7 +48,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 5. The recorder captures a WAV directly into that archive.
 6. Whisper transcribes the WAV and retains its raw stdout/stderr.
 7. Ollama produces either normal text or an allowlisted tool request; requests and typed tool results are logged and processed through the same presentation path as direct actions.
-8. Tool calls, full web results, and camera images are stored under the same interaction.
+8. Tool calls, full web results, and camera images are stored under the same
+   interaction; camera captures are also copied to the feature's configured
+   persistent directory.
 9. Piper streams speech through `sounddevice` while also writing archival WAVs.
 10. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
 
@@ -103,8 +106,13 @@ The same Python entry point is used on macOS and Raspberry Pi.
   `config/settings.json`.
 - Raspberry Pi camera matching, execution, timeout, configured rotation, and
   result ownership all live in the optional `bmo.features.capture_image`
-  module. When disabled, that module is never imported and contributes no
-  prompt metadata, direct matcher, or subprocess path.
+  module. Its `save_directory` setting selects a persistent capture folder;
+  omitting it defaults to `~/Pictures/bmo/what_do_you_see`, and setting it to
+  `null` keeps only the interaction-archive image. Persistent copies use unique
+  UTC filenames and are written atomically. A copy failure is recorded without
+  discarding the captured image or preventing its vision follow-up. When the
+  feature is disabled, its module is never imported and contributes no prompt
+  metadata, direct matcher, or subprocess path.
 - The application supplies a fresh `ToolContext` for each execution. It exposes
   only approved artifact allocation, structured interaction events, and generic
   UI status requests; features never receive `BotGUI` or an archive object.
