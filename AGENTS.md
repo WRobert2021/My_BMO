@@ -34,6 +34,34 @@
   for code reduction or cleaner execution, summarize the concrete reduction
   in project-owned code or runtime complexity.
 
+## Feature modularity
+
+- Every new or modified feature must follow the feature and mode extension
+  contracts in `docs/architecture.md`. Keep feature registration,
+  configuration, runtime ownership, failure handling, cleanup, and tests inside
+  the feature's module or its narrowly owned supporting modules.
+- Features must remain independent of one another. Enabling, disabling,
+  removing, or failing one feature must not break another feature's core
+  behavior or prevent the application from starting.
+- A feature may use a function from another script or feature only when that
+  dependency cannot break the consuming feature's core behavior. Optional
+  cross-feature integrations must be discovered or imported lazily rather than
+  becoming import-time requirements.
+- When a function starts being used by multiple features, or substantially the
+  same function is being implemented in multiple features, explicitly evaluate
+  whether it should be refactored into the smallest appropriate neutral core or
+  shared module. Document the ownership decision and avoid circular feature
+  dependencies or an unrelated catch-all utility module.
+- If a feature uses another script, feature, or function only for a non-core
+  capability, the consuming feature must continue to load and its core behavior
+  must continue to work when that provider is changed, disabled, unavailable,
+  or removed. In the application UI, the unavailable non-core action must be
+  disabled or greyed out so the missing integration is visible rather than
+  crashing, silently disappearing, or leaving an unusable control.
+- Add tests for the provider-present and provider-unavailable cases of every
+  optional cross-feature integration. Verify the consuming feature's core path,
+  the disabled UI state, clean startup, and cleanup behavior.
+
 ## Git and GitHub restrictions
 
 - Do not stage files.
