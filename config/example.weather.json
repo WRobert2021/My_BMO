@@ -3,6 +3,7 @@
   "default_location": "home",
   "season_style": "auto",
   "animations": true,
+  "debug": false,
   "alerts": {
     "enabled": false,
     "provider": "nws",

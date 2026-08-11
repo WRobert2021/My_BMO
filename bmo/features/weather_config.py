@@ -54,6 +54,7 @@ class WeatherFeatureConfig:
     default_location_id: str | None = None
     season_style: str = "auto"
     animations: bool = True
+    debug: bool = False
     alerts: WeatherAlertsConfig = field(default_factory=WeatherAlertsConfig)
     locations: tuple[WeatherLocationConfig, ...] = ()
     issues: tuple[str, ...] = ()
@@ -250,6 +251,11 @@ def load_weather_config(
         issues.append("animations must be true or false; using true")
         animations = True
 
+    debug = raw.get("debug", False)
+    if not isinstance(debug, bool):
+        issues.append("debug must be true or false; using false")
+        debug = False
+
     locations: list[WeatherLocationConfig] = []
     seen_ids: set[str] = set()
     raw_locations = raw.get("locations", [])
@@ -295,6 +301,7 @@ def load_weather_config(
         default_location_id=default_id,
         season_style=season_style,
         animations=animations,
+        debug=debug,
         alerts=_parse_alerts(raw.get("alerts"), issues),
         locations=tuple(locations),
         issues=tuple(issues),

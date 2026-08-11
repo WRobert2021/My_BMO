@@ -47,7 +47,7 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.ui.album` — paginated photo thumbnails, horizontal swipe navigation,
   fullscreen image actions, and BMO vision-state presentation.
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
-  code-drawn weather animation, and tappable forecast presentation.
+  secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
 
 ## Runtime flow
 
@@ -127,8 +127,9 @@ vision turn on the normal interaction worker. The feature never receives
 `BotGUI`, model objects, or an interaction archive.
 
 The weather tool contributes `graphics/Icons/weather.png` by reference while
-retaining its existing voice/model action. Opening its icon creates a separate
-800×480 Canvas view over the same originating menu. Horizontal swipes wrap
+retaining its existing voice/model action. Opening its icon starts a separate
+800×480 Chromium kiosk surface over the same originating Tk menu. Horizontal
+swipes wrap
 through the weather-owned ordered location tuple instead of navigating the
 underlying menu. Each location is loaded on a bounded daemon worker; the Tk
 thread polls a result queue, caches successful pages for the view lifetime, and
@@ -143,7 +144,28 @@ values. The report calls `precipitation_probability_max` the “highest hourly
 rain chance today”; it is not rainfall volume. The scene composes season,
 day/night, primary WMO condition, and measured modifiers such as heat, cold,
 humidity, and high gusts. Seasons affect only scenery—winter never implies
-snow. All tap speech uses deterministic templates rather than a model.
+snow. The 800×480 presentation uses weather-owned HTML, CSS, and inline SVG:
+layered seasonal ground, animated condition particles, childlike current and
+hourly icons, and locally calculated eight-phase moon art. Forecast cards use
+real alpha transparency. The hourly strip drops
+past local forecast points as the view remains open, and each cached location
+is refreshed on a bounded fifteen-minute interval so its remaining hours and
+day period advance without reopening the menu. All tap speech uses
+deterministic templates rather than a model.
+
+Browser actions cross a feature-owned HTTP bridge bound only to a random
+`127.0.0.1` port. A per-view path token, strict origin and action validation,
+bounded request bodies, a restrictive content-security policy, and a dedicated
+temporary Chromium profile isolate the surface from the LAN and from the
+user's browser data. Closing Weather stops the Chromium process group, server
+thread, timers, and scoped speech. If Chromium cannot start, the feature
+reports the failure and returns to the same menu without affecting voice
+weather or another feature.
+
+Setting private weather configuration `debug` to true exposes a collapsible
+browser-only preview panel for every visual condition, season, day period, and
+moon phase. Preview selection never mutates provider data or the Python cache;
+Live Weather clears the override. Debug controls remain absent when disabled.
 
 Optional National Weather Service alerts are fetched by forecast coordinates
 and cached independently. An alert-provider error is reported generically and
@@ -160,6 +182,10 @@ development and test environment, but a successful macOS install is not proof
 that a native or Python dependency works on the deployment target. New
 dependencies must satisfy the compatibility and justification policy in
 `AGENTS.md` before they are added.
+
+The weather view requires the Raspberry Pi OS `chromium` system package. The
+setup script installs and verifies its executable; no Python webview package is
+added. Chromium runs only while the weather view is open.
 
 The same Python entry point is used on macOS and Raspberry Pi. The Python
 virtual environment owns Python packages only. Whisper.cpp, Piper and its voice

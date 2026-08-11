@@ -198,6 +198,20 @@ def narrate_rain(snapshot: WeatherSnapshot) -> str:
 def narrate_condition(snapshot: WeatherSnapshot) -> str:
     description = WEATHER_DESCRIPTIONS.get(snapshot.weather_code, "mixed weather")
     condition = condition_for_code(snapshot.weather_code)
+    if snapshot.is_day is False:
+        if condition is WeatherCondition.CLEAR:
+            return (
+                f"It is {description} in {snapshot.location.name}. "
+                "The moon is smiling!"
+            )
+        if condition in {
+            WeatherCondition.MOSTLY_CLEAR,
+            WeatherCondition.PARTLY_CLOUDY,
+        }:
+            return (
+                f"It is {description} in {snapshot.location.name}. "
+                "The moon and clouds are playing peekaboo!"
+            )
     flavor = {
         WeatherCondition.CLEAR: "The sun is smiling!",
         WeatherCondition.MOSTLY_CLEAR: "The sun and clouds are playing peekaboo!",

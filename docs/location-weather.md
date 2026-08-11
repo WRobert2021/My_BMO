@@ -9,6 +9,21 @@ the resulting coordinates are sent to Open-Meteo for current weather. Both
 requests use HTTPS and require an internet connection, but neither requires an
 API key.
 
+The menu-launched weather view uses the same forecast snapshot as the spoken
+response. It opens a dedicated fullscreen Chromium surface containing only
+project-owned HTML, CSS, and SVG graphics. Its local communication server binds
+to a random `127.0.0.1` port with a per-view token and stops when Weather
+closes; it is never exposed on the LAN. The Tk menu and other features do not
+use Chromium.
+
+Copy `config/example.weather.json` to the ignored `config/weather.json` to set
+the ordered location carousel. Set `"debug": true` while verifying graphics.
+A small **D** control then opens selectors for every supported condition,
+season, morning/midday/afternoon/sunset/night period, and eight basic moon
+phases. The debugger changes only the browser preview; **Live weather** restores
+the real forecast immediately. Keep debug disabled for the normal child-facing
+screen.
+
 These are external services. A named-place lookup sends the spoken place name
 to Nominatim, and every weather lookup sends coordinates to Open-Meteo. Keep a
 real home location only in the ignored `config/settings.json`, never in tracked

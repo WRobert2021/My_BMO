@@ -186,14 +186,27 @@ class GetWeatherTool:
                 announcements_available=context.announcements_available,
                 season_style=self.feature_config.season_style,
                 animations=self.feature_config.animations,
+                debug=self.feature_config.debug,
                 announce_warnings=self.feature_config.alerts.announce_warnings,
                 on_close=handle_close,
             )
-        except Exception:
+        except Exception as exc:
             self._menu_ui = None
-            context.cancel_announcements()
-            context.on_close()
-            raise
+            print(
+                f"[WEATHER] Display unavailable: {type(exc).__name__}",
+                flush=True,
+            )
+
+            def finish_failure() -> None:
+                context.cancel_announcements()
+                context.on_close()
+
+            if context.announcements_available and context.announce(
+                "BMO cannot open the weather screen right now.",
+                finish_failure,
+            ):
+                return
+            finish_failure()
 
     def _weather_page(self, configured: WeatherLocationConfig) -> WeatherPageData:
         """Load one location and isolate optional official-alert failures."""

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import queue
+import signal
 import threading
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
@@ -25,13 +27,25 @@ from bmo.features.weather_narration import (
     WeatherSeason,
     condition_for_code,
     narrate_alert,
+    narrate_condition,
     narrate_feels_like,
     narrate_rain,
     narrate_temperature,
     season_for,
 )
 from bmo.location import Location
-from bmo.ui.weather import WeatherApp, WeatherCarousel, WeatherPageData
+from bmo.ui.weather import (
+    ChromiumSession,
+    MOON_PHASES,
+    WeatherApp,
+    WeatherCarousel,
+    WeatherPageData,
+    WeatherWebBridge,
+    day_period_for,
+    moon_phase_for,
+    select_upcoming_hours,
+    weather_web_state,
+)
 from bmo.weather import HourlyWeather, WeatherSnapshot
 
 
@@ -71,6 +85,7 @@ class WeatherConfigTests(unittest.TestCase):
                         "default_location": "school",
                         "season_style": "off",
                         "animations": False,
+                        "debug": True,
                         "alerts": {
                             "enabled": True,
                             "provider": "nws",
@@ -102,6 +117,7 @@ class WeatherConfigTests(unittest.TestCase):
         self.assertEqual(config.units, "metric")
         self.assertEqual(config.season_style, "off")
         self.assertFalse(config.animations)
+        self.assertTrue(config.debug)
         self.assertTrue(config.alerts.enabled)
         self.assertTrue(config.alerts.announce_warnings)
 
@@ -111,6 +127,7 @@ class WeatherConfigTests(unittest.TestCase):
             path.write_text(
                 json.dumps(
                     {
+                        "debug": "yes",
                         "locations": [
                             {
                                 "id": "private-secret-place",
@@ -137,6 +154,8 @@ class WeatherConfigTests(unittest.TestCase):
         issue_text = " ".join(config.issues)
         self.assertNotIn("Top Secret", issue_text)
         self.assertNotIn("private-secret-place", issue_text)
+        self.assertFalse(config.debug)
+        self.assertIn("debug must be true or false", issue_text)
 
     def test_missing_or_malformed_config_falls_back_to_legacy_home(self) -> None:
         legacy = {
@@ -200,6 +219,80 @@ class WeatherNarrationTests(unittest.TestCase):
         self.assertIn("BMO safety alert", message)
         self.assertIn("safe place", message)
 
+    def test_clear_night_narration_mentions_the_moon_not_the_sun(self) -> None:
+        message = narrate_condition(
+            make_snapshot(weather_code=0, is_day=False)
+        )
+
+        self.assertIn("moon is smiling", message)
+        self.assertNotIn("sun is smiling", message)
+
+
+class WeatherSceneStateTests(unittest.TestCase):
+    def test_moon_phase_catalog_covers_the_eight_basic_phases(self) -> None:
+        reference = datetime(2000, 1, 6, 18, 14)
+        offsets = (0, 3.7, 7.4, 11.1, 14.77, 18.46, 22.15, 25.84)
+
+        phases = tuple(
+            moon_phase_for(reference + timedelta(days=offset))
+            for offset in offsets
+        )
+
+        self.assertEqual(
+            phases,
+            (
+                "new",
+                "waxing_crescent",
+                "first_quarter",
+                "waxing_gibbous",
+                "full",
+                "waning_gibbous",
+                "last_quarter",
+                "waning_crescent",
+            ),
+        )
+
+    def test_day_period_uses_local_sunrise_and_sunset(self) -> None:
+        snapshot = make_snapshot(
+            sunrise="2026-08-10T06:45",
+            sunset="2026-08-10T20:05",
+        )
+
+        self.assertEqual(day_period_for(snapshot, datetime(2026, 8, 10, 8)), "morning")
+        self.assertEqual(day_period_for(snapshot, datetime(2026, 8, 10, 12)), "midday")
+        self.assertEqual(day_period_for(snapshot, datetime(2026, 8, 10, 16)), "afternoon")
+        self.assertEqual(day_period_for(snapshot, datetime(2026, 8, 10, 19)), "sunset")
+        self.assertEqual(day_period_for(snapshot, datetime(2026, 8, 10, 21)), "night")
+
+    def test_upcoming_hour_strip_drops_passed_slots(self) -> None:
+        hours = tuple(
+            HourlyWeather(
+                f"2026-08-10T{hour:02d}:00",
+                80 + hour,
+                80 + hour,
+                0,
+                5,
+                True,
+            )
+            for hour in range(12, 18)
+        )
+        snapshot = make_snapshot(hourly=hours)
+
+        selected = select_upcoming_hours(
+            snapshot,
+            datetime(2026, 8, 10, 13, 1),
+        )
+
+        self.assertEqual(
+            tuple(hour.time for hour in selected),
+            (
+                "2026-08-10T14:00",
+                "2026-08-10T15:00",
+                "2026-08-10T16:00",
+                "2026-08-10T17:00",
+            ),
+        )
+
 
 class WeatherAlertTests(unittest.TestCase):
     def test_nws_alerts_are_parsed_and_cached_by_point(self) -> None:
@@ -246,16 +339,17 @@ class WeatherMenuTests(unittest.TestCase):
         self.assertEqual(carousel.swipe_left(), 1)
 
     @patch("bmo.ui.weather.threading.Thread")
-    @patch("bmo.ui.weather.tk.Canvas")
-    def test_view_draws_animated_alert_page_and_cleans_up(
+    def test_view_publishes_animated_alert_page_and_cleans_up(
         self,
-        canvas_type: Mock,
         thread_type: Mock,
     ) -> None:
         root = Mock()
         root.after.return_value = "weather-after"
         cancel_speech = Mock()
         on_close = Mock()
+        bridge = Mock(url="http://127.0.0.1:1234/token/")
+        browser = Mock()
+        browser.poll.return_value = None
         location = WeatherLocationConfig("home", "Home", "Tomball")
         app = WeatherApp(
             root,
@@ -267,6 +361,8 @@ class WeatherMenuTests(unittest.TestCase):
             cancel_announcements=cancel_speech,
             announcements_available=True,
             on_close=on_close,
+            browser_launcher=Mock(return_value=browser),
+            bridge_factory=Mock(return_value=bridge),
         )
         alert = WeatherAlert(
             "Severe Thunderstorm Warning",
@@ -279,19 +375,98 @@ class WeatherMenuTests(unittest.TestCase):
             (alert,),
         )
 
-        app._draw()
+        app._publish_state()
 
-        canvas = canvas_type.return_value
-        canvas.create_polygon.assert_called()
-        self.assertIn("alert", [key for _, key in app._hit_targets])
-        self.assertIn("temperature", [key for _, key in app._hit_targets])
+        published = bridge.set_state.call_args.args[0]
+        self.assertEqual(published["condition"], "severe")
+        self.assertEqual(published["alert"], "Severe Thunderstorm Warning")
+        self.assertTrue(published["speech_available"])
+        bridge.start.assert_called_once_with()
         thread_type.return_value.start.assert_called_once_with()
 
         app.close()
 
         cancel_speech.assert_called_once_with()
-        canvas.destroy.assert_called_once_with()
+        browser.close.assert_called_once_with()
+        bridge.close.assert_called_once_with()
         on_close.assert_called_once_with()
+
+    @patch("bmo.ui.weather.threading.Thread")
+    def test_weather_remains_visible_and_speech_targets_disable_without_provider(
+        self,
+        thread_type: Mock,
+    ) -> None:
+        root = Mock()
+        root.after.return_value = "weather-after"
+        bridge = Mock(url="http://127.0.0.1:1234/token/")
+        browser = Mock()
+        browser.poll.return_value = None
+        location = WeatherLocationConfig("home", "Home", "Tomball")
+        app = WeatherApp(
+            root,
+            locations=(location,),
+            default_index=0,
+            page_provider=Mock(),
+            face_provider=Mock(return_value=None),
+            announce=Mock(return_value=False),
+            cancel_announcements=Mock(),
+            announcements_available=False,
+            on_close=Mock(),
+            browser_launcher=Mock(return_value=browser),
+            bridge_factory=Mock(return_value=bridge),
+        )
+        app._cache["home"] = WeatherPageData(make_snapshot())
+
+        app._publish_state()
+
+        published = bridge.set_state.call_args.args[0]
+        self.assertFalse(published["speech_available"])
+        self.assertEqual(tuple(app._hour_targets), ("hour:0",))
+        thread_type.return_value.start.assert_called_once_with()
+
+    def test_debug_preview_starts_without_a_configured_location(self) -> None:
+        root = Mock()
+        root.after.return_value = "weather-after"
+        bridge = Mock(url="http://127.0.0.1:1234/token/")
+        browser = Mock()
+        browser.poll.return_value = None
+
+        app = WeatherApp(
+            root,
+            locations=(),
+            default_index=0,
+            page_provider=Mock(),
+            face_provider=Mock(),
+            announce=Mock(return_value=False),
+            cancel_announcements=Mock(),
+            announcements_available=False,
+            debug=True,
+            on_close=Mock(),
+            browser_launcher=Mock(return_value=browser),
+            bridge_factory=Mock(return_value=bridge),
+        )
+
+        published = bridge.set_state.call_args.args[0]
+        self.assertEqual(published["status"], "empty")
+        self.assertTrue(published["debug"])
+        app.close()
+
+    def test_cached_page_is_refetched_after_refresh_interval(self) -> None:
+        location = WeatherLocationConfig("home", "Home", "Tomball")
+        app = WeatherApp.__new__(WeatherApp)
+        app.locations = (location,)
+        app.carousel = WeatherCarousel(1)
+        app._cache = {"home": WeatherPageData(make_snapshot())}
+        app._loaded_at = {"home": 100.0}
+        app._load_current = Mock()
+
+        with patch(
+            "bmo.ui.weather.time.monotonic",
+            return_value=100.0 + WeatherApp.REFRESH_SECONDS + 1,
+        ):
+            app._refresh_if_stale()
+
+        app._load_current.assert_called_once_with(force=True)
 
     def test_tool_opens_one_view_with_scoped_menu_services(self) -> None:
         created: dict[str, object] = {}
@@ -318,9 +493,39 @@ class WeatherMenuTests(unittest.TestCase):
         self.assertEqual(created["locations"], (location,))
         self.assertFalse(created["announcements_available"])
         self.assertEqual(created["default_index"], 0)
+        self.assertFalse(created["debug"])
         tool.close()
         view.close.assert_called_once_with()
         alert_service.clear.assert_called_once_with()
+
+    def test_browser_failure_returns_to_menu_and_preserves_feature_isolation(self) -> None:
+        announcer = Mock(available=True)
+
+        def speak(_text: str, on_complete: object) -> bool:
+            assert callable(on_complete)
+            on_complete()
+            return True
+
+        announcer.speak.side_effect = speak
+        context = FeatureMenuContext(
+            master=object(),
+            on_close=Mock(),
+            announcer=announcer,
+        )
+        tool = GetWeatherTool(
+            Mock(),
+            feature_config=WeatherFeatureConfig(
+                locations=(WeatherLocationConfig("home", "Home", "Tomball"),)
+            ),
+            app_factory=Mock(side_effect=RuntimeError("browser unavailable")),
+        )
+
+        tool.open_menu(context)
+
+        context.on_close.assert_called_once_with()
+        announcer.cancel.assert_called_once_with()
+        announcer.speak.assert_called_once()
+        self.assertIsNone(tool._menu_ui)
 
     def test_alert_failure_does_not_break_the_forecast_page(self) -> None:
         snapshot = make_snapshot()
@@ -392,28 +597,168 @@ class WeatherMenuTests(unittest.TestCase):
         location = WeatherLocationConfig("home", "Home", "Tomball")
         stale = WeatherPageData(make_snapshot(temperature=70))
         current = WeatherPageData(make_snapshot(temperature=87))
-        app = WeatherApp.__new__(WeatherApp)
-        app.closed = False
-        app.locations = (location,)
-        app.carousel = WeatherCarousel(1)
-        app._cache = {}
-        app._errors = {}
-        app._inflight = {"home"}
-        app._tokens = {"home": 2}
-        app._results = queue.Queue()
+        bridge = Mock(url="http://127.0.0.1:1234/token/")
+        browser = Mock()
+        browser.poll.return_value = None
+        root = Mock()
+        root.after.return_value = "poll"
+        with patch("bmo.ui.weather.threading.Thread"):
+            app = WeatherApp(
+                root,
+                locations=(location,),
+                default_index=0,
+                page_provider=Mock(),
+                face_provider=Mock(),
+                announce=Mock(return_value=False),
+                cancel_announcements=Mock(),
+                announcements_available=False,
+                on_close=Mock(),
+                browser_launcher=Mock(return_value=browser),
+                bridge_factory=Mock(return_value=bridge),
+            )
+        app._tokens["home"] = 2
         app._results.put(("home", 1, stale, None))
         app._results.put(("home", 2, current, None))
-        app._after_ids = set()
-        app.root = Mock()
-        app.root.after.return_value = "poll"
-        app._draw = Mock()
         app._announce_current_warning = Mock()
 
-        app._poll_results()
+        app._poll()
 
         self.assertIs(app._cache["home"], current)
-        app._draw.assert_called_once_with()
         app._announce_current_warning.assert_called_once_with()
+
+
+class WeatherWebRendererTests(unittest.TestCase):
+    def test_live_state_covers_season_time_moon_hourly_and_debug(self) -> None:
+        snapshot = make_snapshot(
+            weather_code=0,
+            is_day=False,
+            observed_at="2026-12-23T21:00",
+            sunrise="2026-12-23T07:00",
+            sunset="2026-12-23T17:30",
+        )
+
+        state = weather_web_state(
+            WeatherPageData(snapshot),
+            datetime(2026, 12, 23, 21),
+            season_style="auto",
+            animations=True,
+            debug=True,
+            speech_available=True,
+            page_index=1,
+            page_count=3,
+        )
+
+        self.assertEqual(state["condition"], "sunny")
+        self.assertEqual(state["time"], "night")
+        self.assertEqual(state["season"], "winter")
+        self.assertIn(state["phase"], {phase.replace("_", "-") for phase in MOON_PHASES})
+        self.assertTrue(state["debug"])
+        self.assertTrue(state["speech_available"])
+        self.assertEqual(state["page_index"], 1)
+
+    def test_hot_clear_night_uses_moon_art_and_night_advice(self) -> None:
+        snapshot = make_snapshot(
+            weather_code=0,
+            temperature=101,
+            apparent_temperature=106,
+            is_day=False,
+            observed_at="2026-08-10T22:00",
+            sunrise="2026-08-10T06:30",
+            sunset="2026-08-10T20:00",
+        )
+
+        state = weather_web_state(
+            WeatherPageData(snapshot),
+            datetime(2026, 8, 10, 22),
+            season_style="auto",
+            animations=True,
+            debug=False,
+            speech_available=True,
+            page_index=0,
+            page_count=1,
+        )
+
+        self.assertEqual(state["condition"], "hot")
+        self.assertEqual(state["time"], "night")
+        self.assertIn("warm night", state["speech"])
+        self.assertIn("moon", state["modifier"])
+
+    def test_debug_asset_lists_every_visual_condition_and_no_emoji_icons(self) -> None:
+        asset = Path("bmo/ui/weather_web/index.html").read_text(encoding="utf-8")
+        for condition in (
+            "sunny",
+            "mostly-clear",
+            "partly",
+            "cloudy",
+            "overcast",
+            "fog",
+            "drizzle",
+            "rain",
+            "heavy-rain",
+            "freezing-rain",
+            "storm",
+            "snow",
+            "heavy-snow",
+            "sleet",
+            "hail",
+            "wind",
+            "hot",
+            "cold",
+            "mixed",
+            "severe",
+        ):
+            self.assertIn(f'data-value="{condition}"', asset)
+        self.assertIn("function hourIconSvg", asset)
+        self.assertNotIn("☀️", asset)
+        self.assertNotIn("🌧", asset)
+
+    def test_loopback_action_validation_rejects_unbounded_or_unknown_input(self) -> None:
+        self.assertEqual(
+            WeatherWebBridge._validated_action(
+                {"name": "navigate", "direction": 1}
+            ),
+            {"name": "navigate", "direction": 1},
+        )
+        self.assertEqual(
+            WeatherWebBridge._validated_action(
+                {"name": "speak", "key": "hour:3"}
+            ),
+            {"name": "speak", "key": "hour:3"},
+        )
+        with self.assertRaises(ValueError):
+            WeatherWebBridge._validated_action({"name": "open_url"})
+        with self.assertRaises(ValueError):
+            WeatherWebBridge._validated_action({"name": []})
+        with self.assertRaises(ValueError):
+            WeatherWebBridge._validated_action(
+                {"name": "navigate", "direction": True}
+            )
+        with self.assertRaises(ValueError):
+            WeatherWebBridge._validated_action(
+                {"name": "speak", "key": "../../secret"}
+            )
+
+    def test_chromium_session_uses_isolated_profile_and_sandbox(self) -> None:
+        process = Mock(pid=4321)
+        process.poll.return_value = None
+        process.wait.return_value = 0
+        popen = Mock(return_value=process)
+
+        with patch("bmo.ui.weather.os.killpg") as kill_group:
+            session = ChromiumSession(
+                "http://127.0.0.1:1234/token/",
+                executable=Path("/usr/bin/chromium"),
+                popen=popen,
+            )
+            command = popen.call_args.args[0]
+            self.assertIn("--kiosk", command)
+            self.assertTrue(
+                any(value.startswith("--user-data-dir=") for value in command)
+            )
+            self.assertNotIn("--no-sandbox", command)
+            session.close()
+
+        kill_group.assert_called_once_with(4321, signal.SIGTERM)
 
 
 if __name__ == "__main__":

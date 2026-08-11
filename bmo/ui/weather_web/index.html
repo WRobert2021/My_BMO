@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>BMO Weather</title>
+</head>
+<body>
+<div id="weather-design-draft" data-time="morning" data-condition="sunny" data-season="summer">
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #101514;
+      touch-action: none;
+      user-select: none;
+    }
+    #weather-design-draft {
+      display: grid;
+      width: 100vw;
+      height: 100vh;
+      place-items: center;
+      overflow: hidden;
+      color: #123e38;
+      font-family: "Arial Rounded MT Bold", "Trebuchet MS", Arial, sans-serif;
+    }
+    #weather-design-draft * { box-sizing: border-box; }
+    #weather-design-draft .wm-draft-controls {
+      display: none;
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 100;
+      width: min(760px, calc(100% - 16px));
+      max-height: calc(100% - 16px);
+      overflow: auto;
+      margin: 0;
+      padding: 12px 14px;
+      border: 2px solid #2e665c;
+      border-radius: 18px;
+      background: rgba(229, 247, 241, .97);
+      box-shadow: 0 8px 28px rgba(8, 34, 30, .35);
+    }
+    #weather-design-draft.wm-debug-enabled .wm-draft-controls { display: block; }
+    #weather-design-draft .wm-draft-controls[data-open="false"] {
+      top: 5px;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      overflow: visible;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      box-shadow: none;
+      transform: translateX(-50%);
+    }
+    #weather-design-draft .wm-draft-controls[data-open="false"] .wm-debug-heading > strong,
+    #weather-design-draft .wm-draft-controls[data-open="false"] [data-live-weather] { display: none; }
+    #weather-design-draft .wm-draft-controls[data-open="false"] [data-debug-toggle] {
+      width: 28px;
+      min-width: 28px;
+      min-height: 28px;
+      padding: 0;
+      overflow: hidden;
+      border-color: #153f39;
+      background: #153f39;
+      color: transparent;
+      font-size: 0;
+    }
+    #weather-design-draft .wm-draft-controls[data-open="false"] [data-debug-toggle]::after {
+      content: "D";
+      color: #ffffff;
+      font-size: 12px;
+    }
+    #weather-design-draft .wm-debug-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    #weather-design-draft .wm-debug-content { display: none; margin-top: 10px; }
+    #weather-design-draft .wm-draft-controls[data-open="true"] .wm-debug-content { display: block; }
+    #weather-design-draft .wm-draft-label {
+      margin: 0 0 8px;
+      color: #2f665c;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    #weather-design-draft .wm-control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 9px;
+    }
+    #weather-design-draft .wm-control-row:last-child { margin-bottom: 0; }
+    #weather-design-draft .wm-control {
+      min-height: 34px;
+      padding: 6px 11px;
+      border: 2px solid #4c8277;
+      border-radius: 999px;
+      background: #f7fffc;
+      color: #123e38;
+      font: 700 12px/1.1 "Trebuchet MS", Arial, sans-serif;
+      cursor: pointer;
+    }
+    #weather-design-draft .wm-control[aria-pressed="true"] {
+      border-color: #123e38;
+      background: #123e38;
+      color: #ffffff;
+    }
+    #weather-design-draft .wm-device {
+      position: relative;
+      width: min(100vw, calc(100vh * 5 / 3));
+      aspect-ratio: 5 / 3;
+      margin: 0;
+      container-type: inline-size;
+      overflow: hidden;
+      border: 1.1cqw solid #153f39;
+      border-radius: 4.6cqw;
+      background: #75cbb5;
+      box-shadow: 0 1.4cqw 0 #0c2d29, 0 2cqw 3cqw rgba(8, 34, 30, .22);
+    }
+    #weather-design-draft .wm-screen {
+      position: absolute;
+      inset: 1.2cqw;
+      overflow: hidden;
+      border: .75cqw solid #153f39;
+      border-radius: 3.2cqw;
+      background: #c5ebf5;
+    }
+    #weather-design-draft .wm-header {
+      position: absolute;
+      inset: 0 0 auto;
+      height: 15.5%;
+      padding: 1.25cqw 2.1cqw;
+      border-bottom: .35cqw solid rgba(21, 63, 57, .22);
+      background: #e3f8f1;
+      z-index: 10;
+    }
+    #weather-design-draft .wm-location {
+      color: #123e38;
+      font-size: 4.5cqw;
+      line-height: .9;
+      letter-spacing: -.05em;
+    }
+    #weather-design-draft .wm-greeting {
+      margin-top: .8cqw;
+      color: #3c6d64;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      font-size: 1.65cqw;
+      font-weight: 700;
+    }
+    #weather-design-draft .wm-page-dots {
+      position: absolute;
+      left: 50%;
+      bottom: .7cqw;
+      display: flex;
+      gap: .6cqw;
+      transform: translateX(-50%);
+    }
+    #weather-design-draft .wm-page-dot {
+      width: .65cqw;
+      height: .65cqw;
+      border-radius: 50%;
+      background: #a7cec3;
+    }
+    #weather-design-draft .wm-page-dot:first-child { background: #2f665c; }
+    #weather-design-draft .wm-bmo-face {
+      position: absolute;
+      top: 1.1cqw;
+      right: 1.8cqw;
+      width: 12.6cqw;
+      height: 6.8cqw;
+      border: .65cqw solid #153f39;
+      border-radius: 2cqw;
+      background: #98deca;
+      box-shadow: 0 .45cqw 0 rgba(20, 61, 55, .14);
+      padding: 0;
+      cursor: pointer;
+    }
+    #weather-design-draft .wm-bmo-eye {
+      position: absolute;
+      top: 1.55cqw;
+      width: 1.35cqw;
+      height: 1.35cqw;
+      border-radius: 50%;
+      background: #153f39;
+      animation: wm-blink 5s infinite;
+    }
+    #weather-design-draft .wm-bmo-eye-left { left: 3.1cqw; }
+    #weather-design-draft .wm-bmo-eye-right { right: 3.1cqw; }
+    #weather-design-draft .wm-bmo-mouth {
+      position: absolute;
+      left: 50%;
+      bottom: 1.15cqw;
+      width: 3.2cqw;
+      height: 1.15cqw;
+      border-bottom: .45cqw solid #153f39;
+      border-radius: 0 0 50% 50%;
+      transform: translateX(-50%);
+    }
+    #weather-design-draft .wm-stage {
+      position: absolute;
+      inset: 15.5% 0 20.5% 0;
+      overflow: hidden;
+      background: #9ddff3;
+      transition: background .35s ease;
+    }
+    #weather-design-draft .wm-season-layer,
+    #weather-design-draft .wm-time-layer,
+    #weather-design-draft .wm-effects-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    #weather-design-draft .wm-season-layer { z-index: 1; }
+    #weather-design-draft .wm-time-layer { z-index: 2; }
+    #weather-design-draft .wm-effects-layer { z-index: 3; overflow: hidden; }
+    #weather-design-draft .wm-hill {
+      position: absolute;
+      left: -8%;
+      bottom: -10%;
+      width: 60%;
+      height: 36%;
+      border-radius: 50% 55% 0 0;
+      background: #87c878;
+      opacity: .8;
+    }
+    #weather-design-draft .wm-hill-two {
+      left: 35%;
+      width: 72%;
+      height: 36%;
+      background: #6db66f;
+      opacity: .65;
+    }
+    #weather-design-draft .wm-tree {
+      position: absolute;
+      left: 3.8%;
+      bottom: 4%;
+      width: 7%;
+      height: 31%;
+    }
+    #weather-design-draft .wm-trunk {
+      position: absolute;
+      left: 42%;
+      bottom: 0;
+      width: 18%;
+      height: 60%;
+      border-radius: 20%;
+      background: #765542;
+    }
+    #weather-design-draft .wm-crown {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 48% 52% 45% 55%;
+      background: #63ae66;
+    }
+    #weather-design-draft .wm-bush {
+      position: absolute;
+      bottom: 4%;
+      width: 8.5cqw;
+      height: 4.3cqw;
+      border-radius: 55% 48% 22% 20%;
+      background: #63ae66;
+      box-shadow: 3.5cqw -.7cqw 0 #74bd70, 6.2cqw .2cqw 0 #579b5c;
+    }
+    #weather-design-draft .wm-grass {
+      position: absolute;
+      bottom: 3%;
+      width: 4.2cqw;
+      height: 3cqw;
+      border-left: .45cqw solid #4f9a55;
+      border-right: .45cqw solid #4f9a55;
+      border-radius: 50%;
+      transform: skew(-16deg);
+    }
+    #weather-design-draft .wm-leaf-pile {
+      position: absolute;
+      bottom: 1.5%;
+      width: 10cqw;
+      height: 3.2cqw;
+      border-radius: 55% 45% 30% 25%;
+      background: #cf642f;
+      box-shadow: 2.2cqw -1cqw 0 #e69e2e, 5cqw -.45cqw 0 #af482b, 7.6cqw -.8cqw 0 #d9782f;
+    }
+    #weather-design-draft .wm-winter-tuft {
+      position: absolute;
+      bottom: 2%;
+      width: 5cqw;
+      height: 3cqw;
+      border-left: .5cqw solid #7b877c;
+      border-right: .5cqw solid #7b877c;
+      border-radius: 50%;
+      transform: skew(14deg);
+    }
+    #weather-design-draft .wm-pine {
+      position: absolute;
+      bottom: 2%;
+      width: 0;
+      height: 0;
+      border-left: 4.5cqw solid transparent;
+      border-right: 4.5cqw solid transparent;
+      border-bottom: 9cqw solid #4d7f68;
+      filter: drop-shadow(0 .4cqw 0 rgba(34, 70, 58, .18));
+    }
+    #weather-design-draft .wm-flower {
+      position: absolute;
+      bottom: 4%;
+      color: #f47ea8;
+      font-size: 2.4cqw;
+      animation: wm-sway 2.8s ease-in-out infinite alternate;
+    }
+    #weather-design-draft .wm-leaf,
+    #weather-design-draft .wm-petal {
+      position: absolute;
+      font-size: 1.65cqw;
+      animation: wm-drift 5.5s linear infinite;
+    }
+    #weather-design-draft .wm-branch {
+      position: absolute;
+      left: 2%;
+      bottom: 1%;
+      width: 16%;
+      height: 33%;
+      border-left: .75cqw solid #745b4d;
+      border-radius: 50%;
+      transform: rotate(-12deg);
+    }
+    #weather-design-draft .wm-branch::before,
+    #weather-design-draft .wm-branch::after {
+      content: "";
+      position: absolute;
+      width: 5cqw;
+      height: 5cqw;
+      border-top: .65cqw solid #745b4d;
+      border-radius: 50%;
+    }
+    #weather-design-draft .wm-branch::before { left: -1cqw; top: 3cqw; transform: rotate(25deg); }
+    #weather-design-draft .wm-branch::after { left: .8cqw; top: 6cqw; transform: rotate(-25deg); }
+    #weather-design-draft .wm-stars {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity .35s ease;
+    }
+    #weather-design-draft .wm-star {
+      position: absolute;
+      color: #fff6b0;
+      font-size: 1.5cqw;
+      animation: wm-twinkle 1.8s ease-in-out infinite alternate;
+    }
+    #weather-design-draft .wm-scene-art {
+      position: absolute;
+      left: 2%;
+      top: 4%;
+      width: 48%;
+      height: 70%;
+      z-index: 4;
+    }
+    #weather-design-draft .wm-scene-art svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    #weather-design-draft .wm-bob { animation: wm-bob 2.4s ease-in-out infinite alternate; }
+    #weather-design-draft .wm-sun-ray { transform-origin: 112px 104px; animation: wm-spin 18s linear infinite; }
+    #weather-design-draft .wm-rain-drop { animation: wm-rain .78s linear infinite; }
+    #weather-design-draft .wm-snow-flake { animation: wm-snow 2.4s linear infinite; }
+    #weather-design-draft .wm-hail-stone { animation: wm-hail .92s linear infinite; }
+    #weather-design-draft .wm-bolt { animation: wm-bolt 2.7s steps(1) infinite; }
+    #weather-design-draft .wm-wind-line { stroke-dasharray: 60 95; animation: wm-wind 1.7s linear infinite; }
+    #weather-design-draft .wm-fx {
+      position: absolute;
+      display: block;
+      pointer-events: none;
+    }
+    #weather-design-draft .wm-fx-rain {
+      top: -8%;
+      width: .55cqw;
+      height: 4.6cqw;
+      border-radius: 999px;
+      background: #258dcc;
+      opacity: .52;
+      transform: rotate(18deg);
+      animation: wm-stage-rain 1.25s linear infinite;
+    }
+    #weather-design-draft .wm-fx-snow {
+      top: -8%;
+      width: 1.1cqw;
+      height: 1.1cqw;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 .8cqw rgba(255,255,255,.72);
+      opacity: .82;
+      animation: wm-stage-snow 4s linear infinite;
+    }
+    #weather-design-draft .wm-fx-hail {
+      top: -8%;
+      width: 1.15cqw;
+      height: 1.15cqw;
+      border: .18cqw solid #779eac;
+      border-radius: 50%;
+      background: #f7ffff;
+      animation: wm-stage-hail 1.05s linear infinite;
+    }
+    #weather-design-draft .wm-fx-wind {
+      left: -22%;
+      width: 18cqw;
+      height: .75cqw;
+      border-radius: 999px;
+      background: rgba(236, 253, 255, .72);
+      animation: wm-stage-wind 2.2s linear infinite;
+    }
+    #weather-design-draft .wm-readout {
+      position: absolute;
+      left: 51%;
+      right: 3.5%;
+      top: 7%;
+      z-index: 5;
+      color: #123e38;
+    }
+    #weather-design-draft .wm-temperature {
+      font-size: 9.1cqw;
+      line-height: .78;
+      letter-spacing: -.08em;
+      padding-right: 1cqw;
+      text-align: right;
+    }
+    #weather-design-draft .wm-condition-name {
+      margin-top: .8cqw;
+      font-size: 3.15cqw;
+      line-height: 1;
+      padding-right: 1cqw;
+      text-align: right;
+    }
+    #weather-design-draft .wm-modifier {
+      min-height: 2cqw;
+      margin-top: .7cqw;
+      color: #985134;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      font-size: 1.25cqw;
+      font-weight: 900;
+      letter-spacing: .05em;
+      padding-right: 1cqw;
+      text-align: right;
+      text-transform: uppercase;
+    }
+    #weather-design-draft .wm-speech {
+      position: relative;
+      min-height: 5.7cqw;
+      margin-top: .55cqw;
+      padding: 1cqw 1.4cqw;
+      border: .65cqw solid #153f39;
+      border-radius: 2.2cqw;
+      background: #fff5ba;
+      color: #153f39;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      font-size: 1.55cqw;
+      font-weight: 800;
+      line-height: 1.18;
+      text-align: left;
+      box-shadow: 0 .55cqw 0 rgba(19, 62, 56, .14);
+    }
+    #weather-design-draft .wm-speech-text { position: relative; z-index: 1; }
+    #weather-design-draft .wm-alert-banner {
+      display: none;
+      position: absolute;
+      left: 2%;
+      right: 2%;
+      top: 1.3%;
+      z-index: 9;
+      padding: .8cqw 1.3cqw;
+      border: .55cqw solid #681e28;
+      border-radius: 1.2cqw;
+      background: #bd3848;
+      color: #ffffff;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      font-size: 1.4cqw;
+      font-weight: 900;
+      text-align: center;
+    }
+    #weather-design-draft .wm-info-row {
+      position: absolute;
+      left: 2.7%;
+      right: 2.7%;
+      bottom: 2.5%;
+      z-index: 8;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.7cqw;
+    }
+    #weather-design-draft .wm-info-panel {
+      min-height: 7.8cqw;
+      padding: 1cqw .7cqw .75cqw;
+      border: .55cqw solid #5d837c;
+      border-radius: 2cqw;
+      background: rgba(232, 248, 243, .58);
+      color: #123e38;
+      text-align: center;
+      box-shadow: 0 .45cqw 0 rgba(19, 62, 56, .14);
+      cursor: pointer;
+    }
+    #weather-design-draft .wm-info-label {
+      color: #477269;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      font-size: 1.25cqw;
+      font-weight: 800;
+    }
+    #weather-design-draft .wm-info-value {
+      margin-top: .45cqw;
+      font-size: 2.75cqw;
+      line-height: 1;
+    }
+    #weather-design-draft .wm-hourly {
+      position: absolute;
+      inset: auto 0 0;
+      height: 20.5%;
+      display: grid;
+      grid-template-columns: 1.25fr repeat(4, 1fr);
+      align-items: center;
+      padding: .7cqw 2cqw;
+      border-top: .35cqw solid rgba(21, 63, 57, .2);
+      background: #e0f7ee;
+      z-index: 12;
+    }
+    #weather-design-draft .wm-later-label {
+      color: #123e38;
+      font-size: 2.45cqw;
+    }
+    #weather-design-draft .wm-hour {
+      display: grid;
+      grid-template-columns: auto auto;
+      grid-template-rows: auto auto;
+      justify-content: center;
+      column-gap: .65cqw;
+      color: #123e38;
+    }
+    #weather-design-draft .wm-hour-icon {
+      grid-row: 1 / span 2;
+      align-self: center;
+      width: 5.8cqw;
+      height: 5.8cqw;
+      filter: drop-shadow(0 .25cqw 0 rgba(19, 62, 56, .12));
+    }
+    #weather-design-draft .wm-hour-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    #weather-design-draft .wm-hour-time {
+      color: #477269;
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      font-size: 1.45cqw;
+      font-weight: 800;
+    }
+    #weather-design-draft .wm-hour-temp { font-size: 2.15cqw; }
+    #weather-design-draft .wm-hour,
+    #weather-design-draft .wm-scene-art,
+    #weather-design-draft .wm-temperature,
+    #weather-design-draft .wm-speech,
+    #weather-design-draft .wm-alert-banner { cursor: pointer; }
+    #weather-design-draft .wm-speaking {
+      filter: drop-shadow(0 0 1.2cqw rgba(255, 227, 110, .95));
+    }
+    #weather-design-draft .wm-loading {
+      display: none;
+      position: absolute;
+      inset: 15.5% 0 20.5%;
+      z-index: 40;
+      align-items: center;
+      justify-content: center;
+      padding: 5cqw;
+      background: #9ddff3;
+      color: #123e38;
+      font-size: 2.5cqw;
+      text-align: center;
+    }
+    #weather-design-draft .wm-loading[data-visible="true"] { display: flex; }
+    #weather-design-draft[data-animations="false"] * {
+      animation: none !important;
+      transition: none !important;
+    }
+    #weather-design-draft[data-speech="false"] [data-action]:not([data-action="close"]) {
+      cursor: default;
+    }
+    #weather-design-draft[data-time="night"] .wm-stars { opacity: 1; }
+    #weather-design-draft[data-time="night"] .wm-readout,
+    #weather-design-draft[data-condition="storm"] .wm-readout,
+    #weather-design-draft[data-condition="severe"] .wm-readout {
+      color: #fffce5;
+      text-shadow: 0 .25cqw 0 rgba(22, 50, 58, .28);
+    }
+    #weather-design-draft[data-time="night"] .wm-modifier,
+    #weather-design-draft[data-condition="storm"] .wm-modifier,
+    #weather-design-draft[data-condition="severe"] .wm-modifier {
+      color: #ffe89c;
+    }
+    #weather-design-draft[data-time="night"] .wm-speech,
+    #weather-design-draft[data-condition="storm"] .wm-speech,
+    #weather-design-draft[data-condition="severe"] .wm-speech {
+      color: #153f39;
+      text-shadow: none;
+    }
+    #weather-design-draft[data-condition="severe"] .wm-alert-banner { display: block; }
+    #weather-design-draft[data-condition="severe"] .wm-readout { top: 15%; }
+    #weather-design-draft[data-condition="severe"] .wm-temperature { font-size: 7.4cqw; }
+    #weather-design-draft[data-condition="severe"] .wm-condition-name { font-size: 2.8cqw; }
+    #weather-design-draft[data-condition="severe"] .wm-speech { font-size: 1.42cqw; }
+    @keyframes wm-bob { from { transform: translateY(0); } to { transform: translateY(-7px); } }
+    @keyframes wm-spin { to { transform: rotate(360deg); } }
+    @keyframes wm-blink { 0%, 46%, 50%, 100% { transform: scaleY(1); } 48% { transform: scaleY(.08); } }
+    @keyframes wm-rain { from { transform: translateY(-20px); opacity: 0; } 20% { opacity: 1; } to { transform: translateY(95px); opacity: .2; } }
+    @keyframes wm-snow { from { transform: translate(0, -20px) rotate(0); } to { transform: translate(18px, 95px) rotate(180deg); } }
+    @keyframes wm-hail { from { transform: translateY(-25px); } to { transform: translateY(100px); } }
+    @keyframes wm-bolt { 0%, 14%, 18%, 100% { opacity: 0; } 15%, 17% { opacity: 1; } }
+    @keyframes wm-wind { to { stroke-dashoffset: -155; } }
+    @keyframes wm-stage-rain { from { transform: translateY(-3cqw) rotate(18deg); } to { transform: translate(-4cqw, 39cqw) rotate(18deg); } }
+    @keyframes wm-stage-snow { from { transform: translate(0, -3cqw) rotate(0); } to { transform: translate(6cqw, 39cqw) rotate(240deg); } }
+    @keyframes wm-stage-hail { from { transform: translateY(-3cqw); } to { transform: translate(-2cqw, 39cqw); } }
+    @keyframes wm-stage-wind { from { transform: translateX(0); } to { transform: translateX(125cqw); } }
+    @keyframes wm-sway { to { transform: rotate(10deg); } }
+    @keyframes wm-drift { from { transform: translate(-20px, -20px) rotate(0); } to { transform: translate(180px, 130px) rotate(280deg); } }
+    @keyframes wm-twinkle { from { opacity: .35; transform: scale(.8); } to { opacity: 1; transform: scale(1.15); } }
+    @media (prefers-reduced-motion: reduce) {
+      #weather-design-draft * { animation: none !important; transition: none !important; }
+    }
+  </style>
+
+  <div class="wm-draft-controls" data-open="false" aria-label="Weather debug controls">
+    <div class="wm-debug-heading">
+      <strong>Weather graphics debugger</strong>
+      <span>
+        <button class="wm-control" type="button" data-live-weather>Live weather</button>
+        <button class="wm-control" type="button" data-debug-toggle aria-label="Open weather debugger">Show controls</button>
+      </span>
+    </div>
+    <div class="wm-debug-content">
+    <div class="wm-draft-label">Weather condition</div>
+    <div class="wm-control-row" data-control-group="condition">
+      <button class="wm-control" type="button" data-value="sunny" aria-pressed="true">Sunny</button>
+      <button class="wm-control" type="button" data-value="mostly-clear" aria-pressed="false">Mostly clear</button>
+      <button class="wm-control" type="button" data-value="partly" aria-pressed="false">Partly cloudy</button>
+      <button class="wm-control" type="button" data-value="cloudy" aria-pressed="false">Cloudy</button>
+      <button class="wm-control" type="button" data-value="overcast" aria-pressed="false">Overcast</button>
+      <button class="wm-control" type="button" data-value="fog" aria-pressed="false">Fog</button>
+      <button class="wm-control" type="button" data-value="drizzle" aria-pressed="false">Drizzle</button>
+      <button class="wm-control" type="button" data-value="rain" aria-pressed="false">Rain</button>
+      <button class="wm-control" type="button" data-value="heavy-rain" aria-pressed="false">Heavy rain</button>
+      <button class="wm-control" type="button" data-value="freezing-rain" aria-pressed="false">Freezing rain</button>
+      <button class="wm-control" type="button" data-value="storm" aria-pressed="false">Thunderstorm</button>
+      <button class="wm-control" type="button" data-value="snow" aria-pressed="false">Snow</button>
+      <button class="wm-control" type="button" data-value="heavy-snow" aria-pressed="false">Heavy snow</button>
+      <button class="wm-control" type="button" data-value="sleet" aria-pressed="false">Sleet / ice</button>
+      <button class="wm-control" type="button" data-value="hail" aria-pressed="false">Hail</button>
+      <button class="wm-control" type="button" data-value="wind" aria-pressed="false">High wind</button>
+      <button class="wm-control" type="button" data-value="hot" aria-pressed="false">Very hot</button>
+      <button class="wm-control" type="button" data-value="cold" aria-pressed="false">Very cold</button>
+      <button class="wm-control" type="button" data-value="mixed" aria-pressed="false">Mixed</button>
+      <button class="wm-control" type="button" data-value="severe" aria-pressed="false">Safety alert</button>
+    </div>
+    <div class="wm-draft-label">Season</div>
+    <div class="wm-control-row" data-control-group="season">
+      <button class="wm-control" type="button" data-value="spring" aria-pressed="false">Spring</button>
+      <button class="wm-control" type="button" data-value="summer" aria-pressed="true">Summer</button>
+      <button class="wm-control" type="button" data-value="fall" aria-pressed="false">Fall</button>
+      <button class="wm-control" type="button" data-value="winter" aria-pressed="false">Winter</button>
+      <button class="wm-control" type="button" data-value="neutral" aria-pressed="false">Season off</button>
+    </div>
+    <div class="wm-draft-label">Time of day</div>
+    <div class="wm-control-row" data-control-group="time">
+      <button class="wm-control" type="button" data-value="morning" aria-pressed="true">Morning</button>
+      <button class="wm-control" type="button" data-value="midday" aria-pressed="false">Midday</button>
+      <button class="wm-control" type="button" data-value="afternoon" aria-pressed="false">Afternoon</button>
+      <button class="wm-control" type="button" data-value="sunset" aria-pressed="false">Sunset</button>
+      <button class="wm-control" type="button" data-value="night" aria-pressed="false">Night</button>
+    </div>
+    <div class="wm-draft-label">Moon phase</div>
+    <div class="wm-control-row" data-control-group="phase">
+      <button class="wm-control" type="button" data-value="full" aria-pressed="true">Full</button>
+      <button class="wm-control" type="button" data-value="new" aria-pressed="false">New</button>
+      <button class="wm-control" type="button" data-value="waxing-crescent" aria-pressed="false">Waxing crescent</button>
+      <button class="wm-control" type="button" data-value="first-quarter" aria-pressed="false">First quarter</button>
+      <button class="wm-control" type="button" data-value="waxing-gibbous" aria-pressed="false">Waxing gibbous</button>
+      <button class="wm-control" type="button" data-value="waning-gibbous" aria-pressed="false">Waning gibbous</button>
+      <button class="wm-control" type="button" data-value="last-quarter" aria-pressed="false">Last quarter</button>
+      <button class="wm-control" type="button" data-value="waning-crescent" aria-pressed="false">Waning crescent</button>
+    </div>
+    </div>
+  </div>
+
+  <div class="wm-device" role="img" aria-label="Interactive 800 by 480 BMO weather screen mockup">
+    <div class="wm-screen">
+      <header class="wm-header">
+        <div class="wm-location" data-location>Tomball, Texas</div>
+        <div class="wm-greeting" data-weather-greeting>Good morning! Here is today's sky.</div>
+        <div class="wm-page-dots" data-page-dots aria-hidden="true"></div>
+        <button class="wm-bmo-face" type="button" data-action="close" aria-label="Close weather">
+          <span class="wm-bmo-eye wm-bmo-eye-left"></span>
+          <span class="wm-bmo-eye wm-bmo-eye-right"></span>
+          <span class="wm-bmo-mouth"></span>
+        </button>
+      </header>
+
+      <main class="wm-stage" data-weather-stage>
+        <div class="wm-season-layer" data-season-layer></div>
+        <div class="wm-time-layer">
+          <div class="wm-stars">
+            <span class="wm-star" style="left:9%;top:12%">&#x2726;</span>
+            <span class="wm-star" style="left:28%;top:18%;animation-delay:.4s">&#x2726;</span>
+            <span class="wm-star" style="left:48%;top:9%;animation-delay:.8s">&#x2726;</span>
+            <span class="wm-star" style="left:72%;top:19%;animation-delay:.2s">&#x2726;</span>
+            <span class="wm-star" style="left:89%;top:8%;animation-delay:1s">&#x2726;</span>
+          </div>
+        </div>
+        <div class="wm-alert-banner" data-alert-banner data-action="alert">&#x26A0; BMO SAFETY ALERT &mdash; GO WITH A GROWN-UP AND FOLLOW OFFICIAL INSTRUCTIONS</div>
+        <div class="wm-scene-art" data-scene-art data-action="condition"></div>
+        <section class="wm-readout">
+          <div class="wm-temperature" data-temperature data-action="temperature">88&deg;</div>
+          <div class="wm-condition-name" data-condition-name>Sunny</div>
+          <div class="wm-modifier" data-modifier>Summer sunshine</div>
+          <div class="wm-speech" data-action="condition"><span class="wm-speech-text" data-speech-text>The sun is smiling! Grab water and sunscreen.</span></div>
+        </section>
+        <div class="wm-info-row">
+          <div class="wm-info-panel" data-action="feels">
+            <div class="wm-info-label">Feels like</div>
+            <div class="wm-info-value" data-feels>92&deg;</div>
+          </div>
+          <div class="wm-info-panel" data-action="high_low">
+            <div class="wm-info-label">High &middot; Low</div>
+            <div class="wm-info-value" data-high-low>93&deg; &middot; 75&deg;</div>
+          </div>
+          <div class="wm-info-panel" data-action="rain">
+            <div class="wm-info-label">Rain today</div>
+            <div class="wm-info-value" data-rain>5%</div>
+          </div>
+        </div>
+        <div class="wm-effects-layer" data-effects-layer></div>
+      </main>
+
+      <div class="wm-loading" data-loading data-visible="false">
+        <span data-loading-message>BMO is checking the sky...</span>
+      </div>
+
+      <footer class="wm-hourly">
+        <div class="wm-later-label">Later today</div>
+        <div class="wm-hour" data-hour="0" data-action="hour:0"><span class="wm-hour-icon" data-hour-icon="0"></span><span class="wm-hour-time" data-hour-time="0">12 PM</span><span class="wm-hour-temp" data-hour-temp="0">89&deg;</span></div>
+        <div class="wm-hour" data-hour="1" data-action="hour:1"><span class="wm-hour-icon" data-hour-icon="1"></span><span class="wm-hour-time" data-hour-time="1">2 PM</span><span class="wm-hour-temp" data-hour-temp="1">93&deg;</span></div>
+        <div class="wm-hour" data-hour="2" data-action="hour:2"><span class="wm-hour-icon" data-hour-icon="2"></span><span class="wm-hour-time" data-hour-time="2">4 PM</span><span class="wm-hour-temp" data-hour-temp="2">91&deg;</span></div>
+        <div class="wm-hour" data-hour="3" data-action="hour:3"><span class="wm-hour-icon" data-hour-icon="3"></span><span class="wm-hour-time" data-hour-time="3">8 PM</span><span class="wm-hour-temp" data-hour-temp="3">84&deg;</span></div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById('weather-design-draft');
+      const stage = root.querySelector('[data-weather-stage]');
+      const seasonLayer = root.querySelector('[data-season-layer]');
+      const sceneArt = root.querySelector('[data-scene-art]');
+      const effectsLayer = root.querySelector('[data-effects-layer]');
+      const greeting = root.querySelector('[data-weather-greeting]');
+      const temperature = root.querySelector('[data-temperature]');
+      const conditionName = root.querySelector('[data-condition-name]');
+      const modifier = root.querySelector('[data-modifier]');
+      const speech = root.querySelector('[data-speech-text]');
+      const feels = root.querySelector('[data-feels]');
+      const highLow = root.querySelector('[data-high-low]');
+      const rain = root.querySelector('[data-rain]');
+      const locationName = root.querySelector('[data-location]');
+      const pageDots = root.querySelector('[data-page-dots]');
+      const alertBanner = root.querySelector('[data-alert-banner]');
+      const loading = root.querySelector('[data-loading]');
+      const loadingMessage = root.querySelector('[data-loading-message]');
+      const debugPanel = root.querySelector('.wm-draft-controls');
+      const state = { condition: 'sunny', season: 'summer', time: 'morning', phase: 'full' };
+      let latestState = null;
+      let debugOverride = false;
+
+      const weatherStates = {
+        sunny: { name:'Sunny', temp:88, feels:92, high:93, low:75, rain:5, modifier:'Warm sunshine', speech:'The sun is smiling! Grab water and sunscreen.', icons:['sun','sun','partly','moon'], hours:[89,93,91,84] },
+        'mostly-clear': { name:'Mostly clear', temp:86, feels:88, high:91, low:74, rain:10, modifier:'A few cloud friends', speech:'The sun has a few fluffy cloud friends!', icons:['sun','partly','sun','moon'], hours:[87,90,89,81] },
+        partly: { name:'Partly cloudy', temp:87, feels:89, high:91, low:76, rain:30, modifier:'Sun-and-cloud team-up', speech:'The sun and clouds are sharing the sky!', icons:['partly','partly','drizzle','moon'], hours:[88,91,90,84] },
+        cloudy: { name:'Cloudy', temp:84, feels:85, high:88, low:73, rain:25, modifier:'A soft cloud blanket', speech:'The clouds are having a parade!', icons:['cloud','cloud','partly','cloud'], hours:[84,86,85,79] },
+        overcast: { name:'Overcast', temp:78, feels:80, high:83, low:70, rain:40, modifier:'Cloud blanket overhead', speech:'A soft cloud blanket is covering the sky!', icons:['cloud','cloud','cloud','cloud'], hours:[79,81,80,75] },
+        fog: { name:'Foggy', temp:66, feels:65, high:72, low:60, rain:15, modifier:'Low visibility', speech:'The clouds came down to visit. Stay where a grown-up can see you!', icons:['fog','fog','cloud','moon'], hours:[66,69,71,64] },
+        drizzle: { name:'Drizzly', temp:67, feels:66, high:71, low:61, rain:55, modifier:'Tiny tiptoe raindrops', speech:'A light raincoat could be a cozy sidekick.', icons:['drizzle','drizzle','cloud','moon'], hours:[67,69,70,64] },
+        rain: { name:'Rainy', temp:72, feels:74, high:76, low:65, rain:80, modifier:'Puddle weather', speech:'Puddle-jumping weather! Bring your raincoat and boots.', icons:['rain','rain','drizzle','cloud'], hours:[72,74,73,69] },
+        'heavy-rain': { name:'Heavy rain', temp:69, feels:71, high:73, low:63, rain:95, modifier:'Big raindrops', speech:'Big rain is falling. Raincoat and boots time!', icons:['rain','rain','storm','rain'], hours:[69,70,68,65] },
+        'freezing-rain': { name:'Freezing rain', temp:30, feels:22, high:33, low:24, rain:85, modifier:'Slippery-ground alert', speech:'Icy rain can make slippery spots. Stay close to a grown-up!', icons:['sleet','sleet','rain','cloud'], hours:[30,31,30,27] },
+        storm: { name:'Stormy', temp:79, feels:82, high:84, low:74, rain:90, modifier:'Thunder nearby', speech:'Thunder nearby. Let\'s stay safely inside with a grown-up!', icons:['storm','storm','rain','cloud'], hours:[79,80,78,76] },
+        snow: { name:'Snowy', temp:28, feels:20, high:31, low:19, rain:85, modifier:'Dancing snowflakes', speech:'Bundle up! Coat, hat, gloves, and warm boots.', icons:['snow','snow','snow','cloud'], hours:[28,29,27,23] },
+        'heavy-snow': { name:'Heavy snow', temp:21, feels:11, high:25, low:12, rain:95, modifier:'Lots of snowflakes', speech:'Lots of snow is dancing down. Bundle up and stay with a grown-up!', icons:['snow','snow','snow','snow'], hours:[21,22,20,16] },
+        sleet: { name:'Sleet & ice', temp:31, feels:23, high:34, low:25, rain:75, modifier:'Slippery-ground alert', speech:'Icy drops can make slippery spots. Stay close to a grown-up!', icons:['sleet','rain','sleet','cloud'], hours:[31,33,31,28] },
+        hail: { name:'Hail', temp:62, feels:58, high:66, low:52, rain:80, modifier:'Icy pebbles falling', speech:'Hail is falling. Please stay safely inside!', icons:['storm','hail','rain','cloud'], hours:[62,63,61,57] },
+        wind: { name:'Very windy', temp:70, feels:64, high:73, low:58, rain:10, modifier:'Gusts near 48 mph', speech:'Hold onto your hat and check with a grown-up before going outside!', icons:['wind','wind','partly','moon'], hours:[70,71,69,62] },
+        hot: { name:'Very hot', temp:101, feels:108, high:104, low:81, rain:5, modifier:'Heat-safety day', speech:'Super-hot alert! Water, shade, sunscreen, and plenty of breaks.', icons:['sun','sun','sun','moon'], hours:[101,104,102,91] },
+        cold: { name:'Very cold', temp:24, feels:14, high:30, low:16, rain:10, modifier:'Freezing outside', speech:'Brrr! Coat, hat, gloves, and a grown-up are good adventure buddies.', icons:['cold','sun','cloud','moon'], hours:[24,28,27,20] },
+        mixed: { name:'Mixed weather', temp:64, feels:62, high:70, low:55, rain:45, modifier:'A little of everything', speech:'The sky has a little bit of everything today!', icons:['partly','drizzle','cloud','moon'], hours:[64,67,65,59] },
+        severe: { name:'Safety alert', temp:78, feels:81, high:82, low:70, rain:95, modifier:'Official warning active', speech:'BMO safety alert. Go with a grown-up and follow official instructions now.', icons:['warning','storm','rain','cloud'], hours:[78,79,76,73] }
+      };
+
+      const palettes = {
+        morning: { background:'#a7e4f4', greeting:"Good morning! Here is today's sky." },
+        midday: { background:'#80d6f0', greeting:'Hello, sunshine! Here is the midday sky.' },
+        afternoon: { background:'#8bcce7', greeting:"Good afternoon! Let's check the sky." },
+        sunset: { background:'#efad8f', greeting:'Sunset is painting the sky!' },
+        night: { background:'#536b9c', greeting:"Good evening! Here is tonight's sky." }
+      };
+
+      const cloud = (fill='#eef8fb', stroke='#547784') => `
+        <g class="wm-bob">
+          <path d="M58 143 C32 143 27 105 51 92 C53 60 88 46 113 65 C131 41 175 50 179 83 C212 84 222 127 197 143 Z" fill="rgba(27,72,75,.13)" transform="translate(0 8)"/>
+          <path d="M58 139 C32 139 27 101 51 88 C53 56 88 42 113 61 C131 37 175 46 179 79 C212 80 222 123 197 139 Z" fill="${fill}" stroke="${stroke}" stroke-width="7" stroke-linejoin="round"/>
+          <circle cx="104" cy="102" r="5" fill="#315660"/><circle cx="137" cy="102" r="5" fill="#315660"/>
+          <path d="M112 119 Q121 127 132 119" fill="none" stroke="#315660" stroke-width="4" stroke-linecap="round"/>
+        </g>`;
+
+      const sun = (hot=false) => `
+        <g class="wm-bob">
+          <g class="wm-sun-ray" stroke="#f7a51e" stroke-width="9" stroke-linecap="round">
+            <path d="M112 27V8M112 200v-19M36 104H15M209 104h-20M58 50L43 35M181 173l-15-15M58 158l-15 15M181 35l-15 15"/>
+          </g>
+          <circle cx="112" cy="104" r="65" fill="rgba(255,223,86,.25)" stroke="none"/>
+          <circle cx="112" cy="104" r="52" fill="#ffdc5a" stroke="#d88612" stroke-width="7"/>
+          ${hot ? '<path d="M81 91l19 0M124 91l19 0" stroke="#563d27" stroke-width="8" stroke-linecap="round"/><path d="M83 93l15 13M141 93l-15 13" stroke="#563d27" stroke-width="5"/>' : '<circle cx="93" cy="96" r="6" fill="#6c4a24"/><circle cx="131" cy="96" r="6" fill="#6c4a24"/>'}
+          <path d="M94 121 Q112 135 131 121" fill="none" stroke="#6c4a24" stroke-width="5" stroke-linecap="round"/>
+          ${hot ? '<path d="M160 116q14 18 0 31q-14-13 0-31" fill="#62c8ec" stroke="#318fae" stroke-width="3"/>' : ''}
+        </g>`;
+
+      const phaseLabels = {
+        full: 'Full moon',
+        new: 'New moon',
+        'waxing-crescent': 'Waxing crescent moon',
+        'first-quarter': 'First quarter moon',
+        'waxing-gibbous': 'Waxing gibbous moon',
+        'waning-gibbous': 'Waning gibbous moon',
+        'last-quarter': 'Last quarter moon',
+        'waning-crescent': 'Waning crescent moon'
+      };
+
+      const moonShadow = (phase, color='#536b9c') => {
+        if (phase === 'new') return `<circle cx="112" cy="104" r="52" fill="${color}"/>`;
+        if (phase === 'waxing-crescent') return `<circle cx="88" cy="104" r="50" fill="${color}"/>`;
+        if (phase === 'waning-crescent') return `<circle cx="136" cy="104" r="50" fill="${color}"/>`;
+        if (phase === 'first-quarter') return `<path d="M112 52 A52 52 0 0 0 112 156 Z" fill="${color}"/>`;
+        if (phase === 'last-quarter') return `<path d="M112 52 A52 52 0 0 1 112 156 Z" fill="${color}"/>`;
+        if (phase === 'waxing-gibbous') return `<path d="M112 52 A52 52 0 0 0 112 156 A25 52 0 0 1 112 52 Z" fill="${color}"/>`;
+        if (phase === 'waning-gibbous') return `<path d="M112 52 A52 52 0 0 1 112 156 A25 52 0 0 0 112 52 Z" fill="${color}"/>`;
+        return '';
+      };
+
+      const moon = (phase='full') => {
+        const faceColor = phase === 'new' ? '#fff3a6' : '#5b4b38';
+        return `
+          <g class="wm-bob">
+            <circle cx="112" cy="104" r="65" fill="rgba(255,243,166,.14)"/>
+            <circle cx="112" cy="104" r="52" fill="#fff3a6" stroke="#d0b756" stroke-width="7"/>
+            ${moonShadow(phase)}
+            <circle cx="94" cy="98" r="5.5" fill="${faceColor}"/>
+            <circle cx="130" cy="98" r="5.5" fill="${faceColor}"/>
+            <path d="M94 122 Q112 135 131 121" fill="none" stroke="${faceColor}" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="130" cy="75" r="7" fill="none" stroke="rgba(115,99,59,.2)" stroke-width="3"/>
+            <circle cx="84" cy="121" r="5" fill="none" stroke="rgba(115,99,59,.18)" stroke-width="3"/>
+          </g>`;
+      };
+
+      const precipitation = (type) => {
+        const items = [];
+        for (let i = 0; i < 8; i += 1) {
+          const x = 56 + i * 20;
+          const delay = (i % 4) * .18;
+          if (type === 'rain' || type === 'drizzle') items.push(`<path class="wm-rain-drop" d="M${x} 145l-8 22" stroke="#258dcc" stroke-width="${type === 'drizzle' ? 4 : 7}" stroke-linecap="round" style="animation-delay:${delay}s"/>`);
+          if (type === 'snow') items.push(`<text class="wm-snow-flake" x="${x}" y="158" fill="#ffffff" font-size="18" style="animation-delay:${delay}s">&#x273B;</text>`);
+          if (type === 'hail') items.push(`<circle class="wm-hail-stone" cx="${x}" cy="154" r="7" fill="#f7ffff" stroke="#779eac" stroke-width="2" style="animation-delay:${delay}s"/>`);
+          if (type === 'sleet') items.push(i % 2 ? `<path class="wm-rain-drop" d="M${x} 145l-6 18" stroke="#4c82d3" stroke-width="5" style="animation-delay:${delay}s"/>` : `<circle class="wm-hail-stone" cx="${x}" cy="154" r="5" fill="#f7ffff" stroke="#779eac" stroke-width="2" style="animation-delay:${delay}s"/>`);
+        }
+        return items.join('');
+      };
+
+      function hourIconSvg(type) {
+        const littleSun = '<g stroke="#e49a20" stroke-width="3" stroke-linecap="round"><path d="M23 4v6M23 36v6M5 23h6M35 23h7M10 10l5 5M36 10l-5 5"/></g><circle cx="23" cy="23" r="11" fill="#ffdc5a" stroke="#d88612" stroke-width="3"/><circle cx="19" cy="21" r="1.5" fill="#6c4a24"/><circle cx="27" cy="21" r="1.5" fill="#6c4a24"/><path d="M19 27q4 4 8 0" fill="none" stroke="#6c4a24" stroke-width="2" stroke-linecap="round"/>';
+        const littleCloud = '<path d="M16 45c-10 0-11-15-2-18c1-10 13-14 20-7c7-8 20-3 20 8c10 1 10 17 0 17z" fill="#eef8fb" stroke="#547784" stroke-width="3" stroke-linejoin="round"/><circle cx="31" cy="34" r="1.5" fill="#315660"/><circle cx="39" cy="34" r="1.5" fill="#315660"/><path d="M32 39q4 3 7 0" fill="none" stroke="#315660" stroke-width="2" stroke-linecap="round"/>';
+        const wrap = (content, label) => `<svg viewBox="0 0 64 64" role="img" aria-label="${label}">${content}</svg>`;
+        if (type === 'sun') return wrap(littleSun, 'Sunny');
+        if (type === 'partly') return wrap(`<g transform="translate(2 0) scale(.72)">${littleSun}</g><g transform="translate(4 7) scale(.92)">${littleCloud}</g>`, 'Partly cloudy');
+        if (type === 'cloud') return wrap(littleCloud, 'Cloudy');
+        if (type === 'fog') return wrap(`${littleCloud}<g stroke="#7896a0" stroke-width="3" stroke-linecap="round"><path d="M10 51h45"/><path d="M17 58h35"/></g>`, 'Foggy');
+        if (type === 'rain' || type === 'drizzle') return wrap(`${littleCloud}<g stroke="#258dcc" stroke-width="${type === 'drizzle' ? 2 : 3}" stroke-linecap="round"><path d="M23 50l-3 7M35 50l-3 7M47 50l-3 7"/></g>`, type === 'drizzle' ? 'Drizzle' : 'Rain');
+        if (type === 'storm') return wrap(`${littleCloud}<path d="M35 47l-7 10h7l-3 7l12-13h-7l4-4z" fill="#ffe04c" stroke="#9b6816" stroke-width="2"/>`, 'Thunderstorm');
+        if (type === 'snow') return wrap(`${littleCloud}<g stroke="#6aa8c6" stroke-width="1.8" stroke-linecap="round"><path d="M23 50v10M18 55h10M35 50v10M30 55h10M47 50v10M42 55h10"/></g>`, 'Snow');
+        if (type === 'sleet') return wrap(`${littleCloud}<g stroke="#4c82d3" stroke-width="2.4" stroke-linecap="round"><path d="M23 50l-3 7M43 50l-3 7"/></g><circle cx="32" cy="55" r="3" fill="#f7ffff" stroke="#779eac" stroke-width="1.5"/>`, 'Sleet');
+        if (type === 'hail') return wrap(`${littleCloud}<g fill="#f7ffff" stroke="#779eac" stroke-width="1.5"><circle cx="23" cy="55" r="3"/><circle cx="35" cy="58" r="3"/><circle cx="47" cy="54" r="3"/></g>`, 'Hail');
+        if (type === 'wind') return wrap('<g fill="none" stroke="#4f879d" stroke-width="4" stroke-linecap="round"><path d="M8 20h38q10 0 9-8q-1-6-8-5"/><path d="M14 33h34q9 0 8 8q-1 6-8 5"/><path d="M7 48h27"/></g><path d="M43 51q9 2 13 8q-11 3-17-3z" fill="#df7d32" stroke="#9d4a22" stroke-width="2"/>', 'Windy');
+        if (type === 'cold') return wrap('<rect x="26" y="7" width="13" height="35" rx="7" fill="#e8f5fa" stroke="#4d7482" stroke-width="3"/><rect x="31" y="20" width="4" height="22" rx="2" fill="#4d8fc9"/><circle cx="33" cy="47" r="11" fill="#4d8fc9" stroke="#4d7482" stroke-width="3"/>', 'Very cold');
+        if (type === 'warning') return wrap('<path d="M32 6L60 56H4z" fill="#ffd85a" stroke="#8f5e18" stroke-width="4" stroke-linejoin="round"/><path d="M32 21v17" stroke="#6b4615" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="47" r="3" fill="#6b4615"/>', 'Safety alert');
+        if (type === 'moon-cloud') return wrap('<circle cx="21" cy="21" r="13" fill="#fff3a6" stroke="#d0b756" stroke-width="3"/><g transform="translate(5 9) scale(.85)">' + littleCloud + '</g>', 'Partly cloudy night');
+        if (type === 'moon') {
+          let smallShadow = '';
+          if (state.phase === 'new') smallShadow = '<circle cx="32" cy="29" r="18" fill="#526b85"/>';
+          if (state.phase === 'waxing-crescent') smallShadow = '<circle cx="24" cy="29" r="17" fill="#526b85"/>';
+          if (state.phase === 'waning-crescent') smallShadow = '<circle cx="40" cy="29" r="17" fill="#526b85"/>';
+          if (state.phase === 'first-quarter') smallShadow = '<path d="M32 11a18 18 0 0 0 0 36z" fill="#526b85"/>';
+          if (state.phase === 'last-quarter') smallShadow = '<path d="M32 11a18 18 0 0 1 0 36z" fill="#526b85"/>';
+          if (state.phase === 'waxing-gibbous') smallShadow = '<path d="M32 11 A18 18 0 0 0 32 47 A9 18 0 0 1 32 11 Z" fill="#526b85"/>';
+          if (state.phase === 'waning-gibbous') smallShadow = '<path d="M32 11 A18 18 0 0 1 32 47 A9 18 0 0 0 32 11 Z" fill="#526b85"/>';
+          return wrap(`<circle cx="32" cy="29" r="18" fill="#fff3a6" stroke="#d0b756" stroke-width="3"/>${smallShadow}<circle cx="26" cy="28" r="1.8" fill="#5b4b38"/><circle cx="38" cy="28" r="1.8" fill="#5b4b38"/><path d="M27 35q5 4 10 0" fill="none" stroke="#5b4b38" stroke-width="2" stroke-linecap="round"/>`, phaseLabels[state.phase]);
+        }
+        return wrap(littleCloud, 'Cloudy');
+      }
+
+      function sceneFor(condition, time) {
+        const isNight = time === 'night';
+        if (condition === 'sunny') return `<svg viewBox="0 0 250 210">${isNight ? moon(state.phase) : sun(false)}</svg>`;
+        if (condition === 'hot') return `<svg viewBox="0 0 250 210">${isNight ? moon(state.phase) : sun(true)}</svg>`;
+        if (condition === 'mostly-clear') return `<svg viewBox="0 0 250 210"><g transform="translate(-18 -5) scale(.94)">${isNight ? moon(state.phase) : sun(false)}</g><g transform="translate(104 76) scale(.48)">${cloud()}</g></svg>`;
+        if (condition === 'partly') return `<svg viewBox="0 0 250 210"><g transform="translate(-40 -12) scale(.8)">${isNight ? moon(state.phase) : sun(false)}</g><g transform="translate(50 36) scale(.82)">${cloud()}</g></svg>`;
+        if (condition === 'cloudy') return `<svg viewBox="0 0 250 210"><g transform="translate(10 12) scale(1.08)">${cloud()}</g></svg>`;
+        if (condition === 'overcast') return `<svg viewBox="0 0 250 210"><g transform="translate(-35 -8) scale(1.04)">${cloud('#e3eef2','#52727e')}</g><g transform="translate(82 54) scale(.72)">${cloud('#d7e5ea','#4b6974')}</g></svg>`;
+        if (condition === 'fog') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -20) scale(1.08)">${cloud()}</g><g stroke="#7896a0" stroke-width="8" stroke-linecap="round"><path d="M37 156h175"/><path d="M60 181h145"/><path d="M42 203h175"/></g></svg>`;
+        if (condition === 'drizzle') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -28) scale(1.08)">${cloud()}</g>${precipitation('drizzle')}</svg>`;
+        if (condition === 'rain' || condition === 'heavy-rain') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -28) scale(1.08)">${cloud('#e8f1f4','#4d7482')}</g>${precipitation('rain')}</svg>`;
+        if (condition === 'snow' || condition === 'heavy-snow') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -28) scale(1.08)">${cloud()}</g>${precipitation('snow')}</svg>`;
+        if (condition === 'sleet' || condition === 'freezing-rain') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -28) scale(1.08)">${cloud('#e1edf5','#526f87')}</g>${precipitation('sleet')}</svg>`;
+        if (condition === 'hail') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -28) scale(1.08)">${cloud('#cbd7df','#435e72')}</g>${precipitation('hail')}</svg>`;
+        if (condition === 'storm' || condition === 'severe') return `<svg viewBox="0 0 250 210"><g transform="translate(8 -28) scale(1.08)">${cloud('#aebdca','#394f68')}</g>${precipitation('rain')}<path class="wm-bolt" d="M123 137l-21 39h22l-15 34l48-51h-25l18-22z" fill="#ffe04c" stroke="#9b6816" stroke-width="4"/></svg>`;
+        if (condition === 'wind') return `<svg viewBox="0 0 250 210"><g transform="translate(-8 7) scale(.82)">${cloud()}</g><g fill="none" stroke="#4f879d" stroke-width="7" stroke-linecap="round"><path class="wm-wind-line" d="M35 139h170q32 0 27-25q-4-18-26-13"/><path class="wm-wind-line" d="M62 168h137q25 0 22 20q-3 17-22 12"/><path class="wm-wind-line" d="M22 194h105"/></g><path d="M201 63q18 8 25 23q-24 4-37-9z" fill="#df7d32" stroke="#9d4a22" stroke-width="3"/></svg>`;
+        if (condition === 'cold') return `<svg viewBox="0 0 250 210"><g class="wm-bob"><rect x="97" y="30" width="43" height="112" rx="22" fill="#e8f5fa" stroke="#4d7482" stroke-width="7"/><rect x="112" y="62" width="13" height="75" rx="7" fill="#4d8fc9"/><circle cx="119" cy="151" r="31" fill="#4d8fc9" stroke="#4d7482" stroke-width="7"/><circle cx="108" cy="151" r="4" fill="#173f48"/><circle cx="130" cy="151" r="4" fill="#173f48"/><path d="M108 169q11-9 22 0" fill="none" stroke="#173f48" stroke-width="4"/><path d="M160 84q27-12 44 4M164 108q35-9 52 8" fill="none" stroke="#f4ffff" stroke-width="7" stroke-linecap="round"/></g></svg>`;
+        if (condition === 'mixed') return `<svg viewBox="0 0 250 210"><g transform="translate(-48 -18) scale(.72)">${isNight ? moon(state.phase) : sun(false)}</g><g transform="translate(48 25) scale(.86)">${cloud()}</g>${precipitation('drizzle')}</svg>`;
+        return `<svg viewBox="0 0 250 210">${cloud()}</svg>`;
+      }
+
+      function renderSeason() {
+        if (state.season === 'spring') {
+          seasonLayer.innerHTML = '<div class="wm-hill"></div><div class="wm-hill wm-hill-two"></div><div class="wm-bush" style="left:5%"></div><div class="wm-bush" style="left:74%;transform:scale(.75)"></div><span class="wm-grass" style="left:18%"></span><span class="wm-grass" style="left:48%;transform:skew(12deg)"></span><span class="wm-grass" style="left:67%"></span><span class="wm-flower" style="left:8%">&#x273F;</span><span class="wm-flower" style="left:20%;color:#9a75d7;animation-delay:.4s">&#x273F;</span><span class="wm-flower" style="left:37%;color:#f4b741;animation-delay:.8s">&#x273F;</span><span class="wm-flower" style="left:58%;color:#ed6f92;animation-delay:.2s">&#x273F;</span><span class="wm-flower" style="left:82%;color:#8b78d0;animation-delay:1s">&#x273F;</span><span class="wm-flower" style="left:91%;color:#f1b43c;animation-delay:.55s">&#x273F;</span><span class="wm-petal" style="left:2%;top:1%;color:#f584a7">&#x25CF;</span><span class="wm-petal" style="left:13%;top:9%;color:#ffd1df;animation-delay:.7s">&#x25CF;</span><span class="wm-petal" style="left:24%;top:3%;color:#f584a7;animation-delay:1.4s">&#x25CF;</span><span class="wm-petal" style="left:39%;top:15%;color:#ffd1df;animation-delay:2.1s">&#x25CF;</span><span class="wm-petal" style="left:51%;top:5%;color:#f584a7;animation-delay:2.8s">&#x25CF;</span><span class="wm-petal" style="left:66%;top:12%;color:#ffd1df;animation-delay:3.5s">&#x25CF;</span><span class="wm-petal" style="left:78%;top:2%;color:#f584a7;animation-delay:4.2s">&#x25CF;</span><span class="wm-petal" style="left:90%;top:11%;color:#ffd1df;animation-delay:4.9s">&#x25CF;</span>';
+        } else if (state.season === 'summer') {
+          seasonLayer.innerHTML = '<div class="wm-hill"></div><div class="wm-hill wm-hill-two"></div><div class="wm-tree"><span class="wm-trunk"></span><span class="wm-crown"></span></div><div class="wm-bush" style="left:18%"></div><div class="wm-bush" style="left:76%;transform:scale(.8)"></div><span class="wm-grass" style="left:36%"></span><span class="wm-grass" style="left:52%;transform:skew(10deg)"></span><span class="wm-grass" style="left:68%"></span><span class="wm-flower" style="left:27%;color:#f6c83f">&#x273F;</span><span class="wm-flower" style="left:61%;color:#ffffff;animation-delay:.5s">&#x273F;</span><span class="wm-flower" style="left:88%;color:#f6c83f;animation-delay:1s">&#x273F;</span>';
+        } else if (state.season === 'fall') {
+          seasonLayer.innerHTML = '<div class="wm-hill" style="background:#bc8e54"></div><div class="wm-hill wm-hill-two" style="background:#9d7548"></div><div class="wm-tree"><span class="wm-trunk"></span><span class="wm-crown" style="background:#d26e36"></span></div><div class="wm-leaf-pile" style="left:15%"></div><div class="wm-leaf-pile" style="left:69%;transform:scale(.8)"></div><span class="wm-grass" style="left:42%;border-color:#987341"></span><span class="wm-grass" style="left:57%;border-color:#987341;transform:skew(12deg)"></span><span class="wm-leaf" style="left:2%;top:2%;color:#d65c2d">&#x25C6;</span><span class="wm-leaf" style="left:13%;top:12%;color:#e6a22e;animation-delay:.7s">&#x25C6;</span><span class="wm-leaf" style="left:24%;top:3%;color:#b64c2e;animation-delay:1.4s">&#x25C6;</span><span class="wm-leaf" style="left:37%;top:17%;color:#d65c2d;animation-delay:2.1s">&#x25C6;</span><span class="wm-leaf" style="left:51%;top:5%;color:#e6a22e;animation-delay:2.8s">&#x25C6;</span><span class="wm-leaf" style="left:65%;top:13%;color:#b64c2e;animation-delay:3.5s">&#x25C6;</span><span class="wm-leaf" style="left:79%;top:1%;color:#d65c2d;animation-delay:4.2s">&#x25C6;</span><span class="wm-leaf" style="left:91%;top:11%;color:#e6a22e;animation-delay:4.9s">&#x25C6;</span>';
+        } else if (state.season === 'winter') {
+          seasonLayer.innerHTML = '<div class="wm-hill" style="background:#9eaaa4;opacity:.48"></div><div class="wm-hill wm-hill-two" style="background:#7f918a;opacity:.34"></div><div class="wm-branch"></div><div class="wm-pine" style="left:20%"></div><div class="wm-pine" style="left:78%;transform:scale(.75)"></div><span class="wm-winter-tuft" style="left:38%"></span><span class="wm-winter-tuft" style="left:55%;transform:skew(-14deg)"></span><span class="wm-winter-tuft" style="left:68%"></span>';
+        } else {
+          seasonLayer.innerHTML = '';
+        }
+      }
+
+      function renderEffects() {
+        const condition = state.condition;
+        const particleType = {
+          drizzle: 'rain',
+          rain: 'rain',
+          'heavy-rain': 'rain',
+          'freezing-rain': 'hail',
+          storm: 'rain',
+          severe: 'rain',
+          snow: 'snow',
+          'heavy-snow': 'snow',
+          sleet: 'hail',
+          hail: 'hail',
+          wind: 'wind',
+          mixed: 'rain'
+        }[condition];
+        effectsLayer.innerHTML = '';
+        if (particleType) {
+          const count = particleType === 'wind' ? 7 : (condition === 'drizzle' ? 10 : (condition === 'heavy-rain' || condition === 'heavy-snow' ? 28 : 18));
+          const particles = [];
+          for (let index = 0; index < count; index += 1) {
+            const left = (index * 17 + 7) % 98;
+            const top = particleType === 'wind' ? 8 + ((index * 13) % 76) : -8;
+            const delay = -((index * 0.37) % 3.6);
+            const duration = particleType === 'snow' ? 3.2 + (index % 4) * .65 : undefined;
+            particles.push(`<span class="wm-fx wm-fx-${particleType}" style="left:${left}%;top:${top}%;animation-delay:${delay}s;${duration ? `animation-duration:${duration}s;` : ''}"></span>`);
+          }
+          effectsLayer.innerHTML = particles.join('');
+        }
+        if (condition === 'storm' || condition === 'severe') {
+          effectsLayer.style.animation = 'wm-bolt 2.7s steps(1) infinite';
+          effectsLayer.style.background = 'rgba(255,255,255,.17)';
+        } else {
+          effectsLayer.style.animation = '';
+          effectsLayer.style.background = 'transparent';
+        }
+      }
+
+      function previewFromLive(payload) {
+        const hours = Array.isArray(payload.hours) ? payload.hours : [];
+        return {
+          name: payload.condition_name,
+          temp: payload.temperature,
+          feels: payload.feels,
+          high: payload.high,
+          low: payload.low,
+          rain: payload.rain,
+          modifier: payload.modifier,
+          speech: payload.speech,
+          icons: hours.map((hour) => hour.icon),
+          hours: hours.map((hour) => hour.temperature),
+          times: hours.map((hour) => hour.time),
+          alert: payload.alert,
+          speaking: payload.speaking_key
+        };
+      }
+
+      function syncControls() {
+        root.querySelectorAll('[data-control-group]').forEach((group) => {
+          group.querySelectorAll('button[data-value]').forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.value === state[group.dataset.controlGroup]));
+          });
+        });
+      }
+
+      function renderPageDots(payload) {
+        const count = Math.max(0, Math.min(Number(payload?.page_count) || 0, 8));
+        const selected = Number(payload?.page_index) || 0;
+        pageDots.replaceChildren();
+        for (let index = 0; index < count; index += 1) {
+          const dot = document.createElement('span');
+          dot.className = 'wm-page-dot';
+          dot.style.background = index === selected ? '#2f665c' : '#a7cec3';
+          pageDots.appendChild(dot);
+        }
+      }
+
+      function render() {
+        const live = !debugOverride && latestState?.status === 'ready';
+        const data = live ? previewFromLive(latestState) : weatherStates[state.condition];
+        const palette = palettes[state.time];
+        root.dataset.condition = state.condition;
+        root.dataset.season = state.season;
+        root.dataset.time = state.time;
+        root.dataset.animations = String(latestState?.animations !== false);
+        root.dataset.speech = String(latestState?.speech_available === true);
+        stage.style.background = (state.condition === 'storm' || state.condition === 'severe') ? '#6f83aa' : palette.background;
+        greeting.textContent = palette.greeting;
+        temperature.textContent = `${data.temp}\u00B0`;
+        const moonWeather = state.time === 'night' && ['sunny', 'mostly-clear', 'partly', 'hot'].includes(state.condition);
+        conditionName.textContent = (!live && state.time === 'night' && ['sunny', 'mostly-clear', 'hot'].includes(state.condition)) ? 'Clear night' : data.name;
+        modifier.textContent = (!live && moonWeather) ? phaseLabels[state.phase] : data.modifier;
+        if (!live && state.time === 'night' && ['sunny', 'mostly-clear'].includes(state.condition)) {
+          speech.textContent = 'The moon is smiling! Cozy night-sky time.';
+        } else if (!live && state.time === 'night' && state.condition === 'partly') {
+          speech.textContent = 'The moon and clouds are playing peekaboo!';
+        } else if (!live && state.time === 'night' && state.condition === 'hot') {
+          speech.textContent = 'It is a warm night. Keep water nearby!';
+        } else {
+          speech.textContent = data.speech;
+        }
+        feels.textContent = `${data.feels}\u00B0`;
+        highLow.textContent = `${data.high}\u00B0 \u00B7 ${data.low}\u00B0`;
+        rain.textContent = `${data.rain}%`;
+        sceneArt.innerHTML = sceneFor(state.condition, state.time);
+        renderSeason();
+        renderEffects();
+        for (let index = 0; index < 4; index += 1) {
+          const hour = root.querySelector(`[data-hour="${index}"]`);
+          const visible = index < data.icons.length;
+          hour.style.visibility = visible ? 'visible' : 'hidden';
+          if (!visible) continue;
+          root.querySelector(`[data-hour-icon="${index}"]`).innerHTML = hourIconSvg(data.icons[index]);
+          root.querySelector(`[data-hour-temp="${index}"]`).textContent = `${data.hours[index]}\u00B0`;
+          root.querySelector(`[data-hour-time="${index}"]`).textContent = data.times?.[index] || ['12 PM','2 PM','4 PM','8 PM'][index];
+        }
+        root.querySelectorAll('.wm-speaking').forEach((element) => element.classList.remove('wm-speaking'));
+        if (live && data.speaking) {
+          const active = root.querySelector(`[data-action="${CSS.escape(data.speaking)}"]`);
+          active?.classList.add('wm-speaking');
+        }
+        alertBanner.textContent = data.alert ? `⚠ BMO SAFETY ALERT — ${data.alert}` : '⚠ BMO SAFETY ALERT — GO WITH A GROWN-UP AND FOLLOW OFFICIAL INSTRUCTIONS';
+        alertBanner.style.display = data.alert || state.condition === 'severe' ? 'block' : '';
+        syncControls();
+      }
+
+      function applyLive(payload) {
+        latestState = payload;
+        root.classList.toggle('wm-debug-enabled', payload.debug === true);
+        locationName.textContent = payload.location || 'Weather';
+        renderPageDots(payload);
+        const ready = payload.status === 'ready';
+        loading.dataset.visible = String(!ready && !debugOverride);
+        loadingMessage.textContent = payload.message || 'BMO is checking the sky...';
+        if (!debugOverride && ready) {
+          state.condition = payload.condition;
+          state.season = payload.season;
+          state.time = payload.time;
+          state.phase = payload.phase;
+          render();
+        }
+      }
+
+      async function postAction(name, extra = {}) {
+        try {
+          const response = await fetch(`${window.location.pathname}action`, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, ...extra })
+          });
+          if (!response.ok) throw new Error('action rejected');
+        } catch (_error) {
+          loading.dataset.visible = 'true';
+          loadingMessage.textContent = 'The weather display lost its BMO connection.';
+        }
+      }
+
+      async function pollState() {
+        try {
+          const response = await fetch(`${window.location.pathname}state`, { cache: 'no-store' });
+          if (!response.ok) throw new Error('state unavailable');
+          applyLive(await response.json());
+        } catch (_error) {
+          loading.dataset.visible = 'true';
+          loadingMessage.textContent = 'The weather display lost its BMO connection.';
+        } finally {
+          window.setTimeout(pollState, 500);
+        }
+      }
+
+      root.querySelectorAll('[data-control-group]').forEach((group) => {
+        group.addEventListener('click', (event) => {
+          const button = event.target.closest('button[data-value]');
+          if (!button || !group.contains(button)) return;
+          debugOverride = true;
+          loading.dataset.visible = 'false';
+          state[group.dataset.controlGroup] = button.dataset.value;
+          render();
+        });
+      });
+
+      root.querySelector('[data-debug-toggle]').addEventListener('click', () => {
+        const opening = debugPanel.dataset.open !== 'true';
+        debugPanel.dataset.open = String(opening);
+        const toggle = root.querySelector('[data-debug-toggle]');
+        toggle.textContent = opening ? 'Hide controls' : 'Show controls';
+        toggle.setAttribute('aria-label', opening ? 'Close weather debugger' : 'Open weather debugger');
+      });
+      root.querySelector('[data-live-weather]').addEventListener('click', () => {
+        debugOverride = false;
+        if (latestState) applyLive(latestState);
+      });
+      root.addEventListener('click', (event) => {
+        if (suppressNextClick) {
+          suppressNextClick = false;
+          event.preventDefault();
+          return;
+        }
+        const target = event.target.closest('[data-action]');
+        if (!target || debugPanel.contains(target)) return;
+        const action = target.dataset.action;
+        if (action === 'close') {
+          postAction('close');
+        } else if (!debugOverride && latestState?.speech_available === true) {
+          postAction('speak', { key: action });
+        }
+      });
+      loading.addEventListener('click', () => postAction('retry'));
+
+      let pointerStart = null;
+      let pointerMoved = false;
+      let suppressNextClick = false;
+      root.querySelector('.wm-device').addEventListener('pointerdown', (event) => {
+        pointerStart = { x: event.clientX, y: event.clientY };
+        pointerMoved = false;
+      });
+      root.querySelector('.wm-device').addEventListener('pointermove', (event) => {
+        if (!pointerStart) return;
+        pointerMoved = pointerMoved || Math.abs(event.clientX - pointerStart.x) > 12;
+      });
+      root.querySelector('.wm-device').addEventListener('pointerup', (event) => {
+        if (!pointerStart) return;
+        const dx = event.clientX - pointerStart.x;
+        const dy = event.clientY - pointerStart.y;
+        pointerStart = null;
+        if (pointerMoved && Math.abs(dx) >= 55 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+          suppressNextClick = true;
+          debugOverride = false;
+          postAction('navigate', { direction: dx < 0 ? 1 : -1 });
+        }
+      });
+
+      render();
+      pollState();
+    })();
+  </script>
+</div>
+</body>
+</html>

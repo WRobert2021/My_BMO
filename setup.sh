@@ -105,6 +105,7 @@ install_system_dependencies() {
         build-essential
         ca-certificates
         cmake
+        chromium
         curl
         espeak-ng
         git
@@ -128,7 +129,7 @@ install_system_dependencies() {
     fi
 
     local command_name
-    for command_name in cmake curl git nproc python3 tar; do
+    for command_name in chromium cmake curl git nproc python3 tar; do
         require_command "$command_name"
     done
 }
@@ -312,6 +313,7 @@ verify_installation() {
     if [ ! -x "$VENV_PYTHON" ] || [ ! -s "$WAKE_WORD_MODEL" ]; then
         return 1
     fi
+    require_command chromium
 
     "$VENV_PYTHON" - <<'PY'
 import tkinter

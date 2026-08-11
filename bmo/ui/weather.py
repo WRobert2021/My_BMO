@@ -1,23 +1,31 @@
-"""Child-friendly animated weather carousel for BMO's touch display."""
+"""Weather-owned Chromium view, secure loopback bridge, and carousel lifecycle."""
 
 from __future__ import annotations
 
-import math
+import json
+import os
 import queue
+import secrets
+import shutil
+import signal
+import subprocess
+import tempfile
 import threading
+import time
 import tkinter as tk
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
-from typing import TypeAlias
-
-from PIL import Image, ImageTk
+from datetime import datetime, timedelta, timezone
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any, Protocol, TypeAlias
+from urllib.parse import urlsplit
 
 from bmo.features.weather_alerts import WeatherAlert
 from bmo.features.weather_config import WeatherLocationConfig
 from bmo.features.weather_narration import (
     WeatherCondition,
-    WeatherSeason,
     condition_for_code,
     narrate_alert,
     narrate_condition,
@@ -28,12 +36,96 @@ from bmo.features.weather_narration import (
     narrate_temperature,
     season_for,
 )
-from bmo.ui.gestures import GestureKind, HorizontalSwipeRecognizer
-from bmo.weather import WEATHER_DESCRIPTIONS, WeatherSnapshot
+from bmo.weather import WEATHER_DESCRIPTIONS, HourlyWeather, WeatherSnapshot
 
 
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
+WEB_ASSET = Path(__file__).with_name("weather_web") / "index.html"
+MOON_PHASES = (
+    "new",
+    "waxing_crescent",
+    "first_quarter",
+    "waxing_gibbous",
+    "full",
+    "waning_gibbous",
+    "last_quarter",
+    "waning_crescent",
+)
+_REFERENCE_NEW_MOON = datetime(2000, 1, 6, 18, 14)
+_SYNODIC_MONTH_DAYS = 29.530588853
+_SAFE_ACTIONS = frozenset({"close", "navigate", "retry", "speak"})
+_SPEECH_KEYS = frozenset(
+    {"alert", "condition", "feels", "high_low", "rain", "temperature"}
+)
+
+
+class WeatherBrowserUnavailable(RuntimeError):
+    """Raised when a supported Chromium executable cannot be started."""
+
+
+def _parse_local_datetime(value: str | None) -> datetime | None:
+    """Parse an Open-Meteo local ISO timestamp without inventing a timezone."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    return parsed
+
+
+def moon_phase_for(moment: datetime) -> str:
+    """Return one of eight child-readable moon phases for a moment."""
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+    age_days = (
+        (moment - _REFERENCE_NEW_MOON).total_seconds() / 86400
+    ) % _SYNODIC_MONTH_DAYS
+    phase_index = int(age_days / _SYNODIC_MONTH_DAYS * 8 + 0.5) % 8
+    return MOON_PHASES[phase_index]
+
+
+def select_upcoming_hours(
+    snapshot: WeatherSnapshot,
+    local_now: datetime,
+    *,
+    limit: int = 4,
+) -> tuple[HourlyWeather, ...]:
+    """Select the next local forecast points, dropping time slots already past."""
+    if limit < 1:
+        return ()
+    selected: list[HourlyWeather] = []
+    for hour in snapshot.hourly:
+        timestamp = _parse_local_datetime(hour.time)
+        if timestamp is not None and timestamp < local_now:
+            continue
+        selected.append(hour)
+        if len(selected) >= limit:
+            break
+    return tuple(selected)
+
+
+def day_period_for(snapshot: WeatherSnapshot, local_now: datetime) -> str:
+    """Classify local time into the five scenery periods used by the screen."""
+    sunrise = _parse_local_datetime(snapshot.sunrise)
+    sunset = _parse_local_datetime(snapshot.sunset)
+    if sunrise is not None and local_now < sunrise:
+        return "night"
+    if sunset is not None:
+        if local_now >= sunset + timedelta(minutes=35):
+            return "night"
+        if local_now >= sunset - timedelta(minutes=75):
+            return "sunset"
+    if snapshot.is_day is False:
+        return "night"
+    if local_now.hour < 10:
+        return "morning"
+    if local_now.hour < 14:
+        return "midday"
+    return "afternoon"
 
 
 @dataclass(frozen=True)
@@ -45,7 +137,7 @@ class WeatherPageData:
 
 
 class WeatherCarousel:
-    """Wrap ordered weather locations independently from Tk rendering."""
+    """Wrap ordered weather locations independently from rendering."""
 
     def __init__(self, count: int, selected_index: int = 0) -> None:
         if count < 1:
@@ -65,30 +157,584 @@ class WeatherCarousel:
 
 
 WeatherPageProvider: TypeAlias = Callable[[WeatherLocationConfig], WeatherPageData]
-FaceProvider: TypeAlias = Callable[[], Image.Image | None]
+FaceProvider: TypeAlias = Callable[[], object | None]
 AnnouncementCompletion: TypeAlias = Callable[[], None]
 Announcer: TypeAlias = Callable[[str, AnnouncementCompletion | None], bool]
 
 
-class WeatherApp:
-    """Show animated conditions and tappable BMO weather explanations."""
+def _fahrenheit(value: float, imperial: bool) -> float:
+    return value if imperial else value * 9 / 5 + 32
 
-    NAVY = "#102a5e"
-    WHITE = "#ffffff"
-    BLUE = "#1578d3"
-    PALE_BLUE = "#dff5ff"
-    MUTED = "#58708c"
-    CARD = "#ffffff"
-    ALERT = "#b32834"
-    FACE_BOUNDS = (704, 6, 790, 53)
-    CONDITION_BOUNDS = (16, 66, 348, 258)
-    TEMPERATURE_BOUNDS = (360, 66, 688, 166)
-    FEELS_BOUNDS = (18, 278, 252, 365)
-    HIGH_LOW_BOUNDS = (282, 278, 516, 365)
-    RAIN_BOUNDS = (546, 278, 780, 365)
-    ALERT_BOUNDS = (16, 239, 784, 272)
-    POLL_MS = 80
-    ANIMATION_MS = 220
+
+def _visual_condition(data: WeatherPageData) -> str:
+    """Layer measured modifiers over the WMO condition without inventing alerts."""
+    snapshot = data.snapshot
+    if data.alerts:
+        alert = data.alerts[0]
+        if (
+            "warning" in alert.event.casefold()
+            or alert.severity.casefold() in {"extreme", "severe"}
+        ):
+            return "severe"
+    condition = condition_for_code(snapshot.weather_code)
+    primary = {
+        WeatherCondition.CLEAR: "sunny",
+        WeatherCondition.MOSTLY_CLEAR: "mostly-clear",
+        WeatherCondition.PARTLY_CLOUDY: "partly",
+        WeatherCondition.CLOUDY: "cloudy",
+        WeatherCondition.OVERCAST: "overcast",
+        WeatherCondition.FOG: "fog",
+        WeatherCondition.DRIZZLE: "drizzle",
+        WeatherCondition.RAIN: "rain",
+        WeatherCondition.HEAVY_RAIN: "heavy-rain",
+        WeatherCondition.FREEZING_RAIN: "freezing-rain",
+        WeatherCondition.SLEET: "sleet",
+        WeatherCondition.SNOW: "snow",
+        WeatherCondition.HEAVY_SNOW: "heavy-snow",
+        WeatherCondition.THUNDERSTORM: "storm",
+        WeatherCondition.HAIL: "hail",
+        WeatherCondition.MIXED: "mixed",
+    }[condition]
+    if condition not in {
+        WeatherCondition.CLEAR,
+        WeatherCondition.MOSTLY_CLEAR,
+        WeatherCondition.PARTLY_CLOUDY,
+        WeatherCondition.CLOUDY,
+        WeatherCondition.OVERCAST,
+        WeatherCondition.MIXED,
+    }:
+        return primary
+    if snapshot.wind_gusts is not None:
+        gust_mph = (
+            snapshot.wind_gusts
+            if snapshot.imperial
+            else snapshot.wind_gusts / 1.609344
+        )
+        if gust_mph >= 35:
+            return "wind"
+    temperature_f = _fahrenheit(snapshot.temperature, snapshot.imperial)
+    feels_f = _fahrenheit(snapshot.apparent_temperature, snapshot.imperial)
+    if max(temperature_f, feels_f) >= 100:
+        return "hot"
+    if min(temperature_f, feels_f) <= 25:
+        return "cold"
+    return primary
+
+
+def _condition_title(data: WeatherPageData, period: str, visual: str) -> str:
+    if visual == "severe":
+        return "Safety alert"
+    if visual == "wind":
+        return "Very windy"
+    if visual == "hot":
+        return "Very hot"
+    if visual == "cold":
+        return "Very cold"
+    if period == "night" and visual in {"sunny", "mostly-clear"}:
+        return "Clear night"
+    titles = {
+        "sunny": "Sunny",
+        "mostly-clear": "Mostly clear",
+        "partly": "Partly cloudy",
+        "cloudy": "Cloudy",
+        "overcast": "Overcast",
+        "fog": "Foggy",
+        "drizzle": "Drizzly",
+        "rain": "Rainy",
+        "heavy-rain": "Heavy rain",
+        "freezing-rain": "Freezing rain",
+        "sleet": "Sleet & ice",
+        "snow": "Snowy",
+        "heavy-snow": "Heavy snow",
+        "storm": "Stormy",
+        "hail": "Hail",
+        "mixed": "Mixed weather",
+    }
+    return titles.get(
+        visual,
+        WEATHER_DESCRIPTIONS.get(data.snapshot.weather_code, "Mixed weather").title(),
+    )
+
+
+def _condition_modifier(
+    data: WeatherPageData,
+    period: str,
+    visual: str,
+    local_now: datetime,
+) -> str:
+    snapshot = data.snapshot
+    if visual == "severe":
+        return "Official warning active"
+    if period == "night" and visual in {
+        "sunny",
+        "mostly-clear",
+        "partly",
+        "hot",
+    }:
+        return f"{moon_phase_for(local_now).replace('_', ' ')} moon"
+    if visual == "wind" and snapshot.wind_gusts is not None:
+        return f"Gusts near {round(snapshot.wind_gusts)} {snapshot.wind_unit}"
+    if visual == "hot":
+        return "Heat-safety day"
+    if visual == "cold":
+        return "Freezing outside"
+    labels = {
+        "sunny": "Warm sunshine",
+        "mostly-clear": "A few cloud friends",
+        "partly": "Sun-and-cloud team-up",
+        "cloudy": "A soft cloud blanket",
+        "overcast": "Cloud blanket overhead",
+        "fog": "Low visibility",
+        "drizzle": "Tiny tiptoe raindrops",
+        "rain": "Puddle weather",
+        "heavy-rain": "Big raindrops",
+        "freezing-rain": "Slippery-ground alert",
+        "sleet": "Slippery-ground alert",
+        "snow": "Dancing snowflakes",
+        "heavy-snow": "Lots of snowflakes",
+        "storm": "Thunder nearby",
+        "hail": "Icy pebbles falling",
+        "mixed": "A little bit of everything",
+    }
+    if (
+        visual in {
+            "sunny",
+            "mostly-clear",
+            "partly",
+            "cloudy",
+            "overcast",
+            "mixed",
+        }
+        and snapshot.humidity is not None
+        and snapshot.humidity >= 80
+    ):
+        return "Extra-sticky air"
+    return labels.get(visual, "Today's sky")
+
+
+def _condition_flavor(data: WeatherPageData, period: str, visual: str) -> str:
+    if visual == "severe":
+        return "BMO safety alert. Go with a grown-up and follow official instructions now."
+    if period == "night" and visual in {"sunny", "mostly-clear"}:
+        return "The moon is smiling! Cozy night-sky time."
+    if period == "night" and visual == "partly":
+        return "The moon and clouds are playing peekaboo!"
+    if period == "night" and visual == "hot":
+        return "It is a warm night. Keep water nearby!"
+    flavors = {
+        "sunny": "The sun is smiling! Grab water and sunscreen.",
+        "mostly-clear": "The sun has a few fluffy cloud friends!",
+        "partly": "The sun and clouds are sharing the sky!",
+        "cloudy": "The clouds are having a parade!",
+        "overcast": "A soft cloud blanket is covering the sky!",
+        "fog": "The clouds came down to visit. Stay where a grown-up can see you!",
+        "drizzle": "A light raincoat could be a cozy sidekick.",
+        "rain": "Puddle-jumping weather! Bring your raincoat and boots.",
+        "heavy-rain": "Big rain is falling. Raincoat and boots time!",
+        "freezing-rain": "Icy rain can make slippery spots. Stay close to a grown-up!",
+        "sleet": "Icy drops can make slippery spots. Stay close to a grown-up!",
+        "snow": "Bundle up! Coat, hat, gloves, and warm boots.",
+        "heavy-snow": "Lots of snow is dancing down. Bundle up and stay with a grown-up!",
+        "storm": "Thunder nearby. Let's stay safely inside with a grown-up!",
+        "hail": "Hail is falling. Please stay safely inside!",
+        "wind": "Hold onto your hat and check with a grown-up before going outside!",
+        "hot": "Super-hot alert! Water, shade, sunscreen, and plenty of breaks.",
+        "cold": "Brrr! Coat, hat, gloves, and a grown-up are good adventure buddies.",
+        "mixed": "The sky has a little bit of everything today!",
+    }
+    return flavors.get(visual, "Let's look at today's sky!")
+
+
+def _hour_icon(hour: HourlyWeather) -> str:
+    condition = condition_for_code(hour.weather_code)
+    if condition is WeatherCondition.CLEAR:
+        return "sun" if hour.is_day is not False else "moon"
+    if condition in {WeatherCondition.MOSTLY_CLEAR, WeatherCondition.PARTLY_CLOUDY}:
+        return "partly" if hour.is_day is not False else "moon-cloud"
+    return {
+        WeatherCondition.CLOUDY: "cloud",
+        WeatherCondition.OVERCAST: "cloud",
+        WeatherCondition.FOG: "fog",
+        WeatherCondition.DRIZZLE: "drizzle",
+        WeatherCondition.RAIN: "rain",
+        WeatherCondition.HEAVY_RAIN: "rain",
+        WeatherCondition.FREEZING_RAIN: "sleet",
+        WeatherCondition.SLEET: "sleet",
+        WeatherCondition.SNOW: "snow",
+        WeatherCondition.HEAVY_SNOW: "snow",
+        WeatherCondition.THUNDERSTORM: "storm",
+        WeatherCondition.HAIL: "hail",
+        WeatherCondition.MIXED: "cloud",
+    }[condition]
+
+
+def _format_hour(value: str) -> str:
+    raw = value.split("T")[-1]
+    try:
+        hour = int(raw.split(":", 1)[0])
+    except ValueError:
+        return raw[:5]
+    return f"{hour % 12 or 12} {'AM' if hour < 12 else 'PM'}"
+
+
+def weather_web_state(
+    data: WeatherPageData,
+    local_now: datetime,
+    *,
+    season_style: str,
+    animations: bool,
+    debug: bool,
+    speech_available: bool,
+    page_index: int,
+    page_count: int,
+    subtitle: str = "",
+    speaking_key: str | None = None,
+) -> dict[str, Any]:
+    """Serialize immutable weather data into the local page's narrow contract."""
+    snapshot = data.snapshot
+    period = day_period_for(snapshot, local_now)
+    visual = _visual_condition(data)
+    season = season_for(
+        snapshot.location.latitude,
+        local_now.month,
+        season_style,
+    ).value
+    hours = select_upcoming_hours(snapshot, local_now)
+    serialized_hours = [
+        {
+            "key": f"hour:{index}",
+            "time": _format_hour(hour.time),
+            "temperature": round(hour.temperature),
+            "icon": _hour_icon(hour),
+        }
+        for index, hour in enumerate(hours)
+    ]
+    alert = data.alerts[0] if data.alerts else None
+    flavor = _condition_flavor(data, period, visual)
+    return {
+        "status": "ready",
+        "location": snapshot.location.name,
+        "condition": visual,
+        "condition_name": _condition_title(data, period, visual),
+        "modifier": _condition_modifier(data, period, visual, local_now),
+        "speech": subtitle or flavor,
+        "temperature": round(snapshot.temperature),
+        "feels": round(snapshot.apparent_temperature),
+        "high": round(snapshot.high),
+        "low": round(snapshot.low),
+        "rain": round(snapshot.precipitation_probability_max),
+        "time": period,
+        "season": season,
+        "phase": moon_phase_for(local_now).replace("_", "-"),
+        "hours": serialized_hours,
+        "page_index": page_index,
+        "page_count": page_count,
+        "alert": alert.event if alert is not None else None,
+        "animations": animations,
+        "debug": debug,
+        "speech_available": speech_available,
+        "speaking_key": speaking_key,
+    }
+
+
+class _WeatherHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = False
+
+
+class WeatherWebBridge:
+    """Serve one static page and a tokenized JSON bridge on loopback only."""
+
+    MAX_ACTION_BYTES = 4096
+
+    def __init__(
+        self,
+        actions: queue.Queue[dict[str, Any]],
+        *,
+        asset_path: Path = WEB_ASSET,
+    ) -> None:
+        self.actions = actions
+        self.token = secrets.token_urlsafe(32)
+        self.nonce = secrets.token_urlsafe(24)
+        self.asset_path = asset_path
+        self._state_lock = threading.Lock()
+        self._state: dict[str, Any] = {"status": "loading", "debug": False}
+        self._closed = False
+        self._started = False
+        self._server = _WeatherHTTPServer(("127.0.0.1", 0), self._handler())
+        port = int(self._server.server_address[1])
+        self.origin = f"http://127.0.0.1:{port}"
+        self.url = f"{self.origin}/{self.token}/"
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            kwargs={"poll_interval": 0.1},
+            name="weather-web-bridge",
+            daemon=True,
+        )
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        bridge = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self) -> None:  # noqa: N802 - stdlib handler contract
+                path = urlsplit(self.path).path
+                if path == f"/{bridge.token}/":
+                    try:
+                        content = bridge.asset_path.read_text(encoding="utf-8")
+                    except OSError:
+                        self._send_json(
+                            HTTPStatus.INTERNAL_SERVER_ERROR,
+                            {"error": "weather display asset unavailable"},
+                        )
+                        return
+                    content = content.replace(
+                        "<script>",
+                        f'<script nonce="{bridge.nonce}">',
+                    )
+                    self._send(
+                        HTTPStatus.OK,
+                        content.encode("utf-8"),
+                        "text/html; charset=utf-8",
+                    )
+                    return
+                if path == f"/{bridge.token}/state":
+                    with bridge._state_lock:
+                        state = dict(bridge._state)
+                    self._send_json(HTTPStatus.OK, state)
+                    return
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+
+            def do_POST(self) -> None:  # noqa: N802 - stdlib handler contract
+                if urlsplit(self.path).path != f"/{bridge.token}/action":
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                    return
+                if self.headers.get("Origin") != bridge.origin:
+                    self._send_json(HTTPStatus.FORBIDDEN, {"error": "bad origin"})
+                    return
+                if self.headers.get_content_type() != "application/json":
+                    self._send_json(
+                        HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                        {"error": "JSON required"},
+                    )
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 0
+                if not 0 < length <= bridge.MAX_ACTION_BYTES:
+                    self._send_json(
+                        HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                        {"error": "invalid action size"},
+                    )
+                    return
+                try:
+                    payload = json.loads(self.rfile.read(length))
+                    action = bridge._validated_action(payload)
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                    self._send_json(
+                        HTTPStatus.BAD_REQUEST,
+                        {"error": "invalid action"},
+                    )
+                    return
+                bridge.actions.put(action)
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True})
+
+            def _send_json(
+                self,
+                status: HTTPStatus,
+                payload: Mapping[str, Any],
+            ) -> None:
+                self._send(
+                    status,
+                    json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+                    "application/json; charset=utf-8",
+                )
+
+            def _send(
+                self,
+                status: HTTPStatus,
+                body: bytes,
+                content_type: str,
+            ) -> None:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("X-Frame-Options", "DENY")
+                self.send_header(
+                    "Content-Security-Policy",
+                    "default-src 'none'; "
+                    f"script-src 'nonce-{bridge.nonce}'; "
+                    "style-src 'unsafe-inline'; img-src data:; "
+                    "connect-src 'self'; frame-ancestors 'none'; "
+                    "base-uri 'none'; form-action 'none'",
+                )
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format: str, *args: object) -> None:
+                del format, args
+
+        return Handler
+
+    @staticmethod
+    def _validated_action(payload: object) -> dict[str, Any]:
+        if not isinstance(payload, Mapping):
+            raise ValueError("action must be an object")
+        name = payload.get("name")
+        if not isinstance(name, str) or name not in _SAFE_ACTIONS:
+            raise ValueError("unknown action")
+        action: dict[str, Any] = {"name": name}
+        if name == "navigate":
+            direction = payload.get("direction")
+            if type(direction) is not int or direction not in {-1, 1}:
+                raise ValueError("bad navigation direction")
+            action["direction"] = direction
+        elif name == "speak":
+            key = payload.get("key")
+            if not isinstance(key, str) or not (
+                key in _SPEECH_KEYS
+                or (
+                    key.startswith("hour:")
+                    and key.removeprefix("hour:").isdigit()
+                )
+            ):
+                raise ValueError("bad speech key")
+            action["key"] = key
+        return action
+
+    def set_state(self, state: Mapping[str, Any]) -> None:
+        with self._state_lock:
+            self._state = dict(state)
+
+    def start(self) -> None:
+        self._thread.start()
+        self._started = True
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._started:
+            self._server.shutdown()
+        self._server.server_close()
+        if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=1.0)
+
+
+class BrowserSession(Protocol):
+    def poll(self) -> int | None: ...
+
+    def close(self) -> None: ...
+
+
+def find_chromium() -> Path:
+    """Find the platform browser without touching a user's normal profile."""
+    for command in (
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+    ):
+        resolved = shutil.which(command)
+        if resolved:
+            return Path(resolved)
+    for candidate in (
+        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise WeatherBrowserUnavailable(
+        "Chromium is required for the weather display."
+    )
+
+
+class ChromiumSession:
+    """Own one kiosk browser process group and its isolated temporary profile."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        executable: Path | None = None,
+        popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+    ) -> None:
+        browser = executable or find_chromium()
+        self._profile = tempfile.TemporaryDirectory(prefix="bmo-weather-")
+        command = [
+            str(browser),
+            f"--app={url}",
+            "--kiosk",
+            f"--window-size={WINDOW_WIDTH},{WINDOW_HEIGHT}",
+            "--window-position=0,0",
+            f"--user-data-dir={self._profile.name}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-extensions",
+            "--disable-features=MediaRouter,Translate",
+            "--disable-sync",
+            "--metrics-recording-only",
+        ]
+        try:
+            self._process = popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._profile.cleanup()
+            raise WeatherBrowserUnavailable(
+                "Chromium could not start the weather display."
+            ) from exc
+        self._closed = False
+
+    def poll(self) -> int | None:
+        return self._process.poll()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        running = self._process.poll() is None
+        try:
+            os.killpg(self._process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        if running:
+            try:
+                self._process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(self._process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    self._process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
+        self._profile.cleanup()
+
+
+BrowserLauncher: TypeAlias = Callable[[str], BrowserSession]
+BridgeFactory: TypeAlias = Callable[
+    [queue.Queue[dict[str, Any]]], WeatherWebBridge
+]
+
+
+class WeatherApp:
+    """Own the asynchronous forecast carousel and its local web presentation."""
+
+    POLL_MS = 150
+    REFRESH_SECONDS = 15 * 60
 
     def __init__(
         self,
@@ -103,25 +749,27 @@ class WeatherApp:
         announcements_available: bool,
         season_style: str = "auto",
         animations: bool = True,
+        debug: bool = False,
         announce_warnings: bool = False,
         on_close: Callable[[], None],
+        browser_launcher: BrowserLauncher = ChromiumSession,
+        bridge_factory: BridgeFactory = WeatherWebBridge,
     ) -> None:
+        del face_provider  # The approved mockup owns its vector BMO face.
         self.root = root
         self.locations = tuple(locations)
         self.page_provider = page_provider
-        self.face_provider = face_provider
         self.announce = announce
         self.cancel_announcements = cancel_announcements
         self.announcements_available = bool(announcements_available)
         self.season_style = season_style
         self.animations = bool(animations)
+        self.debug = bool(debug)
         self.announce_warnings = bool(announce_warnings)
         self.on_close = on_close
         self.closed = False
-        self.phase = 0
         self.speaking_key: str | None = None
-        self.subtitle = "Tap a weather card and BMO will tell you more!"
-        self.gesture = HorizontalSwipeRecognizer()
+        self.subtitle = ""
         self.carousel = (
             WeatherCarousel(len(self.locations), default_index)
             if self.locations
@@ -131,29 +779,23 @@ class WeatherApp:
         self._errors: dict[str, str] = {}
         self._inflight: set[str] = set()
         self._tokens: dict[str, int] = {}
+        self._loaded_at: dict[str, float] = {}
         self._results: queue.Queue[
             tuple[str, int, WeatherPageData | None, str | None]
         ] = queue.Queue()
-        self._hit_targets: list[tuple[tuple[int, int, int, int], str]] = []
-        self._hour_targets: dict[str, int] = {}
+        self._actions: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._hour_targets: dict[str, HourlyWeather] = {}
         self._announced_alerts: set[str] = set()
         self._after_ids: set[str] = set()
-        self._face_image: ImageTk.PhotoImage | None = None
-
-        self.canvas = tk.Canvas(
-            root,
-            width=WINDOW_WIDTH,
-            height=WINDOW_HEIGHT,
-            bg=self.PALE_BLUE,
-            highlightthickness=0,
-        )
-        self.canvas.place(x=0, y=0, width=WINDOW_WIDTH, height=WINDOW_HEIGHT)
-        self.canvas.bind("<ButtonPress-1>", self._handle_press)
-        self.canvas.bind("<ButtonRelease-1>", self._handle_release)
-        self._draw()
-        self._schedule(self.POLL_MS, self._poll_results)
-        if self.animations:
-            self._schedule(self.ANIMATION_MS, self._animate)
+        self._bridge = bridge_factory(self._actions)
+        self._bridge.set_state(self._loading_state())
+        try:
+            self._bridge.start()
+            self._browser = browser_launcher(self._bridge.url)
+        except Exception:
+            self._bridge.close()
+            raise
+        self._schedule(self.POLL_MS, self._poll)
         self._load_current()
 
     @property
@@ -179,15 +821,20 @@ class WeatherApp:
         after_id = self.root.after(delay, run)
         self._after_ids.add(after_id)
 
-    def _load_current(self) -> None:
+    def _load_current(self, *, force: bool = False) -> None:
         location = self.current_location
-        if location is None or location.id in self._cache:
+        if location is None:
+            self._publish_state()
+            return
+        if location.id in self._cache and not force:
+            self._publish_state()
             return
         if location.id in self._inflight:
             return
         self._inflight.add(location.id)
         token = self._tokens.get(location.id, 0) + 1
         self._tokens[location.id] = token
+        self._publish_state()
 
         def worker() -> None:
             try:
@@ -215,8 +862,13 @@ class WeatherApp:
         )
         return "BMO could not reach the weather service. Swipe or try again later."
 
-    def _poll_results(self) -> None:
+    def _poll(self) -> None:
         if self.closed:
+            return
+        if self._browser.poll() is not None:
+            self.close()
+            return
+        if not self._handle_actions():
             return
         changed = False
         while True:
@@ -227,20 +879,129 @@ class WeatherApp:
             if self._tokens.get(location_id) != token:
                 continue
             self._inflight.discard(location_id)
+            self._loaded_at[location_id] = time.monotonic()
             if data is not None:
                 self._cache[location_id] = data
                 self._errors.pop(location_id, None)
             elif error is not None:
                 self._errors[location_id] = error
             if self.current_location and self.current_location.id == location_id:
+                if data is not None and self.speaking_key is None:
+                    self.subtitle = ""
                 changed = True
         if changed:
-            self._draw()
             self._announce_current_warning()
-        self._schedule(self.POLL_MS, self._poll_results)
+        self._refresh_if_stale()
+        self._publish_state()
+        self._schedule(self.POLL_MS, self._poll)
+
+    def _handle_actions(self) -> bool:
+        while True:
+            try:
+                action = self._actions.get_nowait()
+            except queue.Empty:
+                return True
+            name = action["name"]
+            if name == "close":
+                self.close()
+                return False
+            if name == "navigate" and self.carousel is not None:
+                if action["direction"] == 1:
+                    self.carousel.swipe_left()
+                else:
+                    self.carousel.swipe_right()
+                self._location_changed()
+            elif name == "retry":
+                location = self.current_location
+                if location is not None:
+                    self._errors.pop(location.id, None)
+                    self._load_current(force=True)
+            elif name == "speak":
+                self._speak(str(action["key"]))
+
+    def _refresh_if_stale(self) -> None:
+        location = self.current_location
+        if location is None or location.id not in self._cache:
+            return
+        loaded_at = self._loaded_at.get(location.id)
+        if loaded_at is None:
+            return
+        if time.monotonic() - loaded_at >= self.REFRESH_SECONDS:
+            self._load_current(force=True)
+
+    def _local_now(self, snapshot: WeatherSnapshot) -> datetime:
+        observed = _parse_local_datetime(snapshot.observed_at)
+        if observed is None:
+            return datetime.now()
+        location = self.current_location
+        if location is None:
+            return observed
+        loaded_at = self._loaded_at.get(location.id)
+        if loaded_at is None:
+            return observed
+        elapsed = max(0.0, time.monotonic() - loaded_at)
+        return observed + timedelta(seconds=elapsed)
+
+    def _loading_state(self) -> dict[str, Any]:
+        location = self.current_location
+        return {
+            "status": "loading" if location is not None else "empty",
+            "location": location.name if location is not None else "Weather",
+            "message": (
+                "BMO is checking the sky..."
+                if location is not None
+                else "Add a location to config/weather.json."
+            ),
+            "page_index": self.carousel.selected_index if self.carousel else 0,
+            "page_count": self.carousel.count if self.carousel else 0,
+            "debug": self.debug,
+            "animations": self.animations,
+        }
+
+    def _publish_state(self) -> None:
+        if self.closed:
+            return
+        location = self.current_location
+        data = self.current_data
+        if location is None:
+            self._bridge.set_state(self._loading_state())
+            return
+        if data is None:
+            state = self._loading_state()
+            error = self._errors.get(location.id)
+            if error:
+                state.update(status="error", message=error)
+            self._bridge.set_state(state)
+            return
+        local_now = self._local_now(data.snapshot)
+        hours = select_upcoming_hours(data.snapshot, local_now)
+        self._hour_targets = {
+            f"hour:{index}": hour for index, hour in enumerate(hours)
+        }
+        self._bridge.set_state(
+            weather_web_state(
+                data,
+                local_now,
+                season_style=self.season_style,
+                animations=self.animations,
+                debug=self.debug,
+                speech_available=self.announcements_available,
+                page_index=self.carousel.selected_index,
+                page_count=self.carousel.count,
+                subtitle=self.subtitle,
+                speaking_key=self.speaking_key,
+            )
+        )
+
+    def _location_changed(self) -> None:
+        self.cancel_announcements()
+        self.speaking_key = None
+        self.subtitle = ""
+        self._publish_state()
+        self._announce_current_warning()
+        self._load_current()
 
     def _announce_current_warning(self) -> None:
-        """Optionally announce each newly shown official warning once."""
         location = self.current_location
         data = self.current_data
         if (
@@ -253,396 +1014,13 @@ class WeatherApp:
         ):
             return
         alert = data.alerts[0]
-        if "warning" not in alert.event.casefold() and alert.severity.casefold() not in {
-            "extreme",
-            "severe",
-        }:
+        if (
+            "warning" not in alert.event.casefold()
+            and alert.severity.casefold() not in {"extreme", "severe"}
+        ):
             return
         self._announced_alerts.add(location.id)
         self._speak("alert")
-
-    def _animate(self) -> None:
-        if self.closed:
-            return
-        self.phase = (self.phase + 1) % 24
-        self._draw()
-        self._schedule(self.ANIMATION_MS, self._animate)
-
-    def _draw(self) -> None:
-        if self.closed:
-            return
-        self.canvas.delete("all")
-        self._hit_targets.clear()
-        self._hour_targets.clear()
-        data = self.current_data
-        snapshot = data.snapshot if data is not None else None
-        background = self._background(snapshot)
-        self.canvas.configure(bg=background)
-        self.canvas.create_rectangle(0, 0, 800, 58, fill=self.NAVY, outline="")
-        self._draw_header()
-        if self.current_location is None:
-            self._draw_empty()
-            return
-        if data is None:
-            self._draw_loading(self._errors.get(self.current_location.id))
-            return
-        self._draw_season(snapshot)
-        self._draw_condition_scene(snapshot)
-        self._draw_current(snapshot)
-        if data.alerts:
-            self._draw_alert(data.alerts[0])
-        self._draw_cards(snapshot)
-        self._draw_hourly(snapshot)
-        self._draw_subtitle()
-
-    def _background(self, snapshot: WeatherSnapshot | None) -> str:
-        if snapshot is None:
-            return self.PALE_BLUE
-        if snapshot.is_day is False:
-            return "#263a70"
-        season = self._season(snapshot)
-        return {
-            WeatherSeason.SPRING: "#e9f9e1",
-            WeatherSeason.SUMMER: "#fff4bd",
-            WeatherSeason.FALL: "#ffe0b5",
-            WeatherSeason.WINTER: "#e6f2f7",
-        }.get(season, self.PALE_BLUE)
-
-    def _draw_header(self) -> None:
-        location = self.current_location
-        label = location.label.upper() if location is not None else "WEATHER"
-        self.canvas.create_text(
-            24, 28, anchor="w", text="WEATHER", fill=self.WHITE,
-            font=("Arial Rounded MT Bold", 22, "bold"),
-        )
-        self.canvas.create_text(
-            181, 28, anchor="w", text=label, fill="#bde7ff",
-            font=("Arial Rounded MT Bold", 14, "bold"),
-        )
-        if self.carousel is not None and self.carousel.count > 1:
-            self.canvas.create_text(
-                390, 28, text="‹  SWIPE LOCATIONS  ›", fill="#bde7ff",
-                font=("Arial", 10, "bold"),
-            )
-            if self.carousel.count <= 8:
-                for index in range(self.carousel.count):
-                    x = 560 + index * 14
-                    fill = (
-                        self.WHITE
-                        if index == self.carousel.selected_index
-                        else "#587daa"
-                    )
-                    self.canvas.create_oval(
-                        x, 25, x + 7, 32, fill=fill, outline=""
-                    )
-            else:
-                self.canvas.create_text(
-                    610,
-                    28,
-                    text=(
-                        f"{self.carousel.selected_index + 1} / "
-                        f"{self.carousel.count}"
-                    ),
-                    fill=self.WHITE,
-                    font=("Arial", 10, "bold"),
-                )
-        self._draw_face()
-
-    def _draw_face(self) -> None:
-        left, top, right, bottom = self.FACE_BOUNDS
-        glow = "#ffe36e" if self.speaking_key else self.WHITE
-        self.canvas.create_rectangle(
-            left, top, right, bottom, fill="#65c6a6", outline=glow, width=3,
-        )
-        try:
-            face = self.face_provider()
-            if face is not None:
-                resized = face.convert("RGB").resize((78, 39), Image.Resampling.LANCZOS)
-                self._face_image = ImageTk.PhotoImage(resized)
-                self.canvas.create_image(747, 29, image=self._face_image)
-                return
-        except (tk.TclError, ValueError, AttributeError):
-            pass
-        self.canvas.create_oval(722, 17, 731, 26, fill=self.NAVY, outline="")
-        self.canvas.create_oval(763, 17, 772, 26, fill=self.NAVY, outline="")
-        mouth_y = 38 + (self.phase % 2 if self.speaking_key else 0)
-        self.canvas.create_arc(
-            738, mouth_y - 8, 757, mouth_y + 4,
-            start=190, extent=160, style=tk.ARC, outline=self.NAVY, width=2,
-        )
-
-    def _draw_empty(self) -> None:
-        self.canvas.create_text(
-            400, 205, text="WHERE SHOULD BMO CHECK?", fill=self.NAVY,
-            font=("Arial Rounded MT Bold", 24, "bold"),
-        )
-        self.canvas.create_text(
-            400, 255,
-            text="Add a location to config/weather.json.", fill=self.MUTED,
-            font=("Arial", 14, "bold"),
-        )
-
-    def _draw_loading(self, error: str | None) -> None:
-        if error:
-            self.canvas.create_text(
-                400, 220, width=650, text=error, fill=self.NAVY,
-                font=("Arial Rounded MT Bold", 18, "bold"),
-            )
-            self.canvas.create_text(
-                400, 275, text="Tap here to try again", fill=self.BLUE,
-                font=("Arial", 13, "bold"),
-            )
-            self._hit_targets.append(((120, 160, 680, 315), "retry"))
-            return
-        bounce = int(8 * math.sin(self.phase / 3)) if self.animations else 0
-        self.canvas.create_text(
-            400, 210 + bounce, text="☁", fill=self.WHITE,
-            font=("Arial", 70, "bold"),
-        )
-        self.canvas.create_text(
-            400, 300, text="BMO IS CHECKING THE SKY...", fill=self.NAVY,
-            font=("Arial Rounded MT Bold", 18, "bold"),
-        )
-
-    def _season(self, snapshot: WeatherSnapshot) -> WeatherSeason:
-        month = datetime.now().month
-        if len(snapshot.observed_at) >= 7:
-            try:
-                month = int(snapshot.observed_at[5:7])
-            except ValueError:
-                pass
-        return season_for(
-            snapshot.location.latitude,
-            month,
-            self.season_style,
-        )
-
-    def _draw_season(self, snapshot: WeatherSnapshot) -> None:
-        season = self._season(snapshot)
-        if snapshot.is_day is False:
-            for x, y in ((48, 84), (142, 105), (245, 78), (327, 111)):
-                self.canvas.create_text(x, y, text="✦", fill="#fff6a8", font=("Arial", 13))
-            self.canvas.create_oval(275, 81, 321, 127, fill="#fff4ad", outline="")
-            self.canvas.create_oval(291, 72, 330, 113, fill=self._background(snapshot), outline="")
-        if season is WeatherSeason.SPRING:
-            for x, color in ((38, "#ff82a9"), (110, "#a473db"), (300, "#ffb43b")):
-                self.canvas.create_text(x, 249, text="✿", fill=color, font=("Arial", 19, "bold"))
-        elif season is WeatherSeason.SUMMER:
-            self.canvas.create_line(20, 254, 344, 254, fill="#58a940", width=7)
-        elif season is WeatherSeason.FALL:
-            drift = self.phase * 3 % 50 if self.animations else 0
-            for x, y, color in ((35, 90, "#e5682e"), (105, 235, "#d99924"), (270, 210, "#b94b2c")):
-                self.canvas.create_oval(x + drift, y, x + 13 + drift, y + 8, fill=color, outline="")
-        elif season is WeatherSeason.WINTER:
-            self.canvas.create_line(22, 257, 45, 205, 64, 257, fill="#725c57", width=4, smooth=True)
-
-    def _draw_condition_scene(self, snapshot: WeatherSnapshot) -> None:
-        self._hit_targets.append((self.CONDITION_BOUNDS, "condition"))
-        condition = condition_for_code(snapshot.weather_code)
-        is_day = snapshot.is_day is not False
-        bob = int(5 * math.sin(self.phase / 3)) if self.animations else 0
-        if is_day and condition in {
-            WeatherCondition.CLEAR,
-            WeatherCondition.MOSTLY_CLEAR,
-            WeatherCondition.PARTLY_CLOUDY,
-        }:
-            self._draw_sun(102, 144 + bob)
-        if condition in {
-            WeatherCondition.MOSTLY_CLEAR, WeatherCondition.PARTLY_CLOUDY,
-            WeatherCondition.CLOUDY,
-            WeatherCondition.OVERCAST, WeatherCondition.FOG,
-            WeatherCondition.DRIZZLE, WeatherCondition.RAIN,
-            WeatherCondition.HEAVY_RAIN, WeatherCondition.FREEZING_RAIN,
-            WeatherCondition.SLEET,
-            WeatherCondition.SNOW, WeatherCondition.HEAVY_SNOW,
-            WeatherCondition.THUNDERSTORM, WeatherCondition.HAIL,
-            WeatherCondition.MIXED,
-        }:
-            count = 2 if condition is WeatherCondition.OVERCAST else 1
-            for cloud_index in range(count):
-                self._draw_cloud(158 + cloud_index * 65, 140 + bob + cloud_index * 18)
-        if condition is WeatherCondition.FOG:
-            for y in (178, 198, 218):
-                self.canvas.create_line(74, y, 292, y, fill="#91a7b6", width=6)
-        elif condition in {WeatherCondition.DRIZZLE, WeatherCondition.RAIN, WeatherCondition.HEAVY_RAIN, WeatherCondition.FREEZING_RAIN, WeatherCondition.SLEET}:
-            amount = 4 if condition is WeatherCondition.DRIZZLE else 8
-            color = "#66bfff" if condition is not WeatherCondition.FREEZING_RAIN else "#8a9fff"
-            for index in range(amount):
-                x = 105 + index * 27 + (self.phase * 4 % 18 if self.animations else 0)
-                self.canvas.create_line(x, 178, x - 5, 202, fill=color, width=3)
-                if condition is WeatherCondition.SLEET and index % 2 == 0:
-                    self.canvas.create_oval(x - 8, 205, x + 1, 214, fill=self.WHITE, outline="#9fb9ca")
-        elif condition in {WeatherCondition.SNOW, WeatherCondition.HEAVY_SNOW}:
-            amount = 10 if condition is WeatherCondition.HEAVY_SNOW else 6
-            for index in range(amount):
-                x = 92 + index * 34
-                y = 180 + ((index * 17 + self.phase * 5) % 62 if self.animations else index % 3 * 20)
-                self.canvas.create_text(x, y, text="✻", fill=self.WHITE, font=("Arial", 16, "bold"))
-        elif condition in {WeatherCondition.THUNDERSTORM, WeatherCondition.HAIL}:
-            self.canvas.create_polygon(190, 172, 169, 210, 190, 205, 172, 239, 222, 190, 198, 194, fill="#ffd93d", outline="")
-            if condition is WeatherCondition.HAIL:
-                for x in (112, 148, 244, 278):
-                    self.canvas.create_oval(x, 196, x + 12, 208, fill=self.WHITE, outline="#9fb9ca")
-        if snapshot.wind_gusts is not None and self._wind_is_high(snapshot):
-            for y in (93, 116, 232):
-                self.canvas.create_arc(40, y, 118, y + 25, start=200, extent=230, style=tk.ARC, outline="#5794bc", width=3)
-
-    def _wind_is_high(self, snapshot: WeatherSnapshot) -> bool:
-        if snapshot.wind_gusts is None:
-            return False
-        return snapshot.wind_gusts >= (30 if snapshot.imperial else 48)
-
-    def _draw_sun(self, x: int, y: int) -> None:
-        for angle in range(0, 360, 45):
-            radians = math.radians(angle)
-            self.canvas.create_line(
-                x + math.cos(radians) * 43, y + math.sin(radians) * 43,
-                x + math.cos(radians) * 60, y + math.sin(radians) * 60,
-                fill="#ffbd2f", width=5,
-            )
-        self.canvas.create_oval(x - 38, y - 38, x + 38, y + 38, fill="#ffd84c", outline="#f0a926", width=3)
-        self.canvas.create_oval(x - 15, y - 8, x - 8, y - 1, fill=self.NAVY, outline="")
-        self.canvas.create_oval(x + 8, y - 8, x + 15, y - 1, fill=self.NAVY, outline="")
-        self.canvas.create_arc(x - 14, y - 1, x + 14, y + 20, start=190, extent=160, style=tk.ARC, outline=self.NAVY, width=2)
-
-    def _draw_cloud(self, x: int, y: int) -> None:
-        fill = "#d0d9e4"
-        self.canvas.create_oval(x - 80, y - 12, x + 70, y + 45, fill=fill, outline="")
-        self.canvas.create_oval(x - 52, y - 48, x + 17, y + 35, fill=fill, outline="")
-        self.canvas.create_oval(x - 4, y - 34, x + 59, y + 38, fill=fill, outline="")
-
-    def _draw_current(self, snapshot: WeatherSnapshot) -> None:
-        self._hit_targets.append((self.TEMPERATURE_BOUNDS, "temperature"))
-        color = self.WHITE if snapshot.is_day is False else self.NAVY
-        self.canvas.create_text(
-            524, 112, text=f"{round(snapshot.temperature)}°",
-            fill=color, font=("Arial Rounded MT Bold", 63, "bold"),
-        )
-        description = WEATHER_DESCRIPTIONS.get(snapshot.weather_code, "mixed weather")
-        self.canvas.create_text(
-            524, 160, text=description.upper(), fill=color,
-            font=("Arial Rounded MT Bold", 17, "bold"),
-        )
-        badges = []
-        temperature_f = snapshot.temperature if snapshot.imperial else snapshot.temperature * 9 / 5 + 32
-        if temperature_f >= 100:
-            badges.append("VERY HOT")
-        elif temperature_f >= 90:
-            badges.append("HOT")
-        elif temperature_f <= 32:
-            badges.append("FREEZING")
-        elif temperature_f < 50:
-            badges.append("COLD")
-        if self._wind_is_high(snapshot):
-            badges.append("HIGH WIND")
-        if snapshot.humidity is not None and snapshot.humidity >= 80:
-            badges.append("HUMID")
-        if badges:
-            self.canvas.create_text(
-                524, 196, text="  •  ".join(badges), fill="#b32834",
-                font=("Arial", 11, "bold"),
-            )
-
-    def _draw_alert(self, alert: WeatherAlert) -> None:
-        self.canvas.create_rectangle(*self.ALERT_BOUNDS, fill=self.ALERT, outline="")
-        self.canvas.create_text(
-            400, 255, width=730, text=f"⚠  {alert.event.upper()} — TAP FOR SAFETY INFO",
-            fill=self.WHITE, font=("Arial Rounded MT Bold", 12, "bold"),
-        )
-        self._hit_targets.append((self.ALERT_BOUNDS, "alert"))
-
-    def _draw_cards(self, snapshot: WeatherSnapshot) -> None:
-        cards = (
-            (self.FEELS_BOUNDS, "feels", "FEELS LIKE", f"{round(snapshot.apparent_temperature)}°", "BODY WEATHER"),
-            (self.HIGH_LOW_BOUNDS, "high_low", "HIGH  •  LOW", f"{round(snapshot.high)}°  •  {round(snapshot.low)}°", "TODAY'S RANGE"),
-            (self.RAIN_BOUNDS, "rain", "RAIN TODAY", f"{round(snapshot.precipitation_probability_max)}%", "HIGHEST HOURLY"),
-        )
-        for bounds, key, title, value, helper in cards:
-            left, top, right, bottom = bounds
-            outline = "#ffbd2f" if self.speaking_key == key else "#9cc9df"
-            self.canvas.create_rectangle(left, top, right, bottom, fill=self.CARD, outline=outline, width=4, stipple="gray50" if not self.announcements_available else "")
-            self.canvas.create_text((left + right) // 2, top + 17, text=title, fill=self.MUTED, font=("Arial", 10, "bold"))
-            self.canvas.create_text((left + right) // 2, top + 49, text=value, fill=self.NAVY, font=("Arial Rounded MT Bold", 24, "bold"))
-            self.canvas.create_text((left + right) // 2, bottom - 10, text=helper, fill=self.MUTED, font=("Arial", 8, "bold"))
-            self._hit_targets.append((bounds, key))
-
-    def _draw_hourly(self, snapshot: WeatherSnapshot) -> None:
-        hours = snapshot.hourly[:4]
-        if not hours:
-            return
-        width = 184
-        for index, hour in enumerate(hours):
-            left = 18 + index * 194
-            bounds = (left, 375, left + width, 437)
-            time_label = hour.time.split("T")[-1][:5]
-            chance = "" if hour.precipitation_probability is None else f"  ☂ {round(hour.precipitation_probability)}%"
-            self.canvas.create_rectangle(*bounds, fill="#ffffff", outline="#b8d9e8", width=2)
-            self.canvas.create_text(left + 15, 395, anchor="w", text=time_label, fill=self.MUTED, font=("Arial", 9, "bold"))
-            self.canvas.create_text(left + 15, 419, anchor="w", text=f"{round(hour.temperature)}°{chance}", fill=self.NAVY, font=("Arial Rounded MT Bold", 14, "bold"))
-            key = f"hour:{index}"
-            self._hour_targets[key] = index
-            self._hit_targets.append((bounds, key))
-
-    def _draw_subtitle(self) -> None:
-        fill = self.WHITE if self.current_data and self.current_data.snapshot.is_day is False else self.NAVY
-        text = self.subtitle
-        if not self.announcements_available:
-            text = "BMO speech is unavailable, but every weather card still works."
-        self.canvas.create_text(
-            400, 462, width=760, text=text, fill=fill,
-            font=("Arial", 10, "bold"),
-        )
-
-    @staticmethod
-    def _event_point(event: tk.Event) -> tuple[int, int]:
-        return int(event.x), int(event.y)
-
-    def _handle_press(self, event: tk.Event) -> str:
-        self.gesture.press(*self._event_point(event))
-        return "break"
-
-    def _handle_release(self, event: tk.Event) -> str:
-        point = self._event_point(event)
-        gesture = self.gesture.release(*point)
-        if gesture is GestureKind.SWIPE_LEFT and self.carousel is not None:
-            self.carousel.swipe_left()
-            self._location_changed()
-        elif gesture is GestureKind.SWIPE_RIGHT and self.carousel is not None:
-            self.carousel.swipe_right()
-            self._location_changed()
-        elif gesture is GestureKind.TAP:
-            if self._contains(self.FACE_BOUNDS, point):
-                self.close()
-            else:
-                self._tap(point)
-        return "break"
-
-    def _location_changed(self) -> None:
-        self.cancel_announcements()
-        self.speaking_key = None
-        self.subtitle = "BMO is checking this sky!"
-        self._draw()
-        self._announce_current_warning()
-        self._load_current()
-
-    @staticmethod
-    def _contains(bounds: tuple[int, int, int, int], point: tuple[int, int]) -> bool:
-        left, top, right, bottom = bounds
-        return left <= point[0] <= right and top <= point[1] <= bottom
-
-    def _tap(self, point: tuple[int, int]) -> None:
-        for bounds, key in reversed(self._hit_targets):
-            if not self._contains(bounds, point):
-                continue
-            if key == "retry":
-                location = self.current_location
-                if location is not None:
-                    self._errors.pop(location.id, None)
-                    self._load_current()
-                    self._draw()
-                return
-            self._speak(key)
-            return
 
     def _speak(self, key: str) -> None:
         data = self.current_data
@@ -663,27 +1041,33 @@ class WeatherApp:
             text = narrate_alert(data.alerts[0])
         elif key in self._hour_targets:
             text = narrate_hour(
-                snapshot.hourly[self._hour_targets[key]],
+                self._hour_targets[key],
                 imperial=snapshot.imperial,
             )
         else:
             return
         self.speaking_key = key
         self.subtitle = text
-        self._draw()
+        self._publish_state()
 
         def completed() -> None:
-            if self.closed or self.speaking_key != key:
-                return
-            self.speaking_key = None
-            self._draw()
+            try:
+                self.root.after(0, lambda: self._speech_completed(key))
+            except tk.TclError:
+                pass
 
         if not self.announce(text, completed):
             self.speaking_key = None
-            self._draw()
+            self._publish_state()
+
+    def _speech_completed(self, key: str) -> None:
+        if self.closed or self.speaking_key != key:
+            return
+        self.speaking_key = None
+        self._publish_state()
 
     def close(self) -> None:
-        """Cancel view-owned callbacks and speech, then reveal the menu."""
+        """Release browser, loopback server, callbacks, and scoped speech."""
         if self.closed:
             return
         self.closed = True
@@ -694,5 +1078,18 @@ class WeatherApp:
             except tk.TclError:
                 pass
         self._after_ids.clear()
-        self.canvas.destroy()
+        try:
+            self._browser.close()
+        except Exception as exc:
+            print(
+                f"[WEATHER] Browser cleanup failed: {type(exc).__name__}",
+                flush=True,
+            )
+        try:
+            self._bridge.close()
+        except Exception as exc:
+            print(
+                f"[WEATHER] Local bridge cleanup failed: {type(exc).__name__}",
+                flush=True,
+            )
         self.on_close()

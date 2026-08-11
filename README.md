@@ -38,8 +38,10 @@ be-more-agent/
 ├── config/                    # Split user and extension configuration
 │   ├── example.settings.json  # Tracked user-settings example
 │   ├── example.features.json  # Tracked feature/mode example
+│   ├── example.weather.json   # Tracked weather-view example
 │   ├── settings.json          # Local user settings (ignored by Git)
-│   └── features.json          # Local feature/mode wiring (ignored by Git)
+│   ├── features.json          # Local feature/mode wiring (ignored by Git)
+│   └── weather.json           # Local locations/weather UI settings (ignored)
 ├── chat_memory.json           # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -89,7 +91,8 @@ chmod +x setup.sh
 ./setup.sh
 ```
 *The setup script supports 64-bit Raspberry Pi OS. It installs the required
-system libraries, creates local folders, builds Whisper.cpp, downloads the
+system libraries and Chromium, creates local folders, builds Whisper.cpp,
+downloads the
 `base.en` speech model and Piper voices, creates the Python environment, pulls
 the Ollama models, and installs the default wake-word model. It is safe to run
 again and reuses valid existing downloads.*
@@ -176,8 +179,12 @@ shown in `config/example.features.json`:
   routing.
 - The weather feature contributes `graphics/Icons/weather.png` by reference
   and keeps the existing spoken “what is the weather” action. Its full-screen
-  child-friendly view draws animated sun, cloud, fog, rain, sleet, snow,
-  thunder, hail, wind, season, and day/night layers in code. Temperature,
+  child-friendly view renders weather-owned HTML/CSS/SVG through a dedicated
+  Chromium kiosk process. It animates sun, moon phases, cloud, fog, rain,
+  sleet, snow, thunder, hail, wind, seasonal scenery, and day/night layers.
+  Chromium uses a temporary profile and a tokenized loopback-only bridge;
+  closing Weather stops both resources and reveals the unchanged Tk menu.
+  Temperature,
   feels-like, high/low, precipitation chance, condition, alert, and hourly
   cards are tappable BMO announcements. Swiping left or right wraps through
   the ordered locations in `config/weather.json`; `show_in_menu: false` hides
@@ -185,7 +192,10 @@ shown in `config/example.features.json`:
   come from the National Weather Service and fail independently of the normal
   forecast. BMO does not infer a location from the device IP address.
 - `config/weather.json` supports `units`, `default_location`, `season_style`,
-  `animations`, `alerts`, and `locations`. A location may provide coordinates
+  `animations`, `debug`, `alerts`, and `locations`. Set `debug` to `true` to
+  show a weather-owned preview panel covering every supported condition,
+  season, time period, and basic moon phase; **Live weather** exits the preview
+  without changing forecast data. A location may provide coordinates
   to avoid geocoding or only a place name to resolve at lookup time. If the
   file is missing or malformed, weather safely falls back to the legacy
   `location` and `weather_units` settings when available. The local weather
