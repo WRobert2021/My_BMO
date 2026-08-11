@@ -42,6 +42,13 @@ from bmo.weather import WEATHER_DESCRIPTIONS, HourlyWeather, WeatherSnapshot
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
 WEB_ASSET = Path(__file__).with_name("weather_web") / "index.html"
+FACE_ASSET_ROOT = Path(__file__).resolve().parents[2] / "faces"
+FACE_ASSETS = {
+    "idle": Path("idle") / "idle 01.png",
+    "speaking-1": Path("speaking") / "speaking 01.png",
+    "speaking-2": Path("speaking") / "speaking 02.png",
+    "speaking-3": Path("speaking") / "speaking 03.png",
+}
 MOON_PHASES = (
     "new",
     "waxing_crescent",
@@ -454,11 +461,16 @@ class WeatherWebBridge:
         actions: queue.Queue[dict[str, Any]],
         *,
         asset_path: Path = WEB_ASSET,
+        face_asset_root: Path = FACE_ASSET_ROOT,
     ) -> None:
         self.actions = actions
         self.token = secrets.token_urlsafe(32)
         self.nonce = secrets.token_urlsafe(24)
         self.asset_path = asset_path
+        self.face_assets = {
+            name: face_asset_root / relative_path
+            for name, relative_path in FACE_ASSETS.items()
+        }
         self._state_lock = threading.Lock()
         self._state: dict[str, Any] = {"status": "loading", "debug": False}
         self._closed = False
@@ -499,6 +511,31 @@ class WeatherWebBridge:
                         HTTPStatus.OK,
                         content.encode("utf-8"),
                         "text/html; charset=utf-8",
+                    )
+                    return
+                face_prefix = f"/{bridge.token}/face/"
+                if path.startswith(face_prefix):
+                    face_name = path.removeprefix(face_prefix)
+                    face_path = bridge.face_asset(face_name)
+                    if face_path is None:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {"error": "face not found"},
+                        )
+                        return
+                    try:
+                        face_content = face_path.read_bytes()
+                    except OSError:
+                        self._send_json(
+                            HTTPStatus.NOT_FOUND,
+                            {"error": "face unavailable"},
+                        )
+                        return
+                    self._send(
+                        HTTPStatus.OK,
+                        face_content,
+                        "image/png",
+                        cache_control="private, max-age=3600, immutable",
                     )
                     return
                 if path == f"/{bridge.token}/state":
@@ -559,19 +596,22 @@ class WeatherWebBridge:
                 status: HTTPStatus,
                 body: bytes,
                 content_type: str,
+                *,
+                cache_control: str = "no-store",
             ) -> None:
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(body)))
-                self.send_header("Cache-Control", "no-store")
+                self.send_header("Cache-Control", cache_control)
                 self.send_header("Referrer-Policy", "no-referrer")
+                self.send_header("Cross-Origin-Resource-Policy", "same-origin")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header(
                     "Content-Security-Policy",
                     "default-src 'none'; "
                     f"script-src 'nonce-{bridge.nonce}'; "
-                    "style-src 'unsafe-inline'; img-src data:; "
+                    "style-src 'unsafe-inline'; img-src 'self' data:; "
                     "connect-src 'self'; frame-ancestors 'none'; "
                     "base-uri 'none'; form-action 'none'",
                 )
@@ -582,6 +622,10 @@ class WeatherWebBridge:
                 del format, args
 
         return Handler
+
+    def face_asset(self, name: str) -> Path | None:
+        """Resolve only one of the explicitly exposed canonical face frames."""
+        return self.face_assets.get(name)
 
     @staticmethod
     def _validated_action(payload: object) -> dict[str, Any]:
@@ -763,7 +807,9 @@ class WeatherApp:
         browser_launcher: BrowserLauncher = ChromiumSession,
         bridge_factory: BridgeFactory = WeatherWebBridge,
     ) -> None:
-        del face_provider  # The approved mockup owns its vector BMO face.
+        # Weather uses the same canonical idle/speaking assets as the main face.
+        # Keep the provider in the feature contract for host compatibility.
+        del face_provider
         self.root = root
         self.locations = tuple(locations)
         self.page_provider = page_provider

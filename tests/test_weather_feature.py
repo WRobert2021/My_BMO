@@ -736,8 +736,31 @@ class WeatherWebRendererTests(unittest.TestCase):
         ):
             self.assertIn(f'data-value="{condition}"', asset)
         self.assertIn("function hourIconSvg", asset)
+        self.assertIn('data-bmo-face-image src="face/idle"', asset)
+        self.assertIn("new URL('face/speaking-3'", asset)
+        self.assertIn("setBmoSpeaking(Boolean(live && data.speaking))", asset)
         self.assertNotIn("☀️", asset)
         self.assertNotIn("🌧", asset)
+
+    def test_loopback_bridge_exposes_only_named_core_face_frames(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            face_root = Path(temp_dir)
+            idle = face_root / "idle" / "idle 01.png"
+            idle.parent.mkdir()
+            idle.write_bytes(b"canonical-idle-frame")
+            bridge = WeatherWebBridge.__new__(WeatherWebBridge)
+            bridge.face_assets = {
+                "idle": idle,
+                "speaking-1": face_root / "speaking" / "speaking 01.png",
+            }
+
+            self.assertEqual(bridge.face_asset("idle"), idle)
+            self.assertEqual(
+                bridge.face_asset("idle").read_bytes(),  # type: ignore[union-attr]
+                b"canonical-idle-frame",
+            )
+            self.assertIsNone(bridge.face_asset("../../config/settings.json"))
+            self.assertIsNone(bridge.face_asset("not-a-frame"))
 
     def test_loopback_action_validation_rejects_unbounded_or_unknown_input(self) -> None:
         self.assertEqual(

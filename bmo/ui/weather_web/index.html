@@ -172,36 +172,47 @@
     #weather-design-draft .wm-page-dot:first-child { background: #2f665c; }
     #weather-design-draft .wm-bmo-face {
       position: absolute;
-      top: 1.1cqw;
+      top: .84cqw;
       right: 1.8cqw;
-      width: 12.6cqw;
-      height: 6.8cqw;
+      width: 11.5cqw;
+      height: 6.9cqw;
       border: .65cqw solid #153f39;
-      border-radius: 2cqw;
-      background: #98deca;
+      border-radius: 1.4cqw;
+      background: #b0fbc3;
       box-shadow: 0 .45cqw 0 rgba(20, 61, 55, .14);
       padding: 0;
+      overflow: hidden;
       cursor: pointer;
+    }
+    #weather-design-draft .wm-bmo-face-image {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      pointer-events: none;
     }
     #weather-design-draft .wm-bmo-eye {
       position: absolute;
-      top: 1.55cqw;
-      width: 1.35cqw;
-      height: 1.35cqw;
-      border-radius: 50%;
-      background: #153f39;
-      animation: wm-blink 5s infinite;
+      top: 1.75cqw;
+      width: 2cqw;
+      height: 1.05cqw;
+      border: .45cqw solid #000;
+      border-top: 0;
+      border-radius: 0 0 50% 50%;
     }
-    #weather-design-draft .wm-bmo-eye-left { left: 3.1cqw; }
-    #weather-design-draft .wm-bmo-eye-right { right: 3.1cqw; }
+    #weather-design-draft .wm-bmo-eye-left { left: 2.15cqw; }
+    #weather-design-draft .wm-bmo-eye-right { right: 2.15cqw; }
     #weather-design-draft .wm-bmo-mouth {
       position: absolute;
       left: 50%;
-      bottom: 1.15cqw;
-      width: 3.2cqw;
-      height: 1.15cqw;
-      border-bottom: .45cqw solid #153f39;
-      border-radius: 0 0 50% 50%;
+      bottom: 1.55cqw;
+      width: 2.8cqw;
+      height: 0;
+      border-bottom: .45cqw solid #000;
+      border-radius: 1cqw;
       transform: translateX(-50%);
     }
     #weather-design-draft .wm-stage {
@@ -699,6 +710,7 @@
         <div class="wm-greeting" data-weather-greeting>Good morning! Here is today's sky.</div>
         <div class="wm-page-dots" data-page-dots aria-hidden="true"></div>
         <button class="wm-bmo-face" type="button" data-action="close" aria-label="Close weather">
+          <img class="wm-bmo-face-image" data-bmo-face-image src="face/idle" alt="" draggable="false">
           <span class="wm-bmo-eye wm-bmo-eye-left"></span>
           <span class="wm-bmo-eye wm-bmo-eye-right"></span>
           <span class="wm-bmo-mouth"></span>
@@ -776,9 +788,50 @@
       const loading = root.querySelector('[data-loading]');
       const loadingMessage = root.querySelector('[data-loading-message]');
       const debugPanel = root.querySelector('.wm-draft-controls');
+      const bmoFace = root.querySelector('.wm-bmo-face');
+      const bmoFaceImage = root.querySelector('[data-bmo-face-image]');
+      const faceUrls = {
+        idle: new URL('face/idle', window.location.href).href,
+        speaking: [
+          new URL('face/speaking-1', window.location.href).href,
+          new URL('face/speaking-2', window.location.href).href,
+          new URL('face/speaking-3', window.location.href).href,
+          new URL('face/speaking-2', window.location.href).href
+        ]
+      };
+      for (const source of [faceUrls.idle, ...faceUrls.speaking]) {
+        const image = new Image();
+        image.src = source;
+      }
       const state = { condition: 'sunny', season: 'summer', time: 'morning', phase: 'full' };
       let latestState = null;
       let debugOverride = false;
+      let bmoSpeaking = false;
+      let bmoSpeakingFrame = 0;
+
+      function showBmoFace(source) {
+        if (bmoFaceImage.src !== source) bmoFaceImage.src = source;
+      }
+
+      function setBmoSpeaking(speaking) {
+        if (bmoSpeaking === speaking) return;
+        bmoSpeaking = speaking;
+        bmoSpeakingFrame = 0;
+        bmoFace.dataset.speaking = String(speaking);
+        showBmoFace(speaking ? faceUrls.speaking[0] : faceUrls.idle);
+      }
+
+      bmoFaceImage.addEventListener('load', () => {
+        bmoFaceImage.style.display = 'block';
+      });
+      bmoFaceImage.addEventListener('error', () => {
+        bmoFaceImage.style.display = 'none';
+      });
+      window.setInterval(() => {
+        if (!bmoSpeaking || latestState?.animations === false) return;
+        bmoSpeakingFrame = (bmoSpeakingFrame + 1) % faceUrls.speaking.length;
+        showBmoFace(faceUrls.speaking[bmoSpeakingFrame]);
+      }, 120);
 
       const weatherStates = {
         sunny: { name:'Sunny', temp:88, feels:92, high:93, low:75, rain:5, modifier:'Warm sunshine', speech:'The sun is smiling! Grab water and sunscreen.', icons:['sun','sun','partly','moon'], hours:[89,93,91,84] },
@@ -1068,6 +1121,7 @@
           const active = root.querySelector(`[data-action="${CSS.escape(data.speaking)}"]`);
           active?.classList.add('wm-speaking');
         }
+        setBmoSpeaking(Boolean(live && data.speaking));
         alertBanner.textContent = data.alert ? `⚠ BMO SAFETY ALERT — ${data.alert}` : '⚠ BMO SAFETY ALERT — GO WITH A GROWN-UP AND FOLLOW OFFICIAL INSTRUCTIONS';
         alertBanner.style.display = data.alert || state.condition === 'severe' ? 'block' : '';
         syncControls();

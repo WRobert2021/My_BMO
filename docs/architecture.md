@@ -147,7 +147,10 @@ humidity, and high gusts. Seasons affect only scenery—winter never implies
 snow. The 800×480 presentation uses weather-owned HTML, CSS, and inline SVG:
 layered seasonal ground, animated condition particles, childlike current and
 hourly icons, and locally calculated eight-phase moon art. Forecast cards use
-real alpha transparency. The hourly strip drops
+real alpha transparency. The close control reuses the canonical core idle and
+speaking face frames; it cycles the speaking frames only while weather-owned
+narration is active and falls back to a simple inline face if those optional
+images are unavailable. The hourly strip drops
 past local forecast points as the view remains open, and each cached location
 is refreshed on a bounded fifteen-minute interval so its remaining hours and
 day period advance without reopening the menu. All tap speech uses
