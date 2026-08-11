@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Callable
 
 from bmo.config import OLLAMA_OPTIONS
@@ -55,7 +54,7 @@ def infer_game_answer(
     user_text: str,
     chat_request: ChatRequest,
 ) -> str | None:
-    """Interpret a conversational game answer using a constrained local model."""
+    """Interpret a game response using only the four canonical answers."""
     response = chat_request(
         model=model,
         messages=[
@@ -64,7 +63,8 @@ def infer_game_answer(
                 "content": (
                     "Classify a response to a yes-or-no question. Return JSON "
                     'only: {"answer":"yes"}, {"answer":"no"}, '
-                    '{"answer":"maybe"}, or {"answer":"unknown"}.'
+                    '{"answer":"sometimes"}, or {"answer":"unknown"}. '
+                    "Use sometimes for qualified or conditional answers."
                 ),
             },
             {"role": "user", "content": user_text},
@@ -77,134 +77,57 @@ def infer_game_answer(
     if not isinstance(message, dict):
         return None
     data = extract_json_from_text(str(message.get("content") or ""))
-    answer = str((data or {}).get("answer") or "").lower().strip()
-    return answer if answer in {"yes", "no", "maybe", "unknown"} else None
+    answer = str((data or {}).get("answer") or "").casefold().strip()
+    # A stale local model may still emit the former aliases.  Normalize them
+    # here, while keeping the public classifier result canonical.
+    if answer in {"maybe", "often"}:
+        answer = "sometimes"
+    return answer if answer in {"yes", "no", "sometimes", "unknown"} else None
 
 
-def infer_game_candidates(
+def infer_game_guess(
     model: str,
-    history: list[dict[str, Any]],
-    semantic_keys: list[str],
+    history: list[dict[str, object]],
     chat_request: ChatRequest,
     *,
-    excluded_names: list[str] | None = None,
-    request_count: int = 30,
-    debug: bool = False,
-) -> list[dict[str, Any]]:
-    """Let the local model propose entities, never game-state decisions."""
-    asked_keys = [
-        str(turn.get("question_key") or "")
-        for turn in history
-        if not turn.get("was_guess")
-    ]
+    excluded_names: tuple[str, ...] = (),
+) -> str | None:
+    """Ask the local model for one best guess when the indexed pool is empty."""
+    history_json = json.dumps(history, ensure_ascii=False)
+    excluded_json = json.dumps(tuple(excluded_names), ensure_ascii=False)
     response = chat_request(
         model=model,
         messages=[
             {
                 "role": "system",
                 "content": (
-                    f"Suggest {request_count} diverse, distinct entities that "
-                    "fit this Twenty Questions history. Include plausible real "
-                    "objects, infrastructure, tools, media, concepts, fictional "
-                    "entities, people, places, events, and substances whenever "
-                    "the answers allow them. Do not choose a question or winner. "
-                    "Every candidate MUST include a trait value for every asked "
-                    "semantic key. Trait values may be yes, no, variable, or "
-                    "unknown. Use unknown only when genuinely uncertain. Return "
-                    "JSON as "
-                    '{"candidates":[{"name":"...", "entity_type":"...", '
-                    '"traits":{"physical":"yes"}}]}.'
+                    "You are making a fallback guess in a Twenty Questions game. "
+                    "Use the question-and-answer history to choose the single "
+                    "most likely object. Return JSON only in this exact shape: "
+                    '{"guess":"object name"}. Do not return an explanation, a '
+                    "list, or a question. Never repeat an excluded guess."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"Semantic keys: {', '.join(semantic_keys)}\n"
-                    f"Asked keys requiring values: {', '.join(asked_keys)}\n"
-                    f"Existing or rejected names to avoid: "
-                    f"{', '.join((excluded_names or [])[:120])}\n"
-                    f"Structured history:\n"
-                    f"{json.dumps(history, ensure_ascii=True)}"
+                    f"History: {history_json}\n"
+                    f"Excluded guesses: {excluded_json}"
                 ),
             },
         ],
         stream=False,
         format="json",
-        options={**OLLAMA_OPTIONS, "temperature": 0.2},
+        options={**OLLAMA_OPTIONS, "temperature": 0},
     )
     message = response.get("message")
     if not isinstance(message, dict):
-        return []
+        return None
     data = extract_json_from_text(str(message.get("content") or ""))
-    raw_candidates = (data or {}).get("candidates")
-    if not isinstance(raw_candidates, list):
-        if debug:
-            print(
-                "[20 QUESTIONS DEBUG] Expansion response had no candidates list.",
-                flush=True,
-            )
-        return []
-    allowed = set(semantic_keys)
-    excluded = {
-        re.sub(r"^(?:a|an|the)\s+", "", name.casefold().strip())
-        for name in (excluded_names or [])
-    }
-    candidates = []
-    rejection_reasons: list[str] = []
-    for item in raw_candidates[:50]:
-        if not isinstance(item, dict):
-            rejection_reasons.append("item was not an object")
-            continue
-        name = str(item.get("name") or "").strip()
-        if not name or len(name) > 80:
-            rejection_reasons.append("missing or overlong name")
-            continue
-        canonical = re.sub(
-            r"^(?:a|an|the)\s+",
-            "",
-            name.casefold(),
-        )
-        if canonical in excluded:
-            rejection_reasons.append(f"{name}: excluded duplicate")
-            continue
-        raw_traits = item.get("traits")
-        if not isinstance(raw_traits, dict):
-            rejection_reasons.append(f"{name}: traits were not an object")
-            continue
-        traits = {}
-        for key, value in raw_traits.items():
-            if key not in allowed:
-                continue
-            if isinstance(value, str):
-                state = value.lower().strip()
-                if state in {"yes", "no", "variable", "maybe", "unknown"}:
-                    traits[key] = state
-            elif isinstance(value, (int, float)):
-                traits[key] = min(max(float(value), 0.02), 0.98)
-        missing = set(asked_keys) - traits.keys()
-        if missing:
-            rejection_reasons.append(
-                f"{name}: missing asked traits {sorted(missing)}"
-            )
-            continue
-        candidates.append(
-            {
-                "name": name,
-                "entity_type": str(
-                    item.get("entity_type") or "provisional"
-                )[:40],
-                "traits": traits,
-            }
-        )
-    if debug:
-        print(
-            f"[20 QUESTIONS DEBUG] Expansion returned={len(raw_candidates)}, "
-            f"validated={len(candidates)}, rejected={len(rejection_reasons)}",
-            flush=True,
-        )
-        for reason in rejection_reasons:
-            print(
-                f"[20 QUESTIONS DEBUG] Expansion parser rejection: {reason}",
-                flush=True,
-            )
-    return candidates
+    guess = str((data or {}).get("guess") or "").strip()
+    if not guess or guess.casefold() in {"unknown", "none", "null"}:
+        return None
+    excluded = {str(name).strip().casefold() for name in excluded_names}
+    if guess.casefold() in excluded:
+        return None
+    return " ".join(guess.split())

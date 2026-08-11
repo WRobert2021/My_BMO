@@ -33,7 +33,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.modes.loader` — standard-library module loading from `modes` config.
 - `bmo.modes.matching_game` — Pup Pairs lifecycle and registration adapter.
 - `bmo.modes.twenty_questions` — Twenty Questions lifecycle and registration
-  adapter over the existing Bayesian engine.
+  adapter over the indexed dataset engine in `bmo.twenty_questions`.
+- `bmo.twenty_questions_ui` — embedded touch canvas for menu-launched Twenty
+  Questions games.
 - `bmo.modes.games` — compatibility imports for the two built-in adapters.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
@@ -335,24 +337,49 @@ Each entry supports:
 - `enabled`: a JSON boolean, defaulting to `true`. A false entry is skipped
   before its module name or settings are validated and before import.
 - `settings`: an object, defaulting to `{}`. Per-mode values override shared
-  application settings. The Twenty Questions adapter accepts
-  `answer_wait_seconds` and `debug`, while retaining the historical top-level
-  setting names as fallbacks.
+  application settings. The Twenty Questions adapter accepts `show_in_menu`,
+  `answer_wait_seconds`, `debug`, `data_path`, `learned_path`,
+  `informative_question_limit`, and `total_prompt_limit`, while retaining the
+  historical top-level setting names as fallbacks for the timeout and debug
+  flag.
 
 An enabled mode module exposes `register(registry, context, settings)`. The
 context must be `ModeRuntimeContext`; it deliberately exposes approved services
 rather than the entire GUI coordinator. Registration order controls the first
-matching start request. The built-in modules construct the existing adapters,
-and the matching UI and Bayesian Twenty Questions engine remain responsible for
-their existing score, history, and learning behavior.
+matching start request. The built-in modules construct the existing adapters.
+Twenty Questions owns a lazily loaded immutable base JSONL catalog, an
+integer-bitset adaptive partition index, and its local learned JSONL overlay;
+it does not use Bayesian seed entities or model-generated candidate expansion.
 
 A mode can expose an optional `ModeMenuItem` with the same normalized name as
 the mode, a label, icon path, and synthetic start request. Registration validates
 and rolls back that metadata with the mode, so disabled, failed, and quarantined
 modes cannot leave stale menu pages. The matching-game adapter contributes the
-existing `graphics/icons/matching_game.png` asset by reference. Its
-`show_in_menu` setting defaults to `true`; setting it to `false` hides only the
-menu page and leaves voice matching enabled.
+existing `graphics/icons/matching_game.png` asset by reference. The Twenty
+Questions adapter contributes `graphics/icons/20_questions.png` by reference
+and starts its embedded touch canvas when selected. Spoken launches remain
+voice-driven. Both adapters' `show_in_menu` settings default to `true`; setting
+the Twenty Questions value to `false` hides only its menu entry and leaves
+voice launch enabled.
+
+Twenty Questions reads `data/20_questions/data.jsonl` only when a game starts.
+The strict loader keeps that base catalog immutable and builds an inverted
+integer-bitset index over its effective rows. Dataset `Often` and learned
+`Unknown` values are wildcards, while the player's only canonical responses
+are `yes`, `no`, `sometimes`, and `unknown`. Confirmed guesses and revealed
+objects are replayed into `data/20_questions/learned.jsonl` using an atomic
+JSONL replacement; a malformed learned file disables learning for that
+session without affecting the base game. A missing or corrupt base file ends
+only this mode and returns input ownership to the normal application loop. The
+menu-launched mode owns an embedded 800×480 canvas with BMO status, answer
+buttons, guess controls, a reveal field, and the last five answers. The canvas
+is created before the introduction is spoken and suspends voice capture while
+it is open, matching the existing game-mode UI lifecycle. The indexed game
+continues through 20 numbered question prompts after wrong guesses. An empty
+pool after question 19 triggers one local-model fallback guess; after question
+20, an unguessed object gives the player the round win and starts four bonus
+questions followed by one final guess, with the same fallback when the bonus
+pool is empty.
 
 The importable `tests.extension_modules.proof_mode` fixture proves the same
 configuration-only boundary for modes. Its enabled entry registers start

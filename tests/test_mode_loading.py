@@ -130,6 +130,58 @@ class ModeLoadingTests(unittest.TestCase):
         self.assertEqual(result.registry.names, ("matching_game",))
         self.assertEqual(result.registry.menu_items, ())
 
+    def test_twenty_questions_menu_item_is_visible_by_default(self) -> None:
+        result = load_mode_registry(
+            {
+                "modes": [
+                    {
+                        "module": "bmo.modes.twenty_questions",
+                        "settings": {},
+                    }
+                ]
+            },
+            context=make_context(),
+        )
+        self.assertEqual(result.failures, ())
+        self.assertEqual(result.registry.menu_items[0].name, "twenty_questions")
+        self.assertEqual(result.registry.menu_items[0].label, "20 Questions")
+        self.assertEqual(
+            result.registry.menu_items[0].icon_path.parts[-3:],
+            ("graphics", "icons", "20_questions.png"),
+        )
+
+    def test_twenty_questions_menu_can_be_hidden_without_disabling_voice(self) -> None:
+        result = load_mode_registry(
+            {
+                "modes": [
+                    {
+                        "module": "bmo.modes.twenty_questions",
+                        "settings": {"show_in_menu": False},
+                    }
+                ]
+            },
+            context=make_context(),
+        )
+        self.assertEqual(result.failures, ())
+        self.assertEqual(result.registry.menu_items, ())
+        self.assertIsNotNone(result.registry.match_start_request("Start 20 questions"))
+
+    def test_invalid_twenty_questions_menu_setting_is_isolated(self) -> None:
+        result = load_mode_registry(
+            {
+                "modes": [
+                    {
+                        "module": "bmo.modes.twenty_questions",
+                        "settings": {"show_in_menu": "false"},
+                    }
+                ]
+            },
+            context=make_context(),
+        )
+        self.assertEqual(result.registry.names, ())
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].stage, "register")
+
     def test_malformed_modes_list_reports_configuration_failure(self) -> None:
         result = load_mode_registry(
             {"modes": {"module": "not-a-list"}},

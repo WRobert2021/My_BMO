@@ -70,3 +70,5 @@ ehthumbs.db
 graphics/Paw Patrol
 /PLANNED_FEATURES.md
 /matching_game_scores.json
+/data/20_questions/data.jsonl
+/data/20_questions/learned.jsonl

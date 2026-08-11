@@ -11,8 +11,13 @@
       "module": "bmo.modes.twenty_questions",
       "enabled": true,
       "settings": {
+        "show_in_menu": true,
         "answer_wait_seconds": 12,
-        "debug": false
+        "debug": false,
+        "data_path": "data/20_questions/data.jsonl",
+        "learned_path": "data/20_questions/learned.jsonl",
+        "informative_question_limit": 20,
+        "total_prompt_limit": 30
       }
     }
   ],

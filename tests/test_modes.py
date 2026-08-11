@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -13,7 +14,8 @@ from unittest.mock import Mock
 from bmo.modes import InputPolicy, InputPolicyKind, ModeMenuItem, ModeRegistry
 from bmo.modes.games import MatchingGameMode, TwentyQuestionsMode
 from bmo.state import BotStates
-from bmo.twenty_questions import TwentyQuestionsGame
+from bmo.twenty_questions import OBJECT_NAME_KEY, TwentyQuestionsGame
+from bmo.twenty_questions_ui import GUESS_BUTTONS, PLAYER_BUTTONS
 
 
 class StubMode:
@@ -330,7 +332,21 @@ class TwentyQuestionsModeTests(unittest.TestCase):
     def setUp(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
-        self.game = TwentyQuestionsGame(Path(temp_dir.name) / "learned.json")
+        root = Path(temp_dir.name)
+        base_path = root / "data.jsonl"
+        questions = ("Is it warm?", "Is it round?")
+        rows = [
+            {OBJECT_NAME_KEY: "one", questions[0]: "Yes", questions[1]: "No"},
+            {OBJECT_NAME_KEY: "two", questions[0]: "No", questions[1]: "Yes"},
+        ]
+        base_path.write_text(
+            "".join(json.dumps(row) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+        self.game = TwentyQuestionsGame(
+            root / "learned.jsonl",
+            base_path=base_path,
+        )
         self.spoken: list[str] = []
         self.states: list[tuple[str, str]] = []
         self.wait_count = 0
@@ -355,7 +371,7 @@ class TwentyQuestionsModeTests(unittest.TestCase):
 
         self.assertTrue(self.game.active)
         self.assertTrue(self.mode.is_active())
-        self.assertIn("Think of anything", self.spoken[-1])
+        self.assertIn("Think of something", self.spoken[-1])
         self.assertEqual(self.wait_count, 1)
         self.assertEqual(self.states[0], (BotStates.THINKING, "Thinking..."))
         self.assertEqual(
@@ -407,6 +423,139 @@ class TwentyQuestionsModeTests(unittest.TestCase):
         self.assertEqual(too_short.input_policy().initial_silence_timeout, 3)
         self.assertEqual(too_long.input_policy().initial_silence_timeout, 30)
         self.assertEqual(invalid.input_policy().initial_silence_timeout, 12)
+
+    def test_llm_fallback_guess_is_used_when_question_nineteen_has_no_candidates(self) -> None:
+        calls: list[tuple[str, list[dict[str, object]]]] = []
+
+        def infer(model, history, chat, *, excluded_names):
+            del chat, excluded_names
+            calls.append((model, history))
+            return "model object"
+
+        self.mode.guess_inference = infer
+        self.game.start()
+        for _ in range(18):
+            self.game.accept_answer("unknown")
+            self.game.next_move()
+        self.game.candidate_pool = 0
+        self.game.accept_answer("unknown")
+
+        response = self.mode._next_move_with_llm()
+
+        self.assertEqual(response, "My guess is model object. Am I right?")
+        self.assertEqual(self.game.guess_name, "model object")
+        self.assertEqual(calls[0][0], "test-model")
+        self.assertTrue(calls[0][1])
+
+    def test_unavailable_llm_fallback_keeps_the_question_flow_alive(self) -> None:
+        self.mode.guess_inference = lambda *args, **kwargs: None
+        self.game.start()
+        for _ in range(18):
+            self.game.accept_answer("unknown")
+            self.game.next_move()
+        self.game.candidate_pool = 0
+        self.game.accept_answer("unknown")
+
+        response = self.mode._next_move_with_llm()
+
+        self.assertIn("Question 20.", response)
+        self.assertIsNotNone(self.game.current_question)
+        self.assertTrue(self.game.active)
+
+    def test_twenty_questions_menu_metadata_is_contributed_by_the_mode(self) -> None:
+        self.assertEqual(self.mode.menu_item.name, "twenty_questions")
+        self.assertEqual(self.mode.menu_item.label, "20 Questions")
+        self.assertEqual(self.mode.menu_item.icon_path.parts[-3:], (
+            "graphics", "icons", "20_questions.png"
+        ))
+        self.assertEqual(self.mode.menu_item.start_request, "Start Twenty Questions")
+
+    def test_missing_dataset_ends_only_this_mode(self) -> None:
+        missing_game = TwentyQuestionsGame(
+            learned_path=Path(self.game.loader.learned_path),
+            base_path=Path(self.game.loader.base_path).with_name("missing.jsonl"),
+        )
+        spoken: list[str] = []
+        mode = TwentyQuestionsMode(
+            missing_game,
+            text_model="test-model",
+            chat=Mock(),
+            speak_response=lambda text, _image: spoken.append(text),
+            wait_for_tts=Mock(),
+            set_state=Mock(),
+        )
+        mode.start("Twenty questions")
+        self.assertFalse(mode.is_active())
+        self.assertIn("can't load Twenty Questions", spoken[-1])
+
+    def test_touch_menu_launch_opens_embedded_gui_and_suspends_voice_input(self) -> None:
+        created: dict[str, Any] = {}
+        events: list[str] = []
+
+        class ImmediateMaster:
+            @staticmethod
+            def after(_delay: int, callback) -> str:
+                callback()
+                return "after-id"
+
+        class FakeQuestionsApp:
+            def __init__(self, root, **kwargs) -> None:
+                events.append("gui")
+                created["root"] = root
+                created.update(kwargs)
+                self.close_count = 0
+
+            def refresh(self, status=None) -> None:
+                created["last_status"] = status
+
+            def close(self) -> None:
+                self.close_count += 1
+
+        mode = TwentyQuestionsMode(
+            self.game,
+            master=ImmediateMaster(),
+            text_model="test-model",
+            chat=Mock(),
+            speak_response=lambda text, _image: events.append("speech"),
+            wait_for_tts=Mock(),
+            set_state=Mock(),
+            app_factory=FakeQuestionsApp,
+        )
+        mode.start("Start Twenty Questions")
+
+        self.assertIsInstance(created["game"], TwentyQuestionsGame)
+        self.assertEqual(events[:2], ["gui", "speech"])
+        self.assertEqual(mode.input_policy().kind, InputPolicyKind.SUSPENDED)
+        self.assertEqual(created["on_answer"]("yes"), None)
+        mode.close()
+        mode.close()
+        self.assertEqual(created["on_close"], mode._handle_ui_close)
+
+    def test_spoken_launch_remains_voice_driven_without_gui(self) -> None:
+        app_factory = Mock()
+        mode = TwentyQuestionsMode(
+            self.game,
+            master=Mock(),
+            text_model="test-model",
+            chat=Mock(),
+            speak_response=Mock(),
+            wait_for_tts=Mock(),
+            set_state=Mock(),
+            app_factory=app_factory,
+        )
+        mode.start("Twenty questions")
+        app_factory.assert_not_called()
+        self.assertEqual(mode.input_policy().kind, InputPolicyKind.CONTINUOUS)
+
+    def test_touch_answer_labels_match_the_player_contract(self) -> None:
+        self.assertEqual(
+            tuple(label for label, _answer in PLAYER_BUTTONS),
+            ("Yes", "No", "Sometimes", "I DON'T KNOW"),
+        )
+        self.assertEqual(
+            tuple(label for label, _answer in GUESS_BUTTONS),
+            ("Yes", "No", "I DON'T KNOW"),
+        )
 
 
 class MatchingGameModeTests(unittest.TestCase):

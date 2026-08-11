@@ -234,13 +234,44 @@ configuration-driven loading rules as features:
 - Configuration, import, missing-hook, duplicate-name, and registration failures
   are isolated per module. Later valid modes still load, and a failed hook leaves
   none of its partial registrations behind.
-- Built-in Twenty Questions settings are `answer_wait_seconds` and `debug`.
-  Historical top-level `game_answer_wait_seconds` and
-  `twenty_questions_debug` values remain supported when mode settings do not
-  override them.
+- Twenty Questions reads its immutable base catalog from
+  `data/20_questions/data.jsonl`. The downloaded catalog is intentionally
+  untracked; BMO validates and loads it lazily when the game starts and reports
+  a short mode-local error if it is missing or corrupt. It uses adaptive
+  attribute partitioning over the catalog, not alphabetical object-name search.
+- The only player choices BMO presents are **Yes**, **No**, **Sometimes**, and
+  **I don't know**. Dataset **Often** is an internal wildcard: it survives a
+  matching Yes, No, or Sometimes answer. A spoken “maybe” is accepted as
+  Sometimes, but BMO never advertises Maybe or Often as a choice.
+- A touch-menu launch opens an embedded 800×480 Twenty Questions board with BMO,
+  the current question, touch answer buttons, guess controls, and a reveal
+  field before BMO speaks the introduction. The board also shows the candidate
+  count, decision/question counters, and the last five answers. Voice launches
+  remain voice-driven; the touch board suspends voice capture until it is
+  closed.
+- The normal round always continues through 20 question prompts after a wrong
+  guess. If the indexed pool is empty after question 19, the local model makes
+  one fallback guess. If BMO is still wrong after question 20, the player wins
+  that round and the board asks four bonus questions before one final guess;
+  an empty bonus pool gets the same model fallback treatment.
+- Confirmed guesses and revealed objects update the optional learned overlay at
+  `data/20_questions/learned.jsonl`. It is also untracked, written atomically,
+  and stores one stable wide row per object. Learned definite answers can
+  refine base Often values; learned Unknown values remain wildcards until a
+  later confirmed observation. A malformed learned file disables learning for
+  that session without destroying the base catalog.
+- Built-in Twenty Questions settings include `show_in_menu`,
+  `answer_wait_seconds`, `debug`, `data_path`, `learned_path`,
+  `informative_question_limit`, and `total_prompt_limit`. Historical top-level
+  `game_answer_wait_seconds` and `twenty_questions_debug` values remain
+  supported when mode settings do not override them.
 - Enabled modes and features may contribute touch-menu items. Pup Pairs
-  contributes its Matching Game icon by default; set its `show_in_menu` setting
-  to `false` to keep voice launch enabled while hiding that page.
+  contributes its Matching Game icon by default and Twenty Questions contributes
+  `graphics/icons/20_questions.png`; set either `show_in_menu` setting to
+  `false` to keep voice launch enabled while hiding only that entry.
+- Voice launch accepts “Twenty questions”, “Play twenty questions”, “Let's play
+  20 questions”, and “Start 20 questions”. Selecting the touch-menu item queues
+  the mode through the normal interaction worker and opens its embedded board.
 - Menu actions are arranged in six-item grid pages. A game launched from the
   menu leaves that live page underneath it, so exiting the game returns to the
   same page instead of briefly showing BMO's full-screen face.

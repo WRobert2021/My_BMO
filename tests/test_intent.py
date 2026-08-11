@@ -9,7 +9,7 @@ from unittest.mock import patch
 from bmo.features import ToolContract, ToolResult
 from bmo.intent import (
     infer_game_answer,
-    infer_game_candidates,
+    infer_game_guess,
     infer_tool_action,
 )
 from bmo.tools import ToolRouter
@@ -257,9 +257,9 @@ class IntentRoutingTests(unittest.TestCase):
                     )
                 )
 
-    def test_conversational_game_answer_can_use_local_model(self) -> None:
+    def test_conversational_game_answer_uses_canonical_sometimes(self) -> None:
         def fake_chat(**kwargs):
-            return {"message": {"content": '{"answer":"maybe"}'}}
+            return {"message": {"content": '{"answer":"sometimes"}'}}
 
         self.assertEqual(
             infer_game_answer(
@@ -267,40 +267,41 @@ class IntentRoutingTests(unittest.TestCase):
                 "Only under certain circumstances",
                 fake_chat,
             ),
-            "maybe",
+            "sometimes",
         )
 
-    def test_game_candidate_expansion_is_validated(self) -> None:
+    def test_legacy_model_answer_alias_is_normalized_without_candidate_expansion(
+        self,
+    ) -> None:
         def fake_chat(**kwargs):
-            return {
-                "message": {
-                    "content": (
-                        '{"candidates":[{"name":"a toaster",'
-                        '"entity_type":"device","traits":'
-                        '{"physical":0.99,"bad_key":1}}]}'
-                    )
-                }
-            }
-
-        candidates = infer_game_candidates(
-            "gemma:2b",
-            [
-                {
-                    "question_key": "physical",
-                    "question": "Is it physical?",
-                    "answer": "yes",
-                    "was_guess": False,
-                }
-            ],
-            ["physical", "electric"],
-            fake_chat,
-        )
+            return {"message": {"content": '{"answer":"maybe"}'}}
 
         self.assertEqual(
-            candidates[0]["name"],
-            "a toaster",
+            infer_game_answer(
+            "gemma:2b",
+            "Only under certain circumstances",
+            fake_chat,
+            ),
+            "sometimes",
         )
-        self.assertEqual(candidates[0]["traits"], {"physical": 0.98})
+
+    def test_fallback_game_guess_returns_one_non_excluded_object(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_chat(**kwargs):
+            calls.append(kwargs)
+            return {"message": {"content": '{"guess":"a toaster"}'} }
+
+        guess = infer_game_guess(
+            "gemma:2b",
+            [{"question": "Is it warm?", "answer": "yes"}],
+            fake_chat,
+            excluded_names=("a kettle",),
+        )
+
+        self.assertEqual(guess, "a toaster")
+        self.assertEqual(calls[0]["format"], "json")
+        self.assertIn("a kettle", calls[0]["messages"][1]["content"])
 
 
 if __name__ == "__main__":
