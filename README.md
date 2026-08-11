@@ -177,7 +177,7 @@ shown in `config/example.features.json`:
   changing their voice actions. The timer feature does this by default; its
   `show_in_menu` setting hides or shows the timer icon independently from voice
   routing.
-- The weather feature contributes `graphics/Icons/weather.png` by reference
+- The weather feature contributes `graphics/icons/weather.png` by reference
   and keeps the existing spoken “what is the weather” action. Its full-screen
   child-friendly view renders weather-owned HTML/CSS/SVG through a dedicated
   Chromium kiosk process. It animates sun, moon phases, cloud, fog, rain,

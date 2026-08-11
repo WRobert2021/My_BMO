@@ -36,7 +36,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 WEATHER_MENU_ITEM = FeatureMenuItem(
     name="get_weather",
     label="Weather",
-    icon_path=PROJECT_ROOT / "graphics" / "Icons" / "weather.png",
+    icon_path=PROJECT_ROOT / "graphics" / "icons" / "weather.png",
 )
 WeatherAppFactory = Callable[..., WeatherApp]
 
