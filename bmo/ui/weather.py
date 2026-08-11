@@ -54,7 +54,9 @@ MOON_PHASES = (
 )
 _REFERENCE_NEW_MOON = datetime(2000, 1, 6, 18, 14)
 _SYNODIC_MONTH_DAYS = 29.530588853
-_SAFE_ACTIONS = frozenset({"close", "navigate", "retry", "speak"})
+_SAFE_ACTIONS = frozenset(
+    {"close", "heartbeat", "navigate", "ready", "retry", "speak"}
+)
 _SPEECH_KEYS = frozenset(
     {"alert", "condition", "feels", "high_low", "rain", "temperature"}
 )
@@ -675,6 +677,10 @@ class ChromiumSession:
             f"--user-data-dir={self._profile.name}",
             "--no-first-run",
             "--no-default-browser-check",
+            # The weather profile is temporary and never handles credentials.
+            # Avoid desktop keyring prompts that would cover the kiosk UI.
+            "--password-store=basic",
+            "--use-mock-keychain",
             "--disable-background-networking",
             "--disable-component-update",
             "--disable-extensions",
@@ -735,6 +741,8 @@ class WeatherApp:
 
     POLL_MS = 150
     REFRESH_SECONDS = 15 * 60
+    RENDERER_STARTUP_TIMEOUT_SECONDS = 10.0
+    RENDERER_HEARTBEAT_TIMEOUT_SECONDS = 10.0
 
     def __init__(
         self,
@@ -787,6 +795,8 @@ class WeatherApp:
         self._hour_targets: dict[str, HourlyWeather] = {}
         self._announced_alerts: set[str] = set()
         self._after_ids: set[str] = set()
+        self._renderer_started_at = time.monotonic()
+        self._renderer_last_seen: float | None = None
         self._bridge = bridge_factory(self._actions)
         self._bridge.set_state(self._loading_state())
         try:
@@ -870,6 +880,9 @@ class WeatherApp:
             return
         if not self._handle_actions():
             return
+        if not self._renderer_is_healthy():
+            self.close()
+            return
         changed = False
         while True:
             try:
@@ -902,6 +915,9 @@ class WeatherApp:
             except queue.Empty:
                 return True
             name = action["name"]
+            if name in {"ready", "heartbeat"}:
+                self._renderer_last_seen = time.monotonic()
+                continue
             if name == "close":
                 self.close()
                 return False
@@ -918,6 +934,26 @@ class WeatherApp:
                     self._load_current(force=True)
             elif name == "speak":
                 self._speak(str(action["key"]))
+
+    def _renderer_is_healthy(self) -> bool:
+        """Fail closed when a kiosk page never starts or stops responding."""
+        now = time.monotonic()
+        if self._renderer_last_seen is None:
+            healthy = (
+                now - self._renderer_started_at
+                < self.RENDERER_STARTUP_TIMEOUT_SECONDS
+            )
+        else:
+            healthy = (
+                now - self._renderer_last_seen
+                < self.RENDERER_HEARTBEAT_TIMEOUT_SECONDS
+            )
+        if not healthy:
+            print(
+                "[WEATHER] Browser renderer stopped responding; closing display.",
+                flush=True,
+            )
+        return healthy
 
     def _refresh_if_stale(self) -> None:
         location = self.current_location

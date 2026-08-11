@@ -183,7 +183,10 @@ shown in `config/example.features.json`:
   Chromium kiosk process. It animates sun, moon phases, cloud, fog, rain,
   sleet, snow, thunder, hail, wind, seasonal scenery, and day/night layers.
   Chromium uses a temporary profile and a tokenized loopback-only bridge;
-  closing Weather stops both resources and reveals the unchanged Tk menu.
+  it bypasses desktop credential stores because the kiosk never accepts or
+  retains credentials. Closing Weather stops both resources and reveals the
+  unchanged Tk menu. A renderer heartbeat automatically returns to the menu if
+  Chromium ever opens without a working weather page.
   Temperature,
   feels-like, high/low, precipitation chance, condition, alert, and hourly
   cards are tappable BMO announcements. Swiping left or right wraps through

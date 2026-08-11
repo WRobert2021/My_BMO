@@ -157,10 +157,13 @@ Browser actions cross a feature-owned HTTP bridge bound only to a random
 `127.0.0.1` port. A per-view path token, strict origin and action validation,
 bounded request bodies, a restrictive content-security policy, and a dedicated
 temporary Chromium profile isolate the surface from the LAN and from the
-user's browser data. Closing Weather stops the Chromium process group, server
-thread, timers, and scoped speech. If Chromium cannot start, the feature
-reports the failure and returns to the same menu without affecting voice
-weather or another feature.
+user's browser data. The credential store is explicitly set to the temporary
+profile's basic store so Chromium cannot block the kiosk with a desktop keyring
+dialog. Closing Weather stops the Chromium process group, server thread,
+timers, and scoped speech. A browser-ready signal and periodic heartbeat close
+an unresponsive or blank kiosk and return to the menu. If Chromium cannot
+start, the feature reports the failure without affecting voice weather or
+another feature.
 
 Setting private weather configuration `debug` to true exposes a collapsible
 browser-only preview panel for every visual condition, season, day period, and

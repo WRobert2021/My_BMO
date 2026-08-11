@@ -498,6 +498,33 @@ class WeatherMenuTests(unittest.TestCase):
         view.close.assert_called_once_with()
         alert_service.clear.assert_called_once_with()
 
+    def test_tool_can_reopen_after_the_previous_weather_view_closes(self) -> None:
+        views: list[Mock] = []
+
+        def app_factory(_root: object, **kwargs: object) -> Mock:
+            view = Mock()
+            view.close.side_effect = kwargs["on_close"]
+            views.append(view)
+            return view
+
+        tool = GetWeatherTool(
+            Mock(),
+            feature_config=WeatherFeatureConfig(
+                locations=(WeatherLocationConfig("home", "Home", "Tomball"),)
+            ),
+            app_factory=app_factory,  # type: ignore[arg-type]
+        )
+        context = FeatureMenuContext(master=object(), on_close=Mock())
+
+        tool.open_menu(context)
+        views[0].close()
+        tool.open_menu(context)
+        views[1].close()
+
+        self.assertEqual(len(views), 2)
+        self.assertIsNone(tool._menu_ui)
+        self.assertEqual(context.on_close.call_count, 2)
+
     def test_browser_failure_returns_to_menu_and_preserves_feature_isolation(self) -> None:
         announcer = Mock(available=True)
 
@@ -578,7 +605,7 @@ class WeatherMenuTests(unittest.TestCase):
             visible.menu_items[0].icon_path.name,
             "weather.png",
         )
-        self.assertEqual(visible.menu_items[0].icon_path.parent.name, "Icons")
+        self.assertEqual(visible.menu_items[0].icon_path.parent.name, "icons")
         self.assertEqual(hidden.menu_items, ())
         self.assertIn("get_weather", hidden.actions)
 
@@ -738,6 +765,30 @@ class WeatherWebRendererTests(unittest.TestCase):
                 {"name": "speak", "key": "../../secret"}
             )
 
+    def test_renderer_lifecycle_actions_have_no_user_controlled_fields(self) -> None:
+        self.assertEqual(
+            WeatherWebBridge._validated_action({"name": "ready"}),
+            {"name": "ready"},
+        )
+        self.assertEqual(
+            WeatherWebBridge._validated_action({"name": "heartbeat"}),
+            {"name": "heartbeat"},
+        )
+
+    def test_renderer_watchdog_recovers_from_a_blank_kiosk_page(self) -> None:
+        app = WeatherApp.__new__(WeatherApp)
+        app._renderer_started_at = 100.0
+        app._renderer_last_seen = None
+
+        with patch("bmo.ui.weather.time.monotonic", return_value=109.0):
+            self.assertTrue(app._renderer_is_healthy())
+        with patch("bmo.ui.weather.time.monotonic", return_value=111.0):
+            self.assertFalse(app._renderer_is_healthy())
+
+        app._renderer_last_seen = 200.0
+        with patch("bmo.ui.weather.time.monotonic", return_value=211.0):
+            self.assertFalse(app._renderer_is_healthy())
+
     def test_chromium_session_uses_isolated_profile_and_sandbox(self) -> None:
         process = Mock(pid=4321)
         process.poll.return_value = None
@@ -755,6 +806,8 @@ class WeatherWebRendererTests(unittest.TestCase):
             self.assertTrue(
                 any(value.startswith("--user-data-dir=") for value in command)
             )
+            self.assertIn("--password-store=basic", command)
+            self.assertIn("--use-mock-keychain", command)
             self.assertNotIn("--no-sandbox", command)
             session.close()
 

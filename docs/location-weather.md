@@ -14,7 +14,9 @@ response. It opens a dedicated fullscreen Chromium surface containing only
 project-owned HTML, CSS, and SVG graphics. Its local communication server binds
 to a random `127.0.0.1` port with a per-view token and stops when Weather
 closes; it is never exposed on the LAN. The Tk menu and other features do not
-use Chromium.
+use Chromium. The temporary kiosk profile does not use the desktop keyring, and
+a renderer heartbeat automatically closes a blank or unresponsive weather
+surface so the main menu remains recoverable.
 
 Copy `config/example.weather.json` to the ignored `config/weather.json` to set
 the ordered location carousel. Set `"debug": true` while verifying graphics.

@@ -1181,6 +1181,8 @@
       });
 
       render();
+      postAction('ready');
+      window.setInterval(() => postAction('heartbeat'), 2000);
       pollState();
     })();
   </script>
