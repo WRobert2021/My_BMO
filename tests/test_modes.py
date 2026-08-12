@@ -398,6 +398,17 @@ class TwentyQuestionsModeTests(unittest.TestCase):
         self.assertEqual(self.states[-1], (BotStates.IDLE, "Ready"))
         self.assertEqual(self.wait_count, 2)
 
+    def test_revealed_targets_are_kept_as_the_cross_game_thing_history(self) -> None:
+        self.mode.start("Twenty questions")
+        self.game.awaiting_reveal = True
+        self.mode.handle_input("strawberry")
+
+        self.mode.start("Twenty questions")
+        self.game.awaiting_reveal = True
+        self.mode.handle_input("computer")
+
+        self.assertEqual(self.mode.thing_history.snapshot(), ("computer", "strawberry"))
+
     def test_answer_timeout_keeps_existing_bounds_and_fallback(self) -> None:
         common: dict[str, Any] = {
             "game": self.game,
@@ -524,6 +535,7 @@ class TwentyQuestionsModeTests(unittest.TestCase):
         mode.start("Start Twenty Questions")
 
         self.assertIsInstance(created["game"], TwentyQuestionsGame)
+        self.assertEqual(created["on_play_again"], mode._queue_gui_restart)
         self.assertEqual(events[:2], ["gui", "speech"])
         self.assertEqual(mode.input_policy().kind, InputPolicyKind.SUSPENDED)
         self.assertEqual(created["on_answer"]("yes"), None)

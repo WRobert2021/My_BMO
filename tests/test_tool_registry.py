@@ -438,6 +438,7 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             {
                 "get_time",
                 "set_timer",
+                "get_calendar",
                 "get_location",
                 "get_weather",
                 "search_web",
@@ -449,6 +450,9 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             {
                 "check_time": "get_time",
                 "timer": "set_timer",
+                "calendar": "get_calendar",
+                "schedule": "get_calendar",
+                "plan": "get_calendar",
                 "location": "get_location",
                 "where_am_i": "get_location",
                 "weather": "get_weather",

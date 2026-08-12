@@ -10,6 +10,7 @@
   "input_sample_rate": 44100,
   "weather_units": "imperial",
   "weather_config_path": "config/weather.json",
+  "quiet_hours_config_path": "config/quiet_hours.json",
   "online_timeout_seconds": 6,
   "interaction_logging": true,
   "interaction_log_directory": "interaction_logs"

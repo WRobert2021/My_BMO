@@ -27,6 +27,7 @@ from bmo.weather import WeatherError
 EXPECTED_TOOLS = {
     "get_time",
     "set_timer",
+    "get_calendar",
     "get_location",
     "get_weather",
     "search_web",
@@ -42,6 +43,9 @@ EXPECTED_ALIASES = {
     "see": "capture_image",
     "check_time": "get_time",
     "timer": "set_timer",
+    "calendar": "get_calendar",
+    "schedule": "get_calendar",
+    "plan": "get_calendar",
     "location": "get_location",
     "where_am_i": "get_location",
     "weather": "get_weather",
@@ -63,6 +67,14 @@ EXACT_DIRECT_REQUESTS = {
     "cancel all timers": {
         "action": "set_timer",
         "operation": "cancel_all",
+    },
+    "what's on my calendar today": {
+        "action": "get_calendar",
+        "period": "today",
+    },
+    "what is on my schedule next week": {
+        "action": "get_calendar",
+        "period": "next_week",
     },
     "where am i": {"action": "get_location"},
     "what is my location": {"action": "get_location"},

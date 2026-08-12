@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from bmo.twenty_questions import (
     ANSWER_PROMPT,
     OBJECT_NAME_KEY,
     CandidateIndex,
+    TwentyQuestionsHistory,
     LLM_GUESS_REQUEST,
     TwentyQuestionsDataError,
     TwentyQuestionsDatasetLoader,
@@ -171,6 +173,37 @@ class DatasetLoaderTests(unittest.TestCase):
         self.assertEqual(catalog.rows[-1].answers[1], "unknown")
 
 
+class ThingHistoryTests(unittest.TestCase):
+    def test_history_keeps_the_five_newest_targets_across_loads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "history.json"
+            history = TwentyQuestionsHistory(path)
+            for name in ("one", "two", "three", "four", "five", "six"):
+                history.record(name)
+
+            self.assertEqual(
+                history.snapshot(),
+                ("six", "five", "four", "three", "two"),
+            )
+            self.assertEqual(
+                TwentyQuestionsHistory(path).snapshot(),
+                history.snapshot(),
+            )
+
+    def test_history_save_uses_atomic_replace_and_cleans_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "history.json"
+            history = TwentyQuestionsHistory(path)
+            with patch("bmo.twenty_questions.os.replace", wraps=os.replace) as replace:
+                history.record("strawberry")
+
+            replace.assert_called_once()
+            self.assertEqual(
+                list(Path(temp_dir).glob(".history.json.*.tmp")),
+                [],
+            )
+
+
 class IndexedGameTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -304,6 +337,11 @@ class IndexedGameTests(unittest.TestCase):
         game.accept_answer("unknown")
         response = game.next_move()
 
+        self.assertEqual(response, LLM_GUESS_REQUEST)
+        self.assertFalse(game.bonus_active)
+        game.offer_llm_guess("normal final object")
+        game.accept_answer("no")
+        response = game.next_move()
         self.assertTrue(game.bonus_active)
         self.assertEqual(game.bonus_question_count, 1)
         self.assertIn("bonus", response.casefold())
@@ -315,12 +353,17 @@ class IndexedGameTests(unittest.TestCase):
 
         self.assertEqual(game.total_prompt_count, 24)
         self.assertEqual(game.bonus_question_count, 4)
-        self.assertIn("My guess is", response)
+        self.assertEqual(response, LLM_GUESS_REQUEST)
+        self.assertIn("My guess is", game.offer_llm_guess("bonus final object") or "")
 
     def test_limits_and_cancel(self) -> None:
         game = self.make_game(informative_question_limit=1)
         game.start()
         game.accept_answer("yes")
+        response = game.next_move()
+        self.assertEqual(response, LLM_GUESS_REQUEST)
+        game.offer_llm_guess("short round object")
+        game.accept_answer("no")
         response = game.next_move()
         self.assertFalse(game.awaiting_reveal)
         self.assertTrue(game.bonus_active)

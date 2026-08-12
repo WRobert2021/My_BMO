@@ -39,9 +39,14 @@ be-more-agent/
 │   ├── example.settings.json  # Tracked user-settings example
 │   ├── example.features.json  # Tracked feature/mode example
 │   ├── example.weather.json   # Tracked weather-view example
+│   ├── example.calendar.json  # Tracked calendar example
+│   ├── example.quiet_hours.json # Tracked global kiosk-lock example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
-│   └── weather.json           # Local locations/weather UI settings (ignored)
+│   ├── weather.json           # Local locations/weather UI settings (ignored)
+│   ├── calendar.json          # Local calendar behavior settings (ignored)
+│   └── quiet_hours.json       # Local global quiet-hours settings (ignored)
+├── data/calendar/             # Local events and acknowledgments (ignored)
 ├── chat_memory.json           # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -121,6 +126,12 @@ Configuration is split by audience:
   `modes` lists and their module-specific settings.
 - `config/weather.json` is owned only by the weather feature. It contains the
   ordered private locations shown in the weather carousel.
+- `config/calendar.json` is owned only by the calendar feature. It selects its
+  data/overlay directories, holiday behavior, categories, and whether notes are
+  included in spoken summaries.
+- `config/quiet_hours.json` is a global kiosk policy. It can cover the entire
+  UI with sleeping BMO on a local schedule until the period ends or a parent
+  enters its four-digit PIN.
 
 The application does **not** create these local files. If a file is absent or
 invalid, BMO reports a parsing error when applicable and uses defaults for that
@@ -131,6 +142,8 @@ examples and edit the copies:
 cp config/example.settings.json config/settings.json
 cp config/example.features.json config/features.json
 cp config/example.weather.json config/weather.json
+cp config/example.calendar.json config/calendar.json
+cp config/example.quiet_hours.json config/quiet_hours.json
 ```
 
 When upgrading from the former root `config.json`, move its `features` and
@@ -148,6 +161,7 @@ For example, `config/settings.json` can contain:
     "chat_memory": true,
     "camera_rotation": 0,
     "weather_config_path": "config/weather.json",
+    "quiet_hours_config_path": "config/quiet_hours.json",
     "interaction_logging": true,
     "interaction_log_directory": "interaction_logs",
     "system_prompt_extras": "You are a helpful robot assistant. Keep responses short and cute."
@@ -177,6 +191,24 @@ shown in `config/example.features.json`:
   changing their voice actions. The timer feature does this by default; its
   `show_in_menu` setting hides or shows the timer icon independently from voice
   routing.
+- The calendar feature contributes `graphics/icons/calendar.png` and opens its
+  full-screen view only from that touch-menu icon. It starts on today and
+  provides day, month, and birthstone-colored year views. Day rows swipe
+  vertically when more than four events exist; month dots use each event's
+  chosen color and stay within their day cell. The editor supports categories,
+  unrestricted colors, all-day or timed events, notes, and weekly/monthly/yearly
+  recurrence with occurrence-or-series edit/delete choices. Requested common
+  US holidays can be included as read-only events.
+- Spoken questions such as “what's on my calendar tomorrow?” and “what is my
+  schedule next week?” receive deterministic summaries. Voice routing is
+  intentionally read-only: adding, editing, and deleting events requires the
+  touch calendar. Notes are omitted from speech unless `speak_notes` is enabled
+  in `config/calendar.json`.
+- Unacknowledged events occurring today publish a badge at startup and each
+  local midnight. The badge is visible only on BMO's full-screen idle face,
+  never on the upper-right PIP face. Tapping it acknowledges that occurrence
+  persistently and BMO speaks the event. Optional PNGs under `faces/calendar`
+  decorate the normal idle face; missing art cannot prevent startup.
 - The weather feature contributes `graphics/icons/weather.png` by reference
   and keeps the existing spoken “what is the weather” action. Its full-screen
   child-friendly view renders weather-owned HTML/CSS/SVG through a dedicated
@@ -205,6 +237,13 @@ shown in `config/example.features.json`:
   file is ignored by Git; only `config/example.weather.json` is tracked. The
   spoken rain-chance value is explicitly the highest hourly precipitation
   probability for the day, not forecast rainfall volume.
+- Global quiet hours use the system's local clock and are disabled by default.
+  Configure the schedule, active weekdays, and four-digit parent PIN in
+  `config/quiet_hours.json` (`0` is Monday and `6` is Sunday); optional sleeping art can live under
+  `faces/sleeping`. During an active period, the sleeping cover blocks the
+  menu, push-to-talk, voice turns, announcements, and notification badges.
+  Entering the PIN unlocks only the current period. The PIN is a convenience
+  control stored as plain text, not a security boundary.
 - The camera feature saves its interaction image for vision processing and also
   copies it to persistent storage. Configure `save_directory` in that feature's
   `settings`; the tracked example uses
@@ -246,22 +285,26 @@ configuration-driven loading rules as features:
 - A touch-menu launch opens an embedded 800×480 Twenty Questions board with BMO,
   the current question, touch answer buttons, guess controls, and a reveal
   field before BMO speaks the introduction. The board also shows the candidate
-  count, decision/question counters, and the last five answers. Voice launches
-  remain voice-driven; the touch board suspends voice capture until it is
-  closed.
+  count, decision/question counters, and the five most recently identified
+  things from completed games. Voice launches remain voice-driven; the touch
+  board suspends voice capture until it is closed.
 - The normal round always continues through 20 question prompts after a wrong
   guess. If the indexed pool is empty after question 19, the local model makes
-  one fallback guess. If BMO is still wrong after question 20, the player wins
-  that round and the board asks four bonus questions before one final guess;
-  an empty bonus pool gets the same model fallback treatment.
+  one fallback guess; the model is also used for the round-ending guess at
+  question 20. If BMO is still wrong, the player wins that round and the board
+  asks four bonus questions before a model guess at question 25. The board
+  offers PLAY AGAIN after a completed game.
 - Confirmed guesses and revealed objects update the optional learned overlay at
   `data/20_questions/learned.jsonl`. It is also untracked, written atomically,
   and stores one stable wide row per object. Learned definite answers can
   refine base Often values; learned Unknown values remain wildcards until a
   later confirmed observation. A malformed learned file disables learning for
   that session without destroying the base catalog.
+- Completed target names are kept newest-first in the bounded, atomically
+  written `history_path` file. Its path must be distinct from the base and
+  learned catalog files.
 - Built-in Twenty Questions settings include `show_in_menu`,
-  `answer_wait_seconds`, `debug`, `data_path`, `learned_path`,
+  `answer_wait_seconds`, `debug`, `data_path`, `learned_path`, `history_path`,
   `informative_question_limit`, and `total_prompt_limit`. Historical top-level
   `game_answer_wait_seconds` and `twenty_questions_debug` values remain
   supported when mode settings do not override them.

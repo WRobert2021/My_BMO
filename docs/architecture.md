@@ -28,6 +28,12 @@ The application keeps `agent.py` as the stable startup command while implementat
   FreeDesktop Wastebasket moves, and album-view registration.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
+- `bmo.features.calendar` — read-only calendar voice routing, touch-view
+  registration, local-date attention refresh, and menu persistence actions.
+- `bmo.features.calendar_store` — versioned event and acknowledgment JSON,
+  recurrence expansion, occurrence exceptions, and built-in US holidays.
+- `bmo.features.calendar_config` — private calendar-file validation without
+  merging calendar paths or narration choices into global settings.
 - `bmo.modes` — typed lifecycle contracts and exclusive input ownership for
   long-lived interactions.
 - `bmo.modes.loader` — standard-library module loading from `modes` config.
@@ -42,10 +48,18 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
 - `bmo.prompts` — system-prompt construction.
 - `bmo.state` — shared UI/application states.
+- `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
+  unlock policy.
 - `bmo.ui.gestures` — UI-independent tap and horizontal-swipe recognition.
+- `bmo.ui.scrolling` — bounded vertical finger scrolling shared by touch views.
 - `bmo.ui.menu` — ordered menu-page navigation and the touch menu overlay.
 - `bmo.ui.timer` — live countdown rendering, touch deletion, and vertical
   drag-scrolling for the menu-launched timer view.
+- `bmo.ui.calendar` — current-day-first day/month/year navigation, bounded
+  event-dot layout, scrollable day rows, color/category editor, and recurring
+  occurrence/series choices.
+- `bmo.ui.quiet_hours` — fullscreen sleeping-BMO cover and four-digit parent
+  keypad for the global kiosk lock.
 - `bmo.ui.album` — paginated photo thumbnails, horizontal swipe navigation,
   fullscreen image actions, and BMO vision-state presentation.
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
@@ -57,9 +71,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 2. `BotGUI` creates services using defaults overlaid by
    `config/settings.json`, then loads feature and mode wiring from
    `config/features.json`. Missing config files are not created; defaults remain
-   in memory only. The enabled weather feature separately reads
-   `config/weather.json`; its private location contents are never merged into
-   the global settings mapping.
+   in memory only. Weather and calendar separately read their private feature
+   files, and the application reads the global quiet-hours file. None of those
+   private contents are merged into the shared settings mapping.
 3. The wake-word service waits for wake word or push-to-talk.
 4. A unique dated interaction archive is created.
 5. The recorder captures a WAV directly into that archive.
@@ -114,6 +128,42 @@ rows exceed the display. Closing the view destroys only its canvases and reveals
 the originating menu page. Timer cancellation removes the timer from both the
 active index and priority queue immediately, so a deleted row cannot later
 expire or retain scheduler state.
+
+The calendar tool contributes `graphics/icons/calendar.png` by reference and
+opens only from its touch-menu item. It starts on the local current day, with
+explicit Day, Month, Year, Today, and Menu controls. Day navigation uses only
+previous/next arrows; more than four event rows remain inside a clipped,
+vertically draggable viewport. Month cells place colored event dots beside the
+day number and then in bounded rows, displaying an overflow count only after
+the cell's safe capacity is full. The year view uses month-specific birthstone
+colors and opens a selected month. A live upper-right BMO face animates while
+calendar-owned announcements play.
+
+The touch editor owns event name, all-day or start/end times, category,
+unrestricted color selection, notes, weekly/monthly/yearly recurrence, weekly
+day selection, repeat end date/count, and monthly short-month behavior. Irrelevant
+controls are hidden or disabled. Editing or deleting one repeated occurrence
+asks whether the change applies to that occurrence or the series. Occurrence
+overrides atomically store both the series exception and replacement. Built-in
+US holidays are read-only calendar rows. Calendar voice routing can summarize
+today, tomorrow, this/next week, weekends, months, dates, and named weekdays,
+but exposes no voice mutation path.
+
+At startup and each local date change, the feature publishes one typed
+attention for every unacknowledged current-day occurrence. `BotGUI` owns the
+badge and draws it only over the full-screen idle face, never over menu or
+feature PIP faces. Tapping the badge persistently acknowledges the occurrence
+and speaks it. Optional `faces/calendar` PNG art is composited over the normal
+idle face; missing art falls back to lightweight edge decoration and never
+replaces listening, thinking, speaking, error, or warmup faces.
+
+Quiet hours are a global kiosk policy rather than a calendar feature. When the
+configured local schedule is active, a full-screen sleeping-BMO cover blocks
+menu, push-to-talk, voice interaction, scoped announcements, and attention
+presentation. A four-digit parent PIN unlocks only the current quiet period;
+normal operation resumes automatically at its end. Missing sleeping art uses a
+drawn fallback, and a disabled or malformed private quiet-hours file leaves the
+kiosk unlocked.
 
 The album feature contributes `graphics/icons/album.png` by reference and has
 no voice, model, prompt, alias, or executable-tool surface. Its full-screen
@@ -195,6 +245,15 @@ The weather view requires the Raspberry Pi OS `chromium` system package. The
 setup script installs and verifies its executable; no Python webview package is
 added. Chromium runs only while the weather view is open.
 
+Calendar persistence, recurrence, color selection, and quiet-hours enforcement
+use only Python's standard library and existing Tk/Pillow packages. The system
+local date and time are authoritative; there is no feature-level timezone.
+Private event data lives under `data/calendar`, optional calendar overlay art
+lives under `faces/calendar`, and calendar/quiet-hours settings live in
+`config/calendar.json` and `config/quiet_hours.json`. These paths are local and
+Git-ignored; the tracked `config/example.calendar.json` and
+`config/example.quiet_hours.json` files document their schemas.
+
 The same Python entry point is used on macOS and Raspberry Pi. The Python
 virtual environment owns Python packages only. Whisper.cpp, Piper and its voice
 models, and the wake-word model are project-local native/model artifacts;
@@ -242,7 +301,7 @@ Features and modes solve different routing problems:
 ### Feature module contract
 
 The `features` list lives in `config/features.json`. Omitting the key loads the
-seven modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+eight modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
 default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.
@@ -284,6 +343,10 @@ contract in `bmo.features.contracts`:
   `None` from `prepare_model_request` rejects that model-produced request.
 - A background feature sends `RuntimeNotification` values through
   `registry.notify_runtime`; it must stop its workers in `close()`.
+- A feature that needs persistent full-screen acknowledgment sends typed
+  `RuntimeAttention` and `RuntimeAttentionDismissal` values through the
+  registry. The application owns generic badge presentation and invokes the
+  supplied acknowledgment callback; PIP views never receive attention widgets.
 - A feature may expose a `FeatureMenuItem` whose normalized name matches its
   action and an `open_menu(context)` hook. The registry validates and exposes
   this pair transactionally. A tool marked `menu_only = True` must have a menu
@@ -338,7 +401,7 @@ Each entry supports:
   before its module name or settings are validated and before import.
 - `settings`: an object, defaulting to `{}`. Per-mode values override shared
   application settings. The Twenty Questions adapter accepts `show_in_menu`,
-  `answer_wait_seconds`, `debug`, `data_path`, `learned_path`,
+  `answer_wait_seconds`, `debug`, `data_path`, `learned_path`, `history_path`,
   `informative_question_limit`, and `total_prompt_limit`, while retaining the
   historical top-level setting names as fallbacks for the timeout and debug
   flag.
@@ -372,14 +435,19 @@ JSONL replacement; a malformed learned file disables learning for that
 session without affecting the base game. A missing or corrupt base file ends
 only this mode and returns input ownership to the normal application loop. The
 menu-launched mode owns an embedded 800×480 canvas with BMO status, answer
-buttons, guess controls, a reveal field, and the last five answers. The canvas
+buttons, guess controls, a reveal field, and the five most recently identified
+game things. The canvas
 is created before the introduction is spoken and suspends voice capture while
 it is open, matching the existing game-mode UI lifecycle. The indexed game
 continues through 20 numbered question prompts after wrong guesses. An empty
-pool after question 19 triggers one local-model fallback guess; after question
-20, an unguessed object gives the player the round win and starts four bonus
-questions followed by one final guess, with the same fallback when the bonus
-pool is empty.
+pool after question 19 triggers one local-model fallback guess, and the model
+also makes the round-ending guess at question 20. If that guess is wrong, the
+player gets the round win and four bonus questions followed by another model
+guess at question 25. The touch canvas offers PLAY AGAIN after completion.
+Completed targets are stored newest-first in the bounded `history_path` JSON
+file using atomic replacement, so a revealed `strawberry` remains visible when
+the next game reveals `computer`. The history path must not collide with the
+base or learned catalog paths.
 
 The importable `tests.extension_modules.proof_mode` fixture proves the same
 configuration-only boundary for modes. Its enabled entry registers start
@@ -517,6 +585,9 @@ generic runtime concepts:
   for the same core vision flow without naming the requesting feature.
 - `FeatureMenuContext.announce` queues speech under a unique view scope without
   exposing Piper or naming the requesting feature.
+- `RuntimeAttention` selects generic full-screen acknowledgment and optional
+  idle-face overlay presentation without naming its producing feature in core
+  UI routing.
 - `InputPolicyKind` selects wake-word, continuous, or suspended input behavior;
   it does not identify the active mode.
 - `ToolResultKind` validates semantic outcomes independently of action names.
@@ -540,4 +611,9 @@ The current `BotGUI` still combines presentation and conversation orchestration.
 
 ## Shutdown ownership
 
-Audio streams are closed cooperatively by the thread that created them. The UI shutdown path sets a shared event, wakes any push-to-talk wait, joins the interaction and TTS threads, and then exits Tkinter. It deliberately does not call process-wide `sounddevice.stop()` while another thread owns an input stream; doing so can crash Core Audio on macOS.
+Audio streams are closed cooperatively by the thread that created them. The UI
+shutdown path cancels the quiet-hours poll, closes feature-owned workers such as
+the calendar date-change watcher, sets a shared event, wakes any push-to-talk
+wait, joins the interaction and TTS threads, and then exits Tkinter. It
+deliberately does not call process-wide `sounddevice.stop()` while another
+thread owns an input stream; doing so can crash Core Audio on macOS.

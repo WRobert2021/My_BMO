@@ -16,6 +16,7 @@
         "debug": false,
         "data_path": "data/20_questions/data.jsonl",
         "learned_path": "data/20_questions/learned.jsonl",
+        "history_path": "data/20_questions/history.json",
         "informative_question_limit": 20,
         "total_prompt_limit": 30
       }
@@ -34,6 +35,13 @@
         "show_in_menu": true,
         "max_timers": 20,
         "max_duration_seconds": 604800
+      }
+    },
+    {
+      "module": "bmo.features.calendar",
+      "enabled": true,
+      "settings": {
+        "config_path": "config/calendar.json"
       }
     },
     {

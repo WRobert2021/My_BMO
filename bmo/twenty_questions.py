@@ -22,6 +22,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OBJECT_NAME_KEY = "What object is it?"
 BASE_DATA_PATH = PROJECT_ROOT / "data" / "20_questions" / "data.jsonl"
 LEARNED_DATA_PATH = PROJECT_ROOT / "data" / "20_questions" / "learned.jsonl"
+HISTORY_PATH = PROJECT_ROOT / "data" / "20_questions" / "history.json"
 # These aliases make the paths easy to discover for callers and tests.
 DATA_PATH = BASE_DATA_PATH
 LEARNED_PATH = LEARNED_DATA_PATH
@@ -139,6 +140,78 @@ class LearningOutcome:
     persisted: bool
     learning_enabled: bool
     error: str | None = None
+
+
+class TwentyQuestionsHistory:
+    """Persist the five most recently identified game targets."""
+
+    MAX_THINGS = 5
+
+    def __init__(self, path: Path | str | None = HISTORY_PATH) -> None:
+        self.path = Path(path) if path is not None else None
+        self.things: list[str] = []
+        self.load()
+
+    def load(self) -> None:
+        if self.path is None or not self.path.exists():
+            return
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("history root must be an object")
+            things = data.get("things", [])
+            if not isinstance(things, list):
+                raise ValueError("things must be a list")
+            self.things = [
+                clean_display_name(item)
+                for item in things
+                if isinstance(item, str) and canonical_object_name(item)
+            ][: self.MAX_THINGS]
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            print(f"[20 QUESTIONS] Thing history ignored: {exc}", flush=True)
+
+    def record(self, name: str) -> None:
+        display_name = clean_display_name(name)
+        if not canonical_object_name(display_name):
+            return
+        self.things.insert(0, display_name)
+        self.things = self.things[: self.MAX_THINGS]
+        self.save()
+
+    def snapshot(self) -> tuple[str, ...]:
+        """Return newest-first names for the touch UI."""
+        return tuple(self.things)
+
+    def save(self) -> None:
+        if self.path is None:
+            return
+        temp_name: str | None = None
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=f".{self.path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temp_name = handle.name
+                handle.write(
+                    json.dumps({"things": self.things}, indent=2) + "\n"
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, self.path)
+            temp_name = None
+        except OSError as exc:
+            print(f"[20 QUESTIONS] Could not save thing history: {exc}", flush=True)
+        finally:
+            if temp_name is not None:
+                try:
+                    Path(temp_name).unlink()
+                except OSError:
+                    pass
 
 
 def _json_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -690,6 +763,7 @@ class TwentyQuestionsGame:
         self.current_question: str | None = None
         self.current_guess: DatasetRow | None = None
         self.current_llm_guess: str | None = None
+        self.completed_object: str | None = None
         self.history: list[Turn] = []
         self.asked_keys: set[str] = set()
         self._asked_partitions: set[tuple[int, int, int]] = set()
@@ -700,9 +774,11 @@ class TwentyQuestionsGame:
         self.bonus_active = False
         self.bonus_question_count = 0
         self._normal_llm_attempted = False
+        self._normal_final_llm_attempted = False
         self._bonus_llm_attempted = False
         self._bonus_guess_attempted = False
         self._llm_guess_requested = False
+        self._llm_guess_request_kind: str | None = None
         self._attempted_names: set[str] = set()
         self.last_diagnostic: str | None = None
         self._pending_notice: str | None = None
@@ -867,10 +943,23 @@ class TwentyQuestionsGame:
             self.awaiting_reveal = True
             return self._reveal_prompt()
 
+        if (
+            not self.bonus_active
+            and self.total_prompt_count >= self.informative_question_limit
+            and not self._normal_final_llm_attempted
+        ):
+            self._llm_guess_requested = True
+            self._llm_guess_request_kind = "normal_final"
+            return LLM_GUESS_REQUEST
+
         if not self.bonus_active and self.total_prompt_count >= self.informative_question_limit:
             self._begin_bonus_round()
 
         if self.bonus_active and self.bonus_question_count >= self.BONUS_QUESTION_COUNT:
+            if not self._bonus_llm_attempted:
+                self._llm_guess_requested = True
+                self._llm_guess_request_kind = "bonus_final"
+                return LLM_GUESS_REQUEST
             if not self._bonus_guess_attempted:
                 row = self._next_candidate_guess()
                 if row is not None:
@@ -879,9 +968,6 @@ class TwentyQuestionsGame:
                     self.current_llm_guess = None
                     self.current_question = None
                     return self._guess_text(row.name)
-            if self.candidate_count == 0 and not self._bonus_llm_attempted:
-                self._llm_guess_requested = True
-                return LLM_GUESS_REQUEST
             self.awaiting_reveal = True
             return self._reveal_prompt()
 
@@ -941,8 +1027,11 @@ class TwentyQuestionsGame:
         if self.bonus_active:
             self._bonus_llm_attempted = True
             self._bonus_guess_attempted = True
+        elif self._llm_guess_request_kind == "normal_final":
+            self._normal_final_llm_attempted = True
         else:
             self._normal_llm_attempted = True
+        self._llm_guess_request_kind = None
         self._attempted_names.add(canonical_name)
         self.current_llm_guess = display_name
         self.current_guess = None
@@ -952,7 +1041,11 @@ class TwentyQuestionsGame:
     def llm_guess_failed(self) -> None:
         """Mark a fallback attempt as used so the game can keep asking."""
         self._llm_guess_requested = False
-        if self.bonus_active:
+        request_kind = self._llm_guess_request_kind
+        self._llm_guess_request_kind = None
+        if request_kind == "normal_final":
+            self._normal_final_llm_attempted = True
+        elif self.bonus_active or request_kind == "bonus_final":
             self._bonus_llm_attempted = True
         else:
             self._normal_llm_attempted = True
@@ -980,6 +1073,7 @@ class TwentyQuestionsGame:
         self.current_question = None
         self.current_guess = None
         self.current_llm_guess = None
+        self.completed_object = display_name
         return response
 
     def close(self) -> None:
@@ -989,6 +1083,7 @@ class TwentyQuestionsGame:
         self.current_question = None
         self.current_guess = None
         self.current_llm_guess = None
+        self.completed_object = None
         self.history.clear()
         self.asked_keys.clear()
         self._asked_partitions.clear()
@@ -999,9 +1094,11 @@ class TwentyQuestionsGame:
         self.bonus_active = False
         self.bonus_question_count = 0
         self._normal_llm_attempted = False
+        self._normal_final_llm_attempted = False
         self._bonus_llm_attempted = False
         self._bonus_guess_attempted = False
         self._llm_guess_requested = False
+        self._llm_guess_request_kind = None
         self._attempted_names.clear()
         self._pending_notice = None
         self.catalog = None
@@ -1039,6 +1136,7 @@ class TwentyQuestionsGame:
         dataset_guess = self.current_guess
         self.current_guess = None
         self.current_llm_guess = None
+        self.completed_object = None
         if answer == "yes":
             outcome = self.loader.learn(
                 guess,
@@ -1048,6 +1146,7 @@ class TwentyQuestionsGame:
                     if not turn.was_guess and turn.usable_for_learning
                 ),
             )
+            self.completed_object = guess
             self.active = False
             return f"Yes! I got it. {self._learning_response('', outcome)}"
         if answer == "no":
@@ -1180,6 +1279,8 @@ class TwentyQuestionsGame:
         self.awaiting_reveal = False
         self.current_question = None
         self.current_guess = None
+        self.current_llm_guess = None
+        self.completed_object = None
         self.history = []
         self.asked_keys = set()
         self._asked_partitions = set()
@@ -1190,9 +1291,11 @@ class TwentyQuestionsGame:
         self.bonus_active = False
         self.bonus_question_count = 0
         self._normal_llm_attempted = False
+        self._normal_final_llm_attempted = False
         self._bonus_llm_attempted = False
         self._bonus_guess_attempted = False
         self._llm_guess_requested = False
+        self._llm_guess_request_kind = None
         self._attempted_names = set()
         self._pending_notice = None
 
@@ -1221,6 +1324,7 @@ __all__ = [
     "DatasetCatalog",
     "DatasetRow",
     "INTRODUCTION",
+    "HISTORY_PATH",
     "LEARNED_DATA_PATH",
     "LLM_GUESS_REQUEST",
     "LearningOutcome",
@@ -1232,6 +1336,7 @@ __all__ = [
     "TwentyQuestionsDataError",
     "TwentyQuestionsDatasetLoader",
     "TwentyQuestionsGame",
+    "TwentyQuestionsHistory",
     "Turn",
     "canonical_object_name",
     "clean_display_name",

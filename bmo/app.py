@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 import ollama
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 from tkinter import ttk
 
 from bmo.archive import InteractionArchive, InteractionArchiveManager
@@ -38,6 +38,9 @@ from bmo.config import (
 )
 from bmo.features.contracts import (
     FeatureMenuContext,
+    RuntimeAttention,
+    RuntimeAttentionDismissal,
+    RuntimeAttentionEvent,
     RuntimeNotification,
     ToolAttachmentKind,
     ToolContext,
@@ -49,6 +52,7 @@ from bmo.features.contracts import (
 )
 from bmo.intent import infer_tool_action
 from bmo.memory import load_chat_history, save_chat_history
+from bmo.kiosk_access import KioskAccessPolicy, load_quiet_hours_config
 from bmo.modes import (
     InputPolicyKind,
     ModeRuntimeContext,
@@ -64,6 +68,7 @@ from bmo.ui import (
     IconMenuItem,
     IconMenuPage,
     MenuApp,
+    QuietHoursOverlay,
 )
 
 
@@ -104,6 +109,7 @@ class _FeatureMenuAnnouncer:
     def available(self) -> bool:
         return (
             not getattr(self.gui, "exiting", True)
+            and not self.gui._quiet_hours_locked()
             and hasattr(self.gui, "speaker")
             and hasattr(self.gui, "tts_queue_lock")
         )
@@ -136,12 +142,22 @@ class BotGUI:
 
     def __init__(self, master: tk.Tk) -> None:
         self.master = master
+        self.runtime_attentions: dict[tuple[str, str], RuntimeAttention] = {}
+        self.runtime_attentions_lock = threading.Lock()
+        self.current_attention_frame: ImageTk.PhotoImage | None = None
+        self._attention_overlay_cache: dict[Path, Image.Image] = {}
         self.config = load_config()
+        self.kiosk_access = KioskAccessPolicy(
+            load_quiet_hours_config(self.config["quiet_hours_config_path"])
+        )
+        self.quiet_hours_after_id: str | None = None
+        self.quiet_hours_active = False
         self.text_model = str(self.config["text_model"])
         self.vision_model = str(self.config["vision_model"])
         self.tool_router = ToolRouter(
             self.config,
             runtime_callback=self._handle_runtime_notification,
+            attention_callback=self._handle_runtime_attention,
         )
         self.system_prompt = build_system_prompt(
             self.config,
@@ -232,6 +248,7 @@ class BotGUI:
         atexit.register(self.safe_exit)
 
         self._build_gui()
+        self._poll_quiet_hours()
         self.load_animations()
         self.update_animation()
         self.main_thread = threading.Thread(
@@ -276,6 +293,27 @@ class BotGUI:
             text="Exit & Save",
             command=self.safe_exit,
         )
+        self.attention_badge = tk.Label(
+            self.master,
+            bg="#b52335",
+            fg="white",
+            padx=10,
+            pady=7,
+            cursor="hand2",
+            font=("Arial Rounded MT Bold", 13, "bold"),
+        )
+        self.attention_badge.bind(
+            "<Button-1>",
+            lambda _event: self._acknowledge_runtime_attention(),
+        )
+        self.quiet_hours_ui = QuietHoursOverlay(
+            self.master,
+            sleeping_face_directory=(
+                self.kiosk_access.config.sleeping_face_directory
+            ),
+            unlock=self._unlock_quiet_hours,
+        )
+        self._refresh_runtime_attention_ui()
 
     def safe_exit(self) -> None:
         if self.exiting:
@@ -286,6 +324,16 @@ class BotGUI:
         menu_ui = getattr(self, "menu_ui", None)
         if menu_ui is not None:
             menu_ui.close()
+        quiet_hours_after_id = getattr(self, "quiet_hours_after_id", None)
+        if quiet_hours_after_id is not None:
+            try:
+                self.master.after_cancel(quiet_hours_after_id)
+            except tk.TclError:
+                pass
+            self.quiet_hours_after_id = None
+        quiet_hours_ui = getattr(self, "quiet_hours_ui", None)
+        if quiet_hours_ui is not None:
+            quiet_hours_ui.close()
 
         # Cooperative cancellation is critical on macOS. Never call the global
         # sounddevice.stop() while the wake-word thread owns an InputStream.
@@ -358,6 +406,47 @@ class BotGUI:
         widget.bind("<ButtonPress-1>", self._handle_face_press)
         widget.bind("<ButtonRelease-1>", self._handle_face_release)
 
+    def _quiet_hours_locked(self) -> bool:
+        policy = getattr(self, "kiosk_access", None)
+        return policy is not None and policy.is_locked()
+
+    def _poll_quiet_hours(self) -> None:
+        if self.exiting:
+            return
+        locked = self._quiet_hours_locked()
+        if locked:
+            if not self.quiet_hours_active:
+                self.quiet_hours_active = True
+                self.menu_action_event.set()
+                self.interrupted.set()
+                self.thinking_sound_active.clear()
+                with self.tts_queue_lock:
+                    for item in self.tts_queue:
+                        item.cancelled.set()
+                    self.tts_queue.clear()
+                    if self.active_tts_item is not None:
+                        self.active_tts_item.cancelled.set()
+                self.speaker.stop()
+            self.quiet_hours_ui.show()
+        else:
+            if self.quiet_hours_active:
+                self.quiet_hours_active = False
+                self.interrupted.clear()
+                self.set_state(BotStates.IDLE, "Ready")
+            self.quiet_hours_ui.hide()
+        self._refresh_runtime_attention_ui()
+        self.quiet_hours_after_id = self.master.after(1000, self._poll_quiet_hours)
+
+    def _unlock_quiet_hours(self, passcode: str) -> bool:
+        unlocked = self.kiosk_access.unlock(passcode)
+        if unlocked:
+            self.quiet_hours_active = False
+            self.interrupted.clear()
+            self.quiet_hours_ui.hide()
+            self.set_state(BotStates.IDLE, "Ready")
+            self._refresh_runtime_attention_ui()
+        return unlocked
+
     @staticmethod
     def _gesture_event_point(event: tk.Event) -> tuple[int, int]:
         return int(event.x_root), int(event.y_root)
@@ -376,8 +465,9 @@ class BotGUI:
 
     def open_menu(self) -> None:
         """Open the first menu page over the full-screen face."""
-        if self.exiting or self.menu_ui is not None:
+        if self.exiting or self.menu_ui is not None or self._quiet_hours_locked():
             return
+        self._refresh_runtime_attention_ui()
         mode_items = tuple(self.mode_registry.menu_items)
         feature_items = tuple(self.tool_router.registry.menu_items)
         self.menu_ui = MenuApp(
@@ -404,9 +494,11 @@ class BotGUI:
                 )
             ),
         )
+        self._refresh_runtime_attention_ui()
 
     def _handle_menu_close(self) -> None:
         self.menu_ui = None
+        self._refresh_runtime_attention_ui()
 
     def _select_menu_item(self, selection: str) -> None:
         """Route a namespaced menu selection to its owning extension registry."""
@@ -528,6 +620,8 @@ class BotGUI:
 
     def handle_ptt_toggle(self, event: tk.Event | None = None) -> None:
         del event
+        if self._quiet_hours_locked():
+            return
         current_time = time.time()
         if current_time - self.last_ptt_time < 0.5:
             return
@@ -608,9 +702,150 @@ class BotGUI:
         else:
             self.current_frame_index = (self.current_frame_index + 1) % len(frames)
 
-        self.background_label.config(image=frames[self.current_frame_index])
+        frame = frames[self.current_frame_index]
+        if self._runtime_attention_is_visible():
+            frame = self._compose_runtime_attention_frame(frame)
+            self.current_attention_frame = frame
+        else:
+            self.current_attention_frame = None
+        self.background_label.config(image=frame)
+        self._refresh_runtime_attention_ui()
         speed = 50 if self.current_state == BotStates.SPEAKING else 500
         self.master.after(speed, self.update_animation)
+
+    def _runtime_attention_is_visible(self) -> bool:
+        if self.current_state != BotStates.IDLE:
+            return False
+        if self._quiet_hours_locked():
+            return False
+        if getattr(self, "menu_ui", None) is not None:
+            return False
+        lock = getattr(self, "runtime_attentions_lock", None)
+        if lock is None:
+            return False
+        with lock:
+            return bool(self.runtime_attentions)
+
+    def _first_runtime_attention(self) -> RuntimeAttention | None:
+        with self.runtime_attentions_lock:
+            if not self.runtime_attentions:
+                return None
+            key = sorted(self.runtime_attentions)[0]
+            return self.runtime_attentions[key]
+
+    def _compose_runtime_attention_frame(
+        self,
+        frame: ImageTk.PhotoImage,
+    ) -> ImageTk.PhotoImage:
+        """Overlay optional calendar art without replacing BMO's base face."""
+        base = ImageTk.getimage(frame).convert("RGBA").resize(
+            (self.BG_WIDTH, self.BG_HEIGHT),
+            Image.Resampling.LANCZOS,
+        )
+        attention = self._first_runtime_attention()
+        if attention is None:
+            return frame
+        overlay = None
+        overlay_path = attention.overlay_path
+        if overlay_path is not None and overlay_path.is_file():
+            try:
+                overlay = self._attention_overlay_cache.get(overlay_path)
+                if overlay is None:
+                    with Image.open(overlay_path) as source:
+                        overlay = source.convert("RGBA").resize(
+                            (self.BG_WIDTH, self.BG_HEIGHT),
+                            Image.Resampling.LANCZOS,
+                        )
+                    self._attention_overlay_cache[overlay_path] = overlay
+            except (OSError, ValueError):
+                overlay = None
+        if overlay is not None:
+            base.alpha_composite(overlay)
+        else:
+            draw = ImageDraw.Draw(base)
+            colors = ("#ffd34d", "#e64f83", "#51d3c7", "#ff8c42")
+            for index, x_value in enumerate(range(18, self.BG_WIDTH - 18, 32)):
+                color = colors[index % len(colors)]
+                draw.ellipse((x_value - 6, 7, x_value + 6, 19), fill=color)
+                draw.ellipse(
+                    (x_value - 6, self.BG_HEIGHT - 19, x_value + 6, self.BG_HEIGHT - 7),
+                    fill=color,
+                )
+        return ImageTk.PhotoImage(base.convert("RGB"))
+
+    def _handle_runtime_attention(self, event: RuntimeAttentionEvent) -> None:
+        """Add or remove a persistent fullscreen-only attention badge."""
+        if getattr(self, "exiting", False):
+            return
+        key = (event.source, event.attention_id)
+        with self.runtime_attentions_lock:
+            if isinstance(event, RuntimeAttention):
+                self.runtime_attentions[key] = event
+            elif isinstance(event, RuntimeAttentionDismissal):
+                self.runtime_attentions.pop(key, None)
+            else:
+                raise TypeError("Unknown runtime attention event.")
+        try:
+            self.master.after(0, self._refresh_runtime_attention_ui)
+        except tk.TclError:
+            pass
+
+    def _refresh_runtime_attention_ui(self) -> None:
+        badge = getattr(self, "attention_badge", None)
+        if badge is None:
+            return
+        with self.runtime_attentions_lock:
+            count = len(self.runtime_attentions)
+        # This root-owned widget is deliberately hidden whenever a menu or
+        # feature view covers the fullscreen face; PIP faces never receive it.
+        visible = (
+            count > 0
+            and getattr(self, "menu_ui", None) is None
+            and self.current_state == BotStates.IDLE
+            and not self._quiet_hours_locked()
+        )
+        if visible:
+            badge.configure(text=f"ITEMS  {count}")
+            badge.place(x=640, y=14, width=145, height=44)
+            badge.lift()
+        else:
+            badge.place_forget()
+
+    def _acknowledge_runtime_attention(self) -> None:
+        attention = self._first_runtime_attention()
+        if attention is None:
+            return
+        try:
+            acknowledged = attention.acknowledge()
+        except Exception as exc:
+            print(
+                f"[FEATURE] Could not acknowledge {attention.attention_id}: {exc}",
+                flush=True,
+            )
+            return
+        if not acknowledged:
+            return
+        with self.runtime_attentions_lock:
+            self.runtime_attentions.pop(
+                (attention.source, attention.attention_id),
+                None,
+            )
+        self.set_state(BotStates.SPEAKING, attention.message)
+        self.append_to_text(f"BOT: {attention.message}")
+        speech_path = (
+            self.current_interaction.speech_path()
+            if self.current_interaction
+            else None
+        )
+        with self.tts_queue_lock:
+            self.tts_queue.append(
+                _SpeechQueueItem(
+                    attention.message,
+                    speech_path,
+                    on_complete=lambda: self.set_state(BotStates.IDLE, "Ready"),
+                )
+            )
+        self._refresh_runtime_attention_ui()
 
     def set_state(
         self,
@@ -676,6 +911,8 @@ class BotGUI:
             f"[FEATURE] {notification.source}: {notification.message}",
             flush=True,
         )
+        if self._quiet_hours_locked():
+            return
         self.set_state(BotStates.SPEAKING, notification.message)
         self.append_to_text(f"BOT: {notification.message}")
         self.enqueue_speech(notification.message)
@@ -718,6 +955,10 @@ class BotGUI:
 
     def _run_voice_interaction(self) -> bool:
         """Run one voice-loop iteration, returning false when it should stop."""
+        while self._quiet_hours_locked() and not self.exiting:
+            self.shutdown_event.wait(0.1)
+        if self.exiting:
+            return False
         if self._start_pending_menu_action():
             return True
         input_policy = self.mode_registry.input_policy()
@@ -1311,6 +1552,8 @@ class BotGUI:
         )
 
     def enqueue_speech(self, text: str) -> None:
+        if self._quiet_hours_locked():
+            return
         speech_path = (
             self.current_interaction.speech_path()
             if self.current_interaction
@@ -1327,6 +1570,8 @@ class BotGUI:
         on_complete: Callable[[], None] | None = None,
     ) -> None:
         """Replace pending speech owned by one feature-menu view."""
+        if self._quiet_hours_locked():
+            return
         speech_path = (
             self.current_interaction.speech_path()
             if self.current_interaction

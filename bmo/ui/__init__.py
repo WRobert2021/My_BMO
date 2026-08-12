@@ -11,6 +11,7 @@ from bmo.ui.menu import (
     MenuNavigator,
     MenuPage,
 )
+from bmo.ui.quiet_hours import QuietHoursOverlay
 from bmo.ui.timer import (
     TimerApp,
     TimerViewItem,
@@ -29,6 +30,7 @@ __all__ = [
     "MenuNavigation",
     "MenuNavigator",
     "MenuPage",
+    "QuietHoursOverlay",
     "TimerApp",
     "TimerViewItem",
     "VerticalScrollController",

@@ -6,7 +6,12 @@ import datetime
 from typing import Any
 
 from bmo.config import load_config
-from bmo.features.contracts import RuntimeCallback, ToolContext, ToolResult
+from bmo.features.contracts import (
+    RuntimeAttentionCallback,
+    RuntimeCallback,
+    ToolContext,
+    ToolResult,
+)
 from bmo.features.loader import FeatureLoadFailure, load_feature_registry
 from bmo.features.registry import ToolRegistry
 
@@ -41,6 +46,7 @@ class ToolRouter:
         config: dict[str, Any] | None = None,
         *,
         runtime_callback: RuntimeCallback | None = None,
+        attention_callback: RuntimeAttentionCallback | None = None,
     ) -> None:
         effective_config = load_config() if config is None else config
         result = load_feature_registry(
@@ -51,6 +57,7 @@ class ToolRouter:
                 if key != "features"
             },
             runtime_callback=runtime_callback,
+            attention_callback=attention_callback,
         )
         self.registry = result.registry
         self.feature_failures: tuple[FeatureLoadFailure, ...] = result.failures

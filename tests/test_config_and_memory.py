@@ -6,6 +6,7 @@ from pathlib import Path
 from bmo.config import (
     DEFAULT_CONFIG,
     FEATURES_CONFIG_FILE,
+    QUIET_HOURS_CONFIG_FILE,
     SETTINGS_CONFIG_FILE,
     WEATHER_CONFIG_FILE,
     load_config,
@@ -19,6 +20,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(SETTINGS_CONFIG_FILE, Path("config/settings.json"))
         self.assertEqual(FEATURES_CONFIG_FILE, Path("config/features.json"))
         self.assertEqual(WEATHER_CONFIG_FILE, Path("config/weather.json"))
+        self.assertEqual(
+            QUIET_HOURS_CONFIG_FILE,
+            Path("config/quiet_hours.json"),
+        )
 
     def test_missing_config_uses_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -48,6 +53,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             config["weather_config_path"],
             settings_path.with_name("weather.json"),
+        )
+        self.assertEqual(
+            config["quiet_hours_config_path"],
+            settings_path.with_name("quiet_hours.json"),
         )
 
     def test_feature_config_is_merged_with_user_settings(self):

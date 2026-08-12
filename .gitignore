@@ -49,6 +49,8 @@ config.json
 config/settings.json
 config/features.json
 config/weather.json
+config/calendar.json
+config/quiet_hours.json
 
 # --- Generated media ---
 camera_capture.jpg
@@ -72,3 +74,5 @@ graphics/Paw Patrol
 /matching_game_scores.json
 /data/20_questions/data.jsonl
 /data/20_questions/learned.jsonl
+/data/20_questions/history.json
+/data/calendar/

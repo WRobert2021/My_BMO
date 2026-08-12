@@ -33,14 +33,18 @@ class TwentyQuestionsApp:
         game: TwentyQuestionsGame,
         on_answer: Callable[[str], None],
         on_reveal: Callable[[str], None],
+        on_play_again: Callable[[], None],
         on_close: Callable[[], None],
+        thing_history_provider: Callable[[], tuple[str, ...]],
         face_provider: Callable[[], Image.Image | None] | None = None,
     ) -> None:
         self.root = root
         self.game = game
         self.on_answer = on_answer
         self.on_reveal = on_reveal
+        self.on_play_again = on_play_again
         self.on_close = on_close
+        self.thing_history_provider = thing_history_provider
         self.face_provider = face_provider
         self.closed = False
         self.canvas = tk.Canvas(
@@ -118,11 +122,11 @@ class TwentyQuestionsApp:
             640,
             278,
             anchor=tk.W,
-            text="LAST 5 ANSWERS",
+            text="LAST 5 THINGS",
             fill=self.CYAN,
             font=("Arial", 9, "bold"),
         )
-        self.last_answer_items = [
+        self.last_thing_items = [
             self.canvas.create_text(
                 640,
                 306 + index * 27,
@@ -223,13 +227,22 @@ class TwentyQuestionsApp:
     def _draw_answer_buttons(self) -> None:
         self._clear_buttons()
         if not self.game.active:
+            self._draw_button(
+                24,
+                320,
+                240,
+                372,
+                "PLAY AGAIN",
+                self.on_play_again,
+                color=self.GREEN,
+            )
             return
         if self.game.awaiting_reveal:
             self._draw_button(
-                570,
-                320,
-                770,
-                365,
+                438,
+                382,
+                602,
+                424,
                 "SUBMIT OBJECT",
                 self._submit_reveal,
                 color=self.GREEN,
@@ -269,7 +282,7 @@ class TwentyQuestionsApp:
                 justify=tk.CENTER,
                 relief=tk.FLAT,
             )
-            self.reveal_entry.place(x=24, y=382, width=534, height=42)
+            self.reveal_entry.place(x=24, y=382, width=400, height=42)
             self.reveal_entry.focus_set()
 
     def _submit_reveal(self) -> None:
@@ -303,24 +316,11 @@ class TwentyQuestionsApp:
                 f"{self.game.total_prompt_count} questions"
             ),
         )
-        answer_labels = {
-            "yes": "Yes",
-            "no": "No",
-            "sometimes": "Sometimes",
-            "unknown": "I don't know",
-        }
-        recent_turns = self.game.history[-5:]
-        recent_text = [
-            (
-                f"{turn.guessed_object or turn.question}: "
-                f"{answer_labels.get(turn.answer, turn.answer)}"
-            )[:42]
-            for turn in recent_turns
-        ]
-        for index, item in enumerate(self.last_answer_items):
+        recent_things = self.thing_history_provider()[:5]
+        for index, item in enumerate(self.last_thing_items):
             self.canvas.itemconfigure(
                 item,
-                text=recent_text[index] if index < len(recent_text) else "—",
+                text=recent_things[index] if index < len(recent_things) else "—",
             )
         if status is not None:
             self.canvas.itemconfigure(self.status_item, text=status)
@@ -333,6 +333,11 @@ class TwentyQuestionsApp:
             self.canvas.itemconfigure(
                 self.status_item,
                 text="Tap an answer, or tap EXIT GAME to stop.",
+            )
+        else:
+            self.canvas.itemconfigure(
+                self.status_item,
+                text="Tap PLAY AGAIN to start another game.",
             )
         self._draw_answer_buttons()
         self._show_reveal_entry()

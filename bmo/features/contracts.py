@@ -60,6 +60,51 @@ RuntimeCallback: TypeAlias = Callable[[RuntimeNotification], None]
 
 
 @dataclass(frozen=True)
+class RuntimeAttention:
+    """A persistent fullscreen notice acknowledged through the core face UI."""
+
+    source: str
+    attention_id: str
+    message: str
+    acknowledge: Callable[[], bool]
+    overlay_kind: str | None = None
+    overlay_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("source", "attention_id", "message"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Runtime attention {name} cannot be empty.")
+            object.__setattr__(self, name, value.strip())
+        if not callable(self.acknowledge):
+            raise TypeError("Runtime attention acknowledge must be callable.")
+        if self.overlay_kind is not None:
+            overlay_kind = str(self.overlay_kind).strip()
+            object.__setattr__(self, "overlay_kind", overlay_kind or None)
+        if self.overlay_path is not None:
+            object.__setattr__(self, "overlay_path", Path(self.overlay_path))
+
+
+@dataclass(frozen=True)
+class RuntimeAttentionDismissal:
+    """Remove one previously published runtime attention by stable id."""
+
+    source: str
+    attention_id: str
+
+    def __post_init__(self) -> None:
+        for name in ("source", "attention_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Runtime attention dismissal {name} cannot be empty.")
+            object.__setattr__(self, name, value.strip())
+
+
+RuntimeAttentionEvent: TypeAlias = RuntimeAttention | RuntimeAttentionDismissal
+RuntimeAttentionCallback: TypeAlias = Callable[[RuntimeAttentionEvent], None]
+
+
+@dataclass(frozen=True)
 class FeatureMenuItem:
     """Optional touch-menu metadata contributed by a feature module."""
 

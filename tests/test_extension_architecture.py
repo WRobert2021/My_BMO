@@ -401,6 +401,7 @@ class CoreCouplingAuditTests(unittest.TestCase):
         builtin_identifiers = {
             "get_time",
             "set_timer",
+            "get_calendar",
             "get_location",
             "get_weather",
             "search_web",

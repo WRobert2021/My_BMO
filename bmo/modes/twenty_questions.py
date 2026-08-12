@@ -18,10 +18,12 @@ from bmo.modes.contracts import (
 from bmo.state import BotStates
 from bmo.twenty_questions import (
     BASE_DATA_PATH,
+    HISTORY_PATH,
     LEARNED_DATA_PATH,
     TwentyQuestionsDataError,
     TwentyQuestionsDatasetLoader,
     TwentyQuestionsGame,
+    TwentyQuestionsHistory,
     normalize_player_answer,
 )
 from bmo.twenty_questions_ui import TwentyQuestionsApp
@@ -60,6 +62,7 @@ class TwentyQuestionsMode:
         menu_item: ModeMenuItem | None = TWENTY_QUESTIONS_MENU_ITEM,
         app_factory: TwentyQuestionsAppFactory = TwentyQuestionsApp,
         face_provider: Callable[[], Any] | None = None,
+        thing_history: TwentyQuestionsHistory | None = None,
     ) -> None:
         self.game = game
         self.master = master
@@ -74,6 +77,7 @@ class TwentyQuestionsMode:
         self.menu_item = menu_item
         self.app_factory = app_factory
         self.face_provider = face_provider
+        self.thing_history = thing_history or TwentyQuestionsHistory(path=None)
         self.ui: TwentyQuestionsApp | None = None
         self._active = threading.Event()
         self._menu_launched = False
@@ -113,6 +117,7 @@ class TwentyQuestionsMode:
         self.set_state(BotStates.THINKING, "Thinking...")
         if self.game.awaiting_reveal:
             response = self.game.reveal_and_learn(user_text)
+            self._record_completed_thing()
             self._speak_and_wait(response)
             self._refresh_ui(response)
             if not self._menu_launched:
@@ -141,6 +146,7 @@ class TwentyQuestionsMode:
 
         terminal = self.game.accept_answer(parsed_answer or user_text)
         if terminal is not None:
+            self._record_completed_thing()
             self._speak_and_wait(terminal)
             self._refresh_ui(terminal)
             if self.game.active and not self._menu_launched:
@@ -201,8 +207,10 @@ class TwentyQuestionsMode:
                 game=self.game,
                 on_answer=self._queue_gui_answer,
                 on_reveal=self._queue_gui_reveal,
+                on_play_again=self._queue_gui_restart,
                 on_close=self._handle_ui_close,
                 face_provider=self.face_provider,
+                thing_history_provider=self.thing_history.snapshot,
             )
         except Exception as exc:
             print(f"[20 QUESTIONS] Could not open touch UI: {exc}", flush=True)
@@ -270,7 +278,21 @@ class TwentyQuestionsMode:
     def _queue_gui_reveal(self, answer: str) -> None:
         self._queue_gui_input(answer)
 
+    def _queue_gui_restart(self) -> None:
+        if not self._active.is_set() or self.ui is None:
+            return
+        self._queue_gui_action(self._restart_game)
+
+    def _record_completed_thing(self) -> None:
+        completed_object = self.game.completed_object
+        if completed_object is None:
+            return
+        self.thing_history.record(completed_object)
+
     def _queue_gui_input(self, text: str) -> None:
+        self._queue_gui_action(lambda: self.handle_input(text))
+
+    def _queue_gui_action(self, action: Callable[[], None]) -> None:
         if not self._active.is_set() or self.ui is None:
             return
         with self._gui_input_lock:
@@ -280,7 +302,7 @@ class TwentyQuestionsMode:
 
         def process() -> None:
             try:
-                self.handle_input(text)
+                action()
             finally:
                 with self._gui_input_lock:
                     self._gui_input_processing = False
@@ -290,6 +312,23 @@ class TwentyQuestionsMode:
             name="twenty-questions-touch-input",
             daemon=True,
         ).start()
+
+    def _restart_game(self) -> None:
+        self.set_state(BotStates.THINKING, "Thinking...")
+        try:
+            response = self.game.start()
+        except TwentyQuestionsDataError as exc:
+            print(f"[20 QUESTIONS] Could not restart: {exc}", flush=True)
+            self.game.close()
+            self._speak_and_wait("I can't load Twenty Questions right now.")
+            self._refresh_ui("I couldn't start a new game.")
+            self.set_state(BotStates.IDLE, "Tap PLAY AGAIN to retry.")
+            return
+        # Refresh the existing canvas before speaking the new introduction.
+        self._refresh_ui()
+        self._speak_and_wait(response)
+        self._refresh_ui()
+        self.set_state(BotStates.IDLE, "Tap an answer.")
 
     def _refresh_ui(self, status: str | None = None) -> None:
         ui = self.ui
@@ -350,6 +389,16 @@ def register(
     debug = settings.get("debug", settings.get("twenty_questions_debug", False))
     data_path = _path_setting(settings, "data_path", BASE_DATA_PATH)
     learned_path = _path_setting(settings, "learned_path", LEARNED_DATA_PATH)
+    history_path = _path_setting(settings, "history_path", HISTORY_PATH)
+    resolved_history_path = history_path.resolve()
+    if resolved_history_path in {
+        data_path.resolve(),
+        learned_path.resolve(),
+    }:
+        raise TwentyQuestionsDataError(
+            "Twenty Questions history_path must be different from "
+            "data_path and learned_path"
+        )
     loader = TwentyQuestionsDatasetLoader(data_path, learned_path)
     game = TwentyQuestionsGame(
         loader=loader,
@@ -373,6 +422,7 @@ def register(
             wait_for_tts=context.wait_for_tts,
             set_state=context.set_state,
             face_provider=context.face_provider,
+            thing_history=TwentyQuestionsHistory(history_path),
             answer_wait_seconds=settings.get(
                 "answer_wait_seconds",
                 settings.get("game_answer_wait_seconds", 12),

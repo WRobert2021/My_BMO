@@ -13,6 +13,9 @@ from bmo.features.contracts import (
     FeatureMenuContext,
     FeatureMenuItem,
     RuntimeCallback,
+    RuntimeAttention,
+    RuntimeAttentionCallback,
+    RuntimeAttentionDismissal,
     RuntimeNotification,
     Tool,
     ToolContext,
@@ -49,11 +52,13 @@ class ToolRegistry:
         tools: Iterable[Tool] = (),
         *,
         runtime_callback: RuntimeCallback | None = None,
+        attention_callback: RuntimeAttentionCallback | None = None,
     ) -> None:
         self._tools: dict[str, Tool] = {}
         self._aliases: dict[str, str] = {}
         self._menu_items: dict[str, FeatureMenuItem] = {}
         self._runtime_callback = runtime_callback
+        self._attention_callback = attention_callback
         self._closed = False
         for tool in tools:
             self.register(tool)
@@ -65,6 +70,24 @@ class ToolRegistry:
         if self._closed or self._runtime_callback is None:
             return
         self._runtime_callback(notification)
+
+    def notify_attention(self, attention: RuntimeAttention) -> None:
+        """Publish a persistent, user-acknowledged fullscreen notice."""
+        if not isinstance(attention, RuntimeAttention):
+            raise TypeError("Runtime attentions must use RuntimeAttention.")
+        if self._closed or self._attention_callback is None:
+            return
+        self._attention_callback(attention)
+
+    def dismiss_attention(self, dismissal: RuntimeAttentionDismissal) -> None:
+        """Remove a previously published fullscreen attention."""
+        if not isinstance(dismissal, RuntimeAttentionDismissal):
+            raise TypeError(
+                "Runtime attention dismissals must use RuntimeAttentionDismissal."
+            )
+        if self._closed or self._attention_callback is None:
+            return
+        self._attention_callback(dismissal)
 
     def close(self) -> None:
         """Close registered feature resources once, in reverse load order."""

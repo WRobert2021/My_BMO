@@ -8,13 +8,14 @@ import importlib
 from types import ModuleType
 from typing import Any
 
-from bmo.features.contracts import RuntimeCallback
+from bmo.features.contracts import RuntimeAttentionCallback, RuntimeCallback
 from bmo.features.registry import ToolRegistry
 
 
 DEFAULT_FEATURE_MODULES = (
     "bmo.features.get_time",
     "bmo.features.set_timer",
+    "bmo.features.calendar",
     "bmo.features.get_location",
     "bmo.features.get_weather",
     "bmo.features.search_web",
@@ -80,10 +81,14 @@ def load_feature_registry(
     reporter: Callable[[str], None] | None = None,
     shared_settings: Mapping[str, Any] | None = None,
     runtime_callback: RuntimeCallback | None = None,
+    attention_callback: RuntimeAttentionCallback | None = None,
 ) -> FeatureLoadResult:
     """Import and register enabled feature modules without failing startup."""
     emit = reporter or (lambda message: print(message, flush=True))
-    registry = ToolRegistry(runtime_callback=runtime_callback)
+    registry = ToolRegistry(
+        runtime_callback=runtime_callback,
+        attention_callback=attention_callback,
+    )
     failures: list[FeatureLoadFailure] = []
     loaded_modules: list[str] = []
 

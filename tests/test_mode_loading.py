@@ -182,6 +182,28 @@ class ModeLoadingTests(unittest.TestCase):
         self.assertEqual(len(result.failures), 1)
         self.assertEqual(result.failures[0].stage, "register")
 
+    def test_twenty_questions_rejects_history_path_collisions(self) -> None:
+        result = load_mode_registry(
+            {
+                "modes": [
+                    {
+                        "module": "bmo.modes.twenty_questions",
+                        "settings": {
+                            "data_path": "data/20_questions/data.jsonl",
+                            "learned_path": "data/20_questions/learned.jsonl",
+                            "history_path": "data/20_questions/data.jsonl",
+                        },
+                    }
+                ]
+            },
+            context=make_context(),
+        )
+
+        self.assertEqual(result.registry.names, ())
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].stage, "register")
+        self.assertIn("history_path", result.failures[0].error)
+
     def test_malformed_modes_list_reports_configuration_failure(self) -> None:
         result = load_mode_registry(
             {"modes": {"module": "not-a-list"}},
