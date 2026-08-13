@@ -313,10 +313,11 @@ class LearningEngine:
         choices, correct = self._make_choices(payloads)
         hidden = bool(lesson.setting("hidden", False))
         visible = lesson.prompt_templates[0]
-        spoken = f"Find all of the {target}s."
+        case = str(lesson.setting("case", "")).strip().lower()
+        case_words = f"{case}case " if case in {"upper", "lower"} else ""
+        spoken = f"Find every choice showing the {case_words}letter {target}."
         if not hidden:
-            visible = visible.format(target=target)
-            spoken = visible
+            visible = f"Find all {case_words}letter {target} choices."
         return self._question(
             lesson,
             prompt=visible,
@@ -409,10 +410,13 @@ class LearningEngine:
             self.rng, items, {target}, lesson.choice_count - 2
         )
         payloads = [
-            (target.label, target.spoken, {"correct": True, "picture": target.attribute("picture", "")}),
-            (target.label, target.spoken, {"correct": True, "picture": target.attribute("picture", "")}),
+            (target.label, target.spoken, {"correct": True, "picture": target.attribute("picture", ""), "speakable": True}),
+            (target.label, target.spoken, {"correct": True, "picture": target.attribute("picture", ""), "speakable": True}),
         ]
-        payloads.extend((item.label, item.spoken, {"correct": False}) for item in distractors)
+        payloads.extend(
+            (item.label, item.spoken, {"correct": False, "speakable": True})
+            for item in distractors
+        )
         choices, correct = self._make_choices(payloads)
         return self._question(
             lesson,
@@ -465,14 +469,15 @@ class LearningEngine:
             [(target.label, target.spoken, {"correct": True})]
             + [(item.label, item.spoken, {"correct": False}) for item in distractors]
         )
-        sentence = f"We can find the word {target.label} in this sentence."
-        prompt = lesson.prompt_templates[0].format(target=target.label)
+        sentence = f"The word {target.label} is here."
+        prompt = f'Find the word "{target.label}" in the sentence below.'
         return self._question(
             lesson,
             prompt=prompt,
-            spoken_prompt=f"{prompt} {sentence}",
+            spoken_prompt=f"Find the word {target.spoken} in this sentence. {sentence}",
             choices=choices,
             correct=correct,
+            example=sentence,
             explanation=f"The word {target.label} has the same letters in the same order.",
             hint=f"Look for the first letter of {target.label}, then check the rest.",
             metadata={"target": target.label, "sentence": sentence},

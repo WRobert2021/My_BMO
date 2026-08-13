@@ -812,6 +812,7 @@ class LearningScreen(str, Enum):
     TEACHER_PLAN = "teacher_plan"
     TEACHER_PLAN_EDIT = "teacher_plan_edit"
     TEACHER_LESSONS = "teacher_lessons"
+    TEACHER_FILTER_PICKER = "teacher_filter_picker"
     TEACHER_STATS = "teacher_stats"
     TEXT_ENTRY = "text_entry"
     CONFIRM = "confirm"
@@ -893,9 +894,11 @@ class LearningApp:
         self._after_ids: set[str] = set()
         self._face_after_id: str | None = None
         self._face_image: ImageTk.PhotoImage | None = None
+        self._face_source: Image.Image | None = None
         self._face_item: int | None = None
         self._fallback_items: tuple[int, ...] = ()
         self._face_speaking = False
+        self._face_speaking_phase = False
         self._speech_failed = False
         self._input_locked = False
         self._status = ""
@@ -907,6 +910,8 @@ class LearningApp:
         self._plan_pages = PageCursor(3)
         self._teacher_pages = PageCursor(3)
         self._lesson_pages = PageCursor(4)
+        self._plan_lesson_pages = PageCursor(4)
+        self._filter_picker_pages = PageCursor(4)
         self._mastery_pages = PageCursor(3)
         self._selected_profile: ProfileSnapshot | None = None
         self._selected_plan: PlanSnapshot | None = None
@@ -936,6 +941,8 @@ class LearningApp:
         self._plan_draft_mastery_gate = False
         self._lesson_domain_filter = "all"
         self._lesson_family_filter = "all"
+        self._filter_picker_kind = "domain"
+        self._filter_picker_values: tuple[str, ...] = ()
         self._editing_plan_id: str | None = None
         self._stats: Any = None
 
@@ -1086,6 +1093,7 @@ class LearningApp:
         mouth = canvas.create_line(730, 43, 742, 43, fill=self.NAVY, width=3)
         label = canvas.create_text(693, 33, text="B", fill=self.NAVY, font=self._font(9, bold=True))
         self._fallback_items = (left_eye, right_eye, mouth, label)
+        self._render_face(self._face_source)
 
     def _button(
         self,
@@ -1369,10 +1377,7 @@ class LearningApp:
             )
             self._session_index = 0
             self._session_total = max(1, plan.question_count)
-            if not self._persist_session():
-                self._status = (
-                    "Progress cannot be saved right now. Please tell a teacher."
-                )
+            self._progress_saved = self._persist_session()
             self._resume_session()
         except Exception:
             self._show_error("This learning session could not be started.", self._show_plans)
@@ -1435,10 +1440,17 @@ class LearningApp:
             font_size=10,
         )
         if question.example:
-            self.canvas.create_text(400, 153, text=question.example, fill="#000000", font=self._font(28, bold=True))
+            example_size = 22 if len(question.example) > 6 else 28
+            self.canvas.create_text(
+                400,
+                155,
+                text=question.example,
+                fill="#000000",
+                width=600,
+                justify=tk.CENTER,
+                font=self._font(example_size, bold=True),
+            )
         self._draw_question_controls(question, controller)
-        if self._status:
-            self._draw_notice(self._status, danger=True)
 
     @property
     def replay_enabled(self) -> bool:
@@ -1484,7 +1496,7 @@ class LearningApp:
             self._draw_choice_grid(
                 question,
                 controller,
-                top=226 if has_prompt_scene else 171,
+                top=226 if has_prompt_scene else (210 if question.example else 171),
             )
         if controller.needs_submit:
             self._button(
@@ -1615,6 +1627,39 @@ class LearningApp:
         self._regions.append(HitRegion(key, bounds, enabled=enabled))
         if enabled:
             self._callbacks[key] = callback
+        if choice.metadata.get("speakable"):
+            self._draw_choice_speaker(bounds, choice)
+
+    def _draw_choice_speaker(self, bounds: Rect, choice: ChoiceSnapshot) -> None:
+        """Add a distinct touch target that speaks one word without selecting it."""
+        assert self.canvas is not None
+        speaker_bounds = Rect(
+            max(bounds.left + 6, bounds.right - 62),
+            bounds.top + 6,
+            bounds.right - 6,
+            min(bounds.bottom - 6, bounds.top + 42),
+        )
+        touch_enabled = not self._input_locked
+        enabled = self.replay_enabled and touch_enabled
+        self.canvas.create_rectangle(
+            *speaker_bounds.as_tuple(),
+            fill=self.CORAL if enabled else self.DISABLED,
+            outline=self.WHITE,
+            width=2,
+        )
+        self.canvas.create_text(
+            *speaker_bounds.center,
+            text="HEAR",
+            fill=self.WHITE,
+            font=self._font(7, bold=True),
+        )
+        key = f"speak-choice-{choice.choice_id}-{self._action_serial}"
+        self._action_serial += 1
+        # Keep the grey speaker area from falling through to the larger word
+        # selection target when speech is unavailable.
+        self._regions.append(HitRegion(key, speaker_bounds, enabled=touch_enabled))
+        if enabled:
+            self._callbacks[key] = lambda spoken=choice.spoken: self._speak(spoken, None)
 
     def _draw_scene(self, bounds: Rect, metadata: Mapping[str, Any], choice_label: str = "") -> bool:
         """Draw deterministic original primitives described by question metadata."""
@@ -1905,9 +1950,7 @@ class LearningApp:
         self._clear()
         self._header("NICE TRY" if not evaluation.correct else "GREAT WORK")
         assert self.canvas is not None
-        color = self.YELLOW if self._feedback_retry else self.GREEN
-        self.canvas.create_oval(298, 95, 502, 299, fill=color, outline=self.NAVY, width=5)
-        self.canvas.create_text(400, 162, text="TRY\nAGAIN" if self._feedback_retry else "YOU\nGOT IT", fill=self.NAVY if self._feedback_retry else self.WHITE, font=self._font(25, bold=True), justify=tk.CENTER)
+        self._draw_feedback_badge()
         message = evaluation.feedback
         if not self._progress_saved:
             message += "\nProgress was not saved. Please tell a teacher."
@@ -1940,21 +1983,41 @@ class LearningApp:
         self._clear()
         self._header("NICE TRY" if not evaluation.correct else "GREAT WORK")
         assert self.canvas is not None
-        color = self.YELLOW if self._feedback_retry else self.GREEN
-        self.canvas.create_oval(298, 95, 502, 299, fill=color, outline=self.NAVY, width=5)
-        self.canvas.create_text(400, 190, text="TRY AGAIN" if self._feedback_retry else "YOU GOT IT", fill=self.NAVY if self._feedback_retry else self.WHITE, font=self._font(23, bold=True))
+        self._draw_feedback_badge()
         message = evaluation.feedback
         if not self._progress_saved:
             message += "\nProgress was not saved. Please tell a teacher."
         self.canvas.create_text(400, 335, text=message, fill=self.INK, width=650, font=self._font(16, bold=True), justify=tk.CENTER)
         self._button(Rect(260, 396, 540, 466), "TRY AGAIN" if self._feedback_retry else "CONTINUE", self._retry_question if self._feedback_retry else self._advance_question, color=self.TEAL if self._feedback_retry else self.GREEN, font_size=16)
 
+    def _draw_feedback_badge(self) -> None:
+        assert self.canvas is not None
+        color = self.YELLOW if self._feedback_retry else self.GREEN
+        self.canvas.create_oval(
+            298,
+            95,
+            502,
+            299,
+            fill=color,
+            outline=self.NAVY,
+            width=5,
+        )
+        self.canvas.create_text(
+            400,
+            197,
+            text="TRY\nAGAIN" if self._feedback_retry else "YOU\nGOT IT",
+            fill=self.NAVY if self._feedback_retry else self.WHITE,
+            width=180,
+            justify=tk.CENTER,
+            font=self._font(25, bold=True),
+        )
+
     def _retry_question(self) -> None:
         controller = self._question_controller
         if controller is not None:
             controller.reset_for_retry()
         self._input_locked = False
-        self._status = "Notice what is different, then choose again."
+        self._status = ""
         self._show_lesson()
 
     def _advance_question(self) -> None:
@@ -2012,11 +2075,15 @@ class LearningApp:
         if not self.replay_enabled or not str(text).strip():
             return False
         self._face_speaking = True
+        self._face_speaking_phase = True
+        self._render_face(getattr(self, "_face_source", None))
 
         def complete() -> None:
             if self.closed:
                 return
             self._face_speaking = False
+            self._face_speaking_phase = False
+            self._render_face(getattr(self, "_face_source", None))
             if on_complete is not None:
                 on_complete()
 
@@ -2026,6 +2093,7 @@ class LearningApp:
             accepted = False
         if not accepted:
             self._face_speaking = False
+            self._face_speaking_phase = False
             self._speech_failed = True
             if (
                 getattr(self, "screen", None) is LearningScreen.LESSON
@@ -2310,7 +2378,7 @@ class LearningApp:
                 f"{len(plan.lesson_ids)} lessons  |  "
                 f"{plan.question_count} questions  |  "
                 f"{plan.repetitions} practice round{'s' if plan.repetitions != 1 else ''}  |  "
-                f"Mastery {'ON' if plan.mastery_gate else 'OFF'}"
+                f"Mastery gate {'ON' if plan.mastery_gate else 'OFF'}"
             ),
             fill=self.MUTED,
             font=self._font(9, bold=True),
@@ -2326,6 +2394,18 @@ class LearningApp:
         )
         for bounds, label, callback, color in actions:
             self._button(bounds, label, callback, color=color, font_size=10)
+        self.canvas.create_text(
+            400,
+            397,
+            text=(
+                "MASTERY GATE ON: later lessons wait until foundation lessons "
+                "have enough accurate practice. OFF: use the plan's full lesson order."
+            ),
+            fill=self.MUTED,
+            width=680,
+            justify=tk.CENTER,
+            font=self._font(10, bold=True),
+        )
 
     def _edit_plan(self) -> None:
         plan = self._selected_plan
@@ -2337,7 +2417,7 @@ class LearningApp:
         self._plan_draft_question_count = plan.question_count
         self._plan_draft_repetitions = plan.repetitions
         self._plan_draft_mastery_gate = plan.mastery_gate
-        self._lesson_pages.page_index = 0
+        self._plan_lesson_pages.page_index = 0
         self._show_plan_editor()
 
     def _show_plan_editor(self) -> None:
@@ -2414,9 +2494,9 @@ class LearningApp:
             font_size=6,
         )
         lesson_by_id = {lesson.lesson_id: lesson for lesson in self._lessons}
-        self._lesson_pages.set_count(len(self._plan_draft_lessons))
-        visible = self._lesson_pages.current(self._plan_draft_lessons)
-        start = self._lesson_pages.page_index * self._lesson_pages.page_size
+        self._plan_lesson_pages.set_count(len(self._plan_draft_lessons))
+        visible = self._plan_lesson_pages.current(self._plan_draft_lessons)
+        start = self._plan_lesson_pages.page_index * self._plan_lesson_pages.page_size
         for row, lesson_id in enumerate(visible):
             index = start + row
             lesson = lesson_by_id.get(lesson_id)
@@ -2427,9 +2507,37 @@ class LearningApp:
             self.canvas.create_text(60, top + 27, anchor="w", text=f"{index + 1}. {title}", fill=self.INK, width=430, font=self._font(10, bold=True))
             self._button(Rect(620, top, 690, top + 55), "UP", lambda item=index: self._move_lesson(item, -1), color=self.BLUE, enabled=index > 0, font_size=8)
             self._button(Rect(700, top, 770, top + 55), "DOWN", lambda item=index: self._move_lesson(item, 1), color=self.BLUE, enabled=index < len(self._plan_draft_lessons) - 1, font_size=7)
-        self._button(Rect(44, 400, 232, 466), "CHOOSE LESSONS", self._show_lesson_selector, color=self.TEAL, font_size=10)
-        self._button(Rect(306, 400, 494, 466), "SAVE ORDER", self._save_plan_lessons, color=self.GREEN, enabled=bool(self._plan_draft_lessons), font_size=10)
-        self._button(Rect(568, 400, 756, 466), "CANCEL", lambda: self._show_teacher_plan(self._selected_plan) if self._selected_plan else self._show_teacher_plans(), color=self.NAVY, font_size=11)
+        if self._plan_draft_lessons:
+            last = min(
+                len(self._plan_draft_lessons),
+                start + self._plan_lesson_pages.page_size,
+            )
+            self.canvas.create_text(
+                400,
+                387,
+                text=f"LESSONS {start + 1}-{last} OF {len(self._plan_draft_lessons)}",
+                fill=self.MUTED,
+                font=self._font(7, bold=True),
+            )
+        self._button(Rect(16, 400, 182, 466), "CHOOSE LESSONS", self._show_lesson_selector, color=self.TEAL, font_size=9)
+        self._button(
+            Rect(192, 400, 282, 466),
+            "PREV",
+            lambda: self._turn_page(self._plan_lesson_pages, -1, self._show_plan_editor),
+            color=self.NAVY,
+            enabled=self._plan_lesson_pages.page_index > 0,
+            font_size=8,
+        )
+        self._button(Rect(292, 400, 508, 466), "SAVE ORDER", self._save_plan_lessons, color=self.GREEN, enabled=bool(self._plan_draft_lessons), font_size=10)
+        self._button(
+            Rect(518, 400, 608, 466),
+            "NEXT",
+            lambda: self._turn_page(self._plan_lesson_pages, 1, self._show_plan_editor),
+            color=self.NAVY,
+            enabled=self._plan_lesson_pages.page_index < self._plan_lesson_pages.page_count - 1,
+            font_size=8,
+        )
+        self._button(Rect(618, 400, 784, 466), "CANCEL", lambda: self._show_teacher_plan(self._selected_plan) if self._selected_plan else self._show_teacher_plans(), color=self.NAVY, font_size=10)
 
     def _adjust_plan_questions(self, offset: int) -> None:
         self._plan_draft_question_count = max(
@@ -2452,7 +2560,7 @@ class LearningApp:
     def _move_lesson(self, index: int, offset: int) -> None:
         self._plan_draft_lessons[:] = reorder_item(self._plan_draft_lessons, index, offset)
         destination = max(0, min(len(self._plan_draft_lessons) - 1, index + offset))
-        self._lesson_pages.page_index = destination // self._lesson_pages.page_size
+        self._plan_lesson_pages.page_index = destination // self._plan_lesson_pages.page_size
         self._show_plan_editor()
 
     def _show_lesson_selector(self) -> None:
@@ -2477,15 +2585,15 @@ class LearningApp:
         self._lesson_pages.set_count(len(filtered))
         self._button(
             Rect(48, 72, 232, 116),
-            f"DOMAIN: {self._lesson_domain_filter.upper()}",
-            self._cycle_lesson_domain,
+            f"DOMAIN: {self._lesson_domain_filter.upper()}\nTAP TO CHOOSE",
+            lambda: self._open_lesson_filter("domain"),
             color=self.NAVY,
             font_size=8,
         )
         self._button(
             Rect(244, 72, 476, 116),
-            f"FAMILY: {self._lesson_family_filter.replace('_', ' ').upper()}",
-            self._cycle_lesson_family,
+            f"FAMILY: {self._lesson_family_filter.replace('_', ' ').upper()}\nTAP TO CHOOSE",
+            lambda: self._open_lesson_filter("family"),
             color=self.NAVY,
             font_size=8,
         )
@@ -2508,21 +2616,49 @@ class LearningApp:
             self._button(Rect(12, 400, 96, 466), "PREV", lambda: self._turn_page(self._lesson_pages, -1, self._show_lesson_selector), color=self.NAVY, enabled=self._lesson_pages.page_index > 0, font_size=9)
             self._button(Rect(704, 400, 788, 466), "NEXT", lambda: self._turn_page(self._lesson_pages, 1, self._show_lesson_selector), color=self.NAVY, enabled=self._lesson_pages.page_index < self._lesson_pages.page_count - 1, font_size=9)
 
-    def _cycle_lesson_domain(self) -> None:
-        values = ("all", *lesson_filter_domains(self._lessons))
-        index = values.index(self._lesson_domain_filter)
-        self._lesson_domain_filter = values[(index + 1) % len(values)]
-        self._lesson_family_filter = "all"
-        self._lesson_pages.page_index = 0
-        self._show_lesson_selector()
+    def _open_lesson_filter(self, kind: str) -> None:
+        self._filter_picker_kind = "family" if kind == "family" else "domain"
+        if self._filter_picker_kind == "domain":
+            values = ("all", *lesson_filter_domains(self._lessons))
+            current = self._lesson_domain_filter
+        else:
+            values = (
+                "all",
+                *lesson_filter_families(self._lessons, self._lesson_domain_filter),
+            )
+            current = self._lesson_family_filter
+        self._filter_picker_values = values
+        self._filter_picker_pages.set_count(len(values))
+        self._filter_picker_pages.page_index = values.index(current) // self._filter_picker_pages.page_size
+        self._show_lesson_filter_picker()
 
-    def _cycle_lesson_family(self) -> None:
-        values = (
-            "all",
-            *lesson_filter_families(self._lessons, self._lesson_domain_filter),
-        )
-        index = values.index(self._lesson_family_filter)
-        self._lesson_family_filter = values[(index + 1) % len(values)]
+    def _show_lesson_filter_picker(self) -> None:
+        kind = self._filter_picker_kind
+        self.screen = LearningScreen.TEACHER_FILTER_PICKER
+        self._clear()
+        self._header(f"CHOOSE {kind.upper()}")
+        current = self._lesson_domain_filter if kind == "domain" else self._lesson_family_filter
+        for row, value in enumerate(self._filter_picker_pages.current(self._filter_picker_values)):
+            top = 86 + row * 72
+            label = "ALL" if value == "all" else value.replace("_", " ").upper()
+            self._button(
+                Rect(100, top, 700, top + 58),
+                label,
+                lambda selected=value: self._select_lesson_filter(selected),
+                color=self.GREEN if value == current else self.BLUE,
+                font_size=13,
+            )
+        self._button(Rect(300, 400, 500, 466), "BACK", self._show_lesson_selector, color=self.NAVY, font_size=12)
+        if self._filter_picker_pages.page_count > 1:
+            self._button(Rect(12, 400, 96, 466), "PREV", lambda: self._turn_page(self._filter_picker_pages, -1, self._show_lesson_filter_picker), color=self.NAVY, enabled=self._filter_picker_pages.page_index > 0, font_size=9)
+            self._button(Rect(704, 400, 788, 466), "NEXT", lambda: self._turn_page(self._filter_picker_pages, 1, self._show_lesson_filter_picker), color=self.NAVY, enabled=self._filter_picker_pages.page_index < self._filter_picker_pages.page_count - 1, font_size=9)
+
+    def _select_lesson_filter(self, value: str) -> None:
+        if self._filter_picker_kind == "domain":
+            self._lesson_domain_filter = value
+            self._lesson_family_filter = "all"
+        else:
+            self._lesson_family_filter = value
         self._lesson_pages.page_index = 0
         self._show_lesson_selector()
 
@@ -2874,6 +3010,26 @@ class LearningApp:
         self._after_ids.add(after_id)
         return after_id
 
+    def _render_face(self, face: Image.Image | None) -> None:
+        canvas = getattr(self, "canvas", None)
+        face_item = getattr(self, "_face_item", None)
+        if face is None or canvas is None or face_item is None:
+            return
+        height = 42 if (
+            getattr(self, "_face_speaking", False)
+            and getattr(self, "_face_speaking_phase", False)
+        ) else 48
+        resized = face.convert("RGB").resize(
+            (108, height),
+            Image.Resampling.LANCZOS,
+        )
+        frame = Image.new("RGB", (108, 48), "#68C8BB")
+        frame.paste(resized, (0, (48 - height) // 2))
+        self._face_image = ImageTk.PhotoImage(frame)
+        canvas.itemconfigure(face_item, image=self._face_image)
+        for item in getattr(self, "_fallback_items", ()):
+            canvas.itemconfigure(item, state=tk.HIDDEN)
+
     def _refresh_face(self) -> None:
         if self.closed or self.canvas is None:
             return
@@ -2886,15 +3042,20 @@ class LearningApp:
         if self._face_item is not None:
             try:
                 face = self.face_provider()
+            except Exception:
+                face = None
+            try:
                 if face is not None:
-                    resized = face.convert("RGB").resize(
-                        (108, 48),
-                        Image.Resampling.LANCZOS,
+                    self._face_source = face.copy()
+                if getattr(self, "_face_speaking", False):
+                    self._face_speaking_phase = not getattr(
+                        self,
+                        "_face_speaking_phase",
+                        False,
                     )
-                    self._face_image = ImageTk.PhotoImage(resized)
-                    self.canvas.itemconfigure(self._face_item, image=self._face_image)
-                    for item in self._fallback_items:
-                        self.canvas.itemconfigure(item, state=tk.HIDDEN)
+                else:
+                    self._face_speaking_phase = False
+                self._render_face(self._face_source)
             except Exception:
                 pass
         self._face_after_id = self.root.after(FACE_REFRESH_MS, self._refresh_face)

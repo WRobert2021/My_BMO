@@ -286,6 +286,36 @@ class QuestionGenerationTests(unittest.TestCase):
                 all(multi.choice(answer).label == target for answer in multi.correct_answers)
             )
 
+    def test_multi_letter_speech_names_the_letter_without_attached_plural_s(self) -> None:
+        engine = LearningEngine(rng=random.Random(71), id_factory=lambda: "id")
+
+        for case, glyph in (("upper", "A"), ("lower", "a")):
+            with self.subTest(case=case):
+                generated = engine.generate_question(
+                    f"literacy.letter.{case}.a.multi"
+                )
+                self.assertIn(f"letter {glyph}", generated.spoken_prompt)
+                self.assertNotRegex(generated.spoken_prompt, rf"\b{glyph}s\b")
+
+    def test_same_word_choices_are_individually_speakable(self) -> None:
+        engine = LearningEngine(rng=random.Random(9), id_factory=lambda: "id")
+
+        generated = engine.generate_question("literacy.words.same")
+
+        self.assertTrue(all(choice.meta("speakable") for choice in generated.choices))
+        self.assertTrue(all(choice.spoken for choice in generated.choices))
+
+    def test_find_word_activity_displays_the_sentence_it_references(self) -> None:
+        engine = LearningEngine(rng=random.Random(9), id_factory=lambda: "id")
+
+        generated = engine.generate_question("literacy.words.find_in_sentence")
+        target = str(generated.meta("target"))
+
+        self.assertIn("sentence below", generated.prompt)
+        self.assertIn(target, generated.example.split())
+        self.assertEqual(generated.example, generated.meta("sentence"))
+        self.assertIn(generated.example, generated.spoken_prompt)
+
     def test_review_and_spoken_recognition_prompts_do_not_show_target(self) -> None:
         engine = LearningEngine(rng=random.Random(4), id_factory=lambda: "id")
         review = engine.generate_question("literacy.letter_review.ad.1")

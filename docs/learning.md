@@ -70,6 +70,12 @@ per-skill mastery separate so an unfinished plan cannot appear fully
 completed. Destructive profile, plan, and progress actions require explicit
 confirmation.
 
+The **mastery gate** controls when a plan introduces later lessons. When it is
+on, Learning offers the foundation lessons first and unlocks dependent lessons
+after the configured amount of accurate recent practice. When it is off, every
+lesson in the teacher's ordered plan can be used immediately. Turning the gate
+off does not erase scores or change the lesson order.
+
 ## Scoring and mastery
 
 Every recorded attempt includes stable profile, plan, lesson, question, and

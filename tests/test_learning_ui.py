@@ -430,6 +430,44 @@ class TeacherStateHelperTests(unittest.TestCase):
         app._toggle_draft_mastery()
         self.assertTrue(app._plan_draft_mastery_gate)
 
+    def test_plan_reorder_pagination_follows_a_lesson_across_pages(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app._plan_draft_lessons = ["a", "b", "c", "d", "e", "f"]
+        app._plan_lesson_pages = PageCursor(4)
+        app._plan_lesson_pages.set_count(6)
+        app._show_plan_editor = Mock()
+
+        app._move_lesson(3, 1)
+
+        self.assertEqual(app._plan_draft_lessons, ["a", "b", "c", "e", "d", "f"])
+        self.assertEqual(app._plan_lesson_pages.page_index, 1)
+        app._show_plan_editor.assert_called_once_with()
+
+    def test_domain_and_family_open_as_selection_lists(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app._lessons = tuple(
+            lesson_snapshot(item)
+            for item in (
+                SimpleNamespace(lesson_id="literacy.letter.a", domain="literacy", title="A"),
+                SimpleNamespace(lesson_id="literacy.sight.one", domain="literacy", title="One"),
+                SimpleNamespace(lesson_id="math.count.one", domain="math", title="One"),
+            )
+        )
+        app._lesson_domain_filter = "literacy"
+        app._lesson_family_filter = "letter"
+        app._filter_picker_pages = PageCursor(4)
+        app._lesson_pages = PageCursor(4)
+        app._show_lesson_filter_picker = Mock()
+        app._show_lesson_selector = Mock()
+
+        app._open_lesson_filter("family")
+
+        self.assertEqual(app._filter_picker_values, ("all", "letter", "sight"))
+        app._show_lesson_filter_picker.assert_called_once_with()
+        app._select_lesson_filter("sight")
+        self.assertEqual(app._lesson_family_filter, "sight")
+        app._show_lesson_selector.assert_called_once_with()
+
     def test_report_metrics_keep_points_and_fraction_semantics_distinct(self) -> None:
         metrics = dict(
             teacher_report_metrics(
@@ -544,6 +582,102 @@ class EvaluationAndSpeechTests(unittest.TestCase):
                 self.assertFalse(app.replay_enabled)
                 app._show_lesson.assert_called_once_with()
 
+    def test_retry_clears_the_overlapping_lesson_notice(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app._question_controller = Mock()
+        app._input_locked = True
+        app._status = "old retry banner"
+        app._show_lesson = Mock()
+
+        app._retry_question()
+
+        self.assertEqual(app._status, "")
+        app._question_controller.reset_for_retry.assert_called_once_with()
+
+    def test_feedback_badge_keeps_wrapped_centered_text(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app.canvas = Mock()
+        app._feedback_retry = True
+        app.font_family = "Arial"
+
+        app._draw_feedback_badge()
+
+        call = app.canvas.create_text.call_args
+        self.assertEqual(call.args[:2], (400, 197))
+        self.assertEqual(call.kwargs["text"], "TRY\nAGAIN")
+        self.assertEqual(call.kwargs["justify"], "center")
+
+    def test_speakable_word_has_a_separate_hear_touch_target(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app.canvas = Mock()
+        app.font_family = "Arial"
+        app.font_families = ("Arial",)
+        app._action_serial = 0
+        app._regions = []
+        app._callbacks = {}
+        app._input_locked = False
+        app.closed = False
+        app.speech_available = True
+        app._speech_failed = False
+        app._draw_scene = Mock(return_value=False)
+        app._speak = Mock(return_value=True)
+        select = Mock()
+        choice = question_snapshot(
+            question(
+                choices=(
+                    SimpleNamespace(
+                        id="cat",
+                        label="cat",
+                        spoken="cat",
+                        metadata=(("speakable", True),),
+                    ),
+                )
+            )
+        ).choices[0]
+
+        app._choice_button(Rect(20, 20, 180, 110), choice, "cat", False, select)
+
+        hear_key = next(region.key for region in app._regions if region.key.startswith("speak-choice"))
+        app._callbacks[hear_key]()
+        app._speak.assert_called_once_with("cat", None)
+        select.assert_not_called()
+
+    def test_unavailable_word_speech_is_grey_and_does_not_select_through(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app.canvas = Mock()
+        app.font_family = "Arial"
+        app.font_families = ("Arial",)
+        app._action_serial = 0
+        app._regions = []
+        app._callbacks = {}
+        app._input_locked = False
+        app.closed = False
+        app.speech_available = False
+        app._speech_failed = False
+        app._draw_scene = Mock(return_value=False)
+        select = Mock()
+        choice = question_snapshot(
+            question(
+                choices=(
+                    SimpleNamespace(
+                        id="cat",
+                        label="cat",
+                        spoken="cat",
+                        metadata=(("speakable", True),),
+                    ),
+                )
+            )
+        ).choices[0]
+
+        app._choice_button(Rect(20, 20, 180, 110), choice, "cat", False, select)
+
+        speaker = next(
+            region for region in app._regions if region.key.startswith("speak-choice")
+        )
+        self.assertEqual(hit_test(app._regions, speaker.bounds.center), speaker.key)
+        self.assertNotIn(speaker.key, app._callbacks)
+        select.assert_not_called()
+
 
 class PersistenceAndLifecycleTests(unittest.TestCase):
     def test_new_plan_persists_repetitions_with_session_settings(self) -> None:
@@ -644,6 +778,43 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
         app.canvas.itemconfigure.assert_any_call(10, state="hidden")
         app.canvas.itemconfigure.assert_any_call(11, state="hidden")
         self.assertIn("next-face", app._after_ids)
+
+    def test_cached_face_is_reused_immediately_after_screen_redraw(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app.canvas = Mock()
+        app.canvas.create_image.return_value = 99
+        app.canvas.create_oval.side_effect = (10, 11)
+        app.canvas.create_line.return_value = 12
+        app.canvas.create_text.return_value = 13
+        app.font_family = "Arial"
+        app._face_source = Image.new("RGB", (20, 20), "blue")
+        app._face_speaking = False
+        app._face_speaking_phase = False
+
+        with patch("bmo.ui.learning.ImageTk.PhotoImage", return_value="photo"):
+            app._draw_face_panel()
+
+        app.canvas.itemconfigure.assert_any_call(99, image="photo")
+        app.canvas.itemconfigure.assert_any_call(10, state="hidden")
+
+    def test_speaking_face_alternates_between_open_and_rest_frames(self) -> None:
+        app = LearningApp.__new__(LearningApp)
+        app.canvas = Mock()
+        app._face_item = 99
+        app._fallback_items = ()
+        app._face_speaking = True
+        app._face_speaking_phase = True
+        captured = []
+
+        with patch(
+            "bmo.ui.learning.ImageTk.PhotoImage",
+            side_effect=lambda image: captured.append(image.copy()) or "photo",
+        ):
+            app._render_face(Image.new("RGB", (20, 20), "blue"))
+            app._face_speaking_phase = False
+            app._render_face(Image.new("RGB", (20, 20), "blue"))
+
+        self.assertNotEqual(captured[0].getpixel((0, 0)), captured[1].getpixel((0, 0)))
 
     def test_raising_face_provider_keeps_fallback_and_refresh_schedule(self) -> None:
         app = LearningApp.__new__(LearningApp)
@@ -840,7 +1011,7 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
 
         app._start_new_session()
 
-        self.assertIn("cannot be saved", app._status)
+        self.assertFalse(app._progress_saved)
         app._resume_session.assert_called_once_with()
 
     def test_actual_engine_store_flow_resumes_and_builds_report(self) -> None:
