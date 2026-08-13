@@ -79,6 +79,13 @@
       }
     },
     {
+      "module": "bmo.features.learning",
+      "enabled": true,
+      "settings": {
+        "config_path": "config/learning.json"
+      }
+    },
+    {
       "module": "bmo.features.say_hello",
       "enabled": false,
       "settings": {

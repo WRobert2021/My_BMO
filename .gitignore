@@ -51,6 +51,7 @@ config/features.json
 config/weather.json
 config/calendar.json
 config/quiet_hours.json
+config/learning.json
 
 # --- Generated media ---
 camera_capture.jpg
@@ -76,3 +77,6 @@ graphics/Paw Patrol
 /data/20_questions/learned.jsonl
 /data/20_questions/history.json
 /data/calendar/
+/data/learning/
+/LEARNING FEATURE.md
+/docs/learning-module-implementation-prompt.md

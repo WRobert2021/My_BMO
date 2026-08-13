@@ -41,12 +41,15 @@ be-more-agent/
 │   ├── example.weather.json   # Tracked weather-view example
 │   ├── example.calendar.json  # Tracked calendar example
 │   ├── example.quiet_hours.json # Tracked global kiosk-lock example
+│   ├── example.learning.json  # Tracked Pre-K learning example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)
 │   ├── calendar.json          # Local calendar behavior settings (ignored)
-│   └── quiet_hours.json       # Local global quiet-hours settings (ignored)
+│   ├── quiet_hours.json       # Local global quiet-hours settings (ignored)
+│   └── learning.json          # Local learning behavior/settings (ignored)
 ├── data/calendar/             # Local events and acknowledgments (ignored)
+├── data/learning/             # Local learners, plans, and progress (ignored)
 ├── chat_memory.json           # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -132,6 +135,9 @@ Configuration is split by audience:
 - `config/quiet_hours.json` is a global kiosk policy. It can cover the entire
   UI with sleeping BMO on a local schedule until the period ends or a parent
   enters its four-digit PIN.
+- `config/learning.json` is owned only by the menu-launched Pre-K learning
+  feature. It controls its contained data/art roots, teacher PIN, session and
+  mastery limits, readable fonts, and scoped speech/replay behavior.
 
 The application does **not** create these local files. If a file is absent or
 invalid, BMO reports a parsing error when applicable and uses defaults for that
@@ -144,6 +150,7 @@ cp config/example.features.json config/features.json
 cp config/example.weather.json config/weather.json
 cp config/example.calendar.json config/calendar.json
 cp config/example.quiet_hours.json config/quiet_hours.json
+cp config/example.learning.json config/learning.json
 ```
 
 When upgrading from the former root `config.json`, move its `features` and
@@ -257,6 +264,15 @@ shown in `config/example.features.json`:
   Its `wastebasket_root`, `bmo_button_image`, and `photos_per_page` settings are
   shown in `config/example.features.json`. Album paths are resolved and must
   remain inside `photo_root`; symbolic-link escapes are excluded.
+- The menu-only Learning feature uses `graphics/icons/learning.png` and opens
+  an offline 800x480 Pre-K suite only when that icon is tapped. Its data-driven
+  curriculum covers the literacy and vocabulary program in
+  `LEARNING FEATURE.md` plus early math and general readiness. Learner profiles,
+  teacher-authored prerequisite-aware plans, bounded attempt history, mastery,
+  and reports stay under `data/learning`. Instructions and feedback use BMO's
+  existing view-scoped Piper voice; no model, microphone, direct phrase, or
+  separate TTS path is exposed. See [the Learning guide](docs/learning.md) for
+  configuration, scoring, storage recovery, and lesson-extension details.
 
 A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
 Pairs UI. Modes have an active/inactive lifecycle and choose whether input uses

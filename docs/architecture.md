@@ -26,6 +26,12 @@ The application keeps `agent.py` as the stable startup command while implementat
   recording, and vision follow-up results.
 - `bmo.features.album` — menu-only photo discovery, root-containment checks,
   FreeDesktop Wastebasket moves, and album-view registration.
+- `bmo.features.learning` — menu-only Pre-K curriculum registration, private
+  configuration, deterministic lesson engine, and local learner-data ownership.
+- `bmo.features.learning.curriculum` — validated, prerequisite-aware literacy,
+  math, vocabulary, and general-readiness lesson catalog.
+- `bmo.features.learning.store` — versioned profiles, plans, attempts, and
+  atomic progress persistence contained under the learning data root.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
 - `bmo.features.calendar` — read-only calendar voice routing, touch-view
@@ -62,6 +68,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   keypad for the global kiosk lock.
 - `bmo.ui.album` — paginated photo thumbnails, horizontal swipe navigation,
   fullscreen image actions, and BMO vision-state presentation.
+- `bmo.ui.learning` — 800x480 learner sessions, replayable BMO instruction,
+  touch exercises, teacher-plan controls, and progress presentation.
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
   secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
 
@@ -178,6 +186,28 @@ the full-screen image with BMO in the upper-right corner, and queues a generic
 vision turn on the normal interaction worker. The feature never receives
 `BotGUI`, model objects, or an interaction archive.
 
+The Learning feature contributes `graphics/icons/learning.png` by reference
+and likewise has no voice, model, prompt, alias, direct-matching, or executable
+tool surface. It opens only from the touch menu. Its 800x480 Tk canvas presents
+data-driven Pre-K literacy, early-math, vocabulary, and general-readiness
+lessons, while a PIN-gated teacher area owns learner profiles, ordered plans,
+prerequisite warnings, and progress reports. Spoken instructions and feedback
+use only the view-scoped `FeatureMenuContext` announcement service, so they use
+the configured BMO Piper voice without giving the feature direct access to
+audio services. If scoped speech is unavailable, replay controls are visibly
+disabled and every visual exercise remains usable. Closing the view cancels its
+speech and reveals the unchanged originating menu page.
+
+Learning question generation is deterministic when supplied a seeded random
+source and remains independent of Tk. The catalog validates unique lesson IDs,
+prerequisite existence and acyclicity, supported interaction types, and usable
+answer banks before a session begins. Teacher plans retain an ordered lesson
+sequence, bounded varied repetitions, session length, and an optional mastery
+gate. Attempt records distinguish first-try accuracy from eventual correctness;
+plan completion is reported separately from accuracy, and mastery requires
+multiple recent observations. Learner data never enters conversation memory or
+interaction archives.
+
 The weather tool contributes `graphics/Icons/weather.png` by reference while
 retaining its existing voice/model action. Opening its icon starts a separate
 800×480 Chromium kiosk surface over the same originating Tk menu. Horizontal
@@ -254,6 +284,15 @@ lives under `faces/calendar`, and calendar/quiet-hours settings live in
 Git-ignored; the tracked `config/example.calendar.json` and
 `config/example.quiet_hours.json` files document their schemas.
 
+Learning also uses only the standard library plus the existing Tk/Pillow
+surface. Private profiles, plans, sessions, and bounded attempt history live
+under `data/learning` and are written with atomic replacement. Learning
+settings live in `config/learning.json`; the tracked
+`config/example.learning.json` documents the schema without exposing local
+learner data or the teacher PIN. Optional artwork lookups are contained under
+`graphics/learning`, but the current repository policy keeps `graphics/`
+read-only, so the feature has complete original Canvas-drawn fallbacks.
+
 The same Python entry point is used on macOS and Raspberry Pi. The Python
 virtual environment owns Python packages only. Whisper.cpp, Piper and its voice
 models, and the wake-word model are project-local native/model artifacts;
@@ -301,7 +340,7 @@ Features and modes solve different routing problems:
 ### Feature module contract
 
 The `features` list lives in `config/features.json`. Omitting the key loads the
-eight modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+nine modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
 default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.

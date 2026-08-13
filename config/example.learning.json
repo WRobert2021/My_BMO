@@ -1,0 +1,18 @@
+{
+  "data_directory": "data/learning",
+  "graphics_directory": "graphics/learning",
+  "show_in_menu": true,
+  "teacher_pin": "2468",
+  "default_session_questions": 8,
+  "mastery_threshold": 0.8,
+  "mastery_min_evidence": 5,
+  "history_limit": 5000,
+  "mastery_history_limit": 20,
+  "font_families": [
+    "DejaVu Sans",
+    "Liberation Sans",
+    "Arial"
+  ],
+  "speech_enabled": true,
+  "debug_seed": null
+}
