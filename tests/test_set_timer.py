@@ -353,6 +353,7 @@ class TimerSchedulerTests(unittest.TestCase):
         app_factory.assert_called_once()
         self.assertEqual(registry.menu_items, (TIMER_MENU_ITEM,))
         kwargs = app_factory.call_args.kwargs
+        self.assertIsNone(kwargs["face_provider"]())
         items = kwargs["timer_provider"]()
         self.assertEqual(len(items), 1)
         item = items[0]

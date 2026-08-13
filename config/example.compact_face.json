@@ -1,0 +1,37 @@
+{
+  "width": 108,
+  "height": 65,
+  "right_margin": 8,
+  "top": 5,
+  "refresh_ms": 150,
+  "states": {
+    "idle": {
+      "directory": "faces/idle",
+      "frame_duration_ms": 500
+    },
+    "listening": {
+      "directory": "faces/listening",
+      "frame_duration_ms": 500
+    },
+    "thinking": {
+      "directory": "faces/thinking",
+      "frame_duration_ms": 500
+    },
+    "speaking": {
+      "directory": "faces/speaking",
+      "frame_duration_ms": 50
+    },
+    "error": {
+      "directory": "faces/error",
+      "frame_duration_ms": 500
+    },
+    "capturing": {
+      "directory": "faces/capturing",
+      "frame_duration_ms": 500
+    },
+    "warmup": {
+      "directory": "faces/warmup",
+      "frame_duration_ms": 500
+    }
+  }
+}

@@ -172,14 +172,16 @@
     #weather-design-draft .wm-page-dot:first-child { background: #2f665c; }
     #weather-design-draft .wm-bmo-face {
       position: absolute;
-      top: .84cqw;
-      right: 1.8cqw;
-      width: 11.5cqw;
-      height: 6.9cqw;
-      border: .65cqw solid #153f39;
-      border-radius: 1.4cqw;
-      background: #b0fbc3;
-      box-shadow: 0 .45cqw 0 rgba(20, 61, 55, .14);
+      top: var(--compact-face-top);
+      left: var(--compact-face-left);
+      width: var(--compact-face-width);
+      height: var(--compact-face-height);
+      border: 0;
+      border-radius: 0;
+      outline: 2px solid #fff;
+      outline-offset: -2px;
+      background: #68c8bb;
+      box-shadow: none;
       padding: 0;
       overflow: hidden;
       cursor: pointer;
@@ -194,26 +196,13 @@
       object-fit: fill;
       pointer-events: none;
     }
-    #weather-design-draft .wm-bmo-eye {
+    #weather-design-draft .wm-bmo-fallback {
       position: absolute;
-      top: 1.75cqw;
-      width: 2cqw;
-      height: 1.05cqw;
-      border: .45cqw solid #000;
-      border-top: 0;
-      border-radius: 0 0 50% 50%;
-    }
-    #weather-design-draft .wm-bmo-eye-left { left: 2.15cqw; }
-    #weather-design-draft .wm-bmo-eye-right { right: 2.15cqw; }
-    #weather-design-draft .wm-bmo-mouth {
-      position: absolute;
-      left: 50%;
-      bottom: 1.55cqw;
-      width: 2.8cqw;
-      height: 0;
-      border-bottom: .45cqw solid #000;
-      border-radius: 1cqw;
-      transform: translateX(-50%);
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #102a5e;
+      font: 700 14px "Arial Rounded MT Bold", Arial, sans-serif;
     }
     #weather-design-draft .wm-stage {
       position: absolute;
@@ -710,10 +699,8 @@
         <div class="wm-greeting" data-weather-greeting>Good morning! Here is today's sky.</div>
         <div class="wm-page-dots" data-page-dots aria-hidden="true"></div>
         <button class="wm-bmo-face" type="button" data-action="close" aria-label="Close weather">
-          <img class="wm-bmo-face-image" data-bmo-face-image src="face/idle" alt="" draggable="false">
-          <span class="wm-bmo-eye wm-bmo-eye-left"></span>
-          <span class="wm-bmo-eye wm-bmo-eye-right"></span>
-          <span class="wm-bmo-mouth"></span>
+          <img class="wm-bmo-face-image" data-bmo-face-image alt="" draggable="false">
+          <span class="wm-bmo-fallback" data-bmo-face-fallback>BMO</span>
         </button>
       </header>
 
@@ -770,6 +757,12 @@
   <script>
     (() => {
       const root = document.getElementById('weather-design-draft');
+      const compactFaceConfig = __COMPACT_FACE_JSON__;
+      const compactLayout = compactFaceConfig.layout;
+      root.style.setProperty('--compact-face-left', `${compactLayout.left}px`);
+      root.style.setProperty('--compact-face-top', `${compactLayout.top}px`);
+      root.style.setProperty('--compact-face-width', `${compactLayout.width}px`);
+      root.style.setProperty('--compact-face-height', `${compactLayout.height}px`);
       const stage = root.querySelector('[data-weather-stage]');
       const seasonLayer = root.querySelector('[data-season-layer]');
       const sceneArt = root.querySelector('[data-scene-art]');
@@ -788,50 +781,38 @@
       const loading = root.querySelector('[data-loading]');
       const loadingMessage = root.querySelector('[data-loading-message]');
       const debugPanel = root.querySelector('.wm-draft-controls');
-      const bmoFace = root.querySelector('.wm-bmo-face');
       const bmoFaceImage = root.querySelector('[data-bmo-face-image]');
-      const faceUrls = {
-        idle: new URL('face/idle', window.location.href).href,
-        speaking: [
-          new URL('face/speaking-1', window.location.href).href,
-          new URL('face/speaking-2', window.location.href).href,
-          new URL('face/speaking-3', window.location.href).href,
-          new URL('face/speaking-2', window.location.href).href
-        ]
-      };
-      for (const source of [faceUrls.idle, ...faceUrls.speaking]) {
-        const image = new Image();
-        image.src = source;
-      }
+      const bmoFaceFallback = root.querySelector('[data-bmo-face-fallback]');
+      const currentFaceUrl = new URL(compactFaceConfig.frame_url, window.location.href);
       const state = { condition: 'sunny', season: 'summer', time: 'morning', phase: 'full' };
       let latestState = null;
       let debugOverride = false;
-      let bmoSpeaking = false;
-      let bmoSpeakingFrame = 0;
 
       function showBmoFace(source) {
+        if (!source) {
+          bmoFaceImage.removeAttribute('src');
+          bmoFaceImage.style.display = 'none';
+          bmoFaceFallback.style.display = 'grid';
+          return;
+        }
         if (bmoFaceImage.src !== source) bmoFaceImage.src = source;
-      }
-
-      function setBmoSpeaking(speaking) {
-        if (bmoSpeaking === speaking) return;
-        bmoSpeaking = speaking;
-        bmoSpeakingFrame = 0;
-        bmoFace.dataset.speaking = String(speaking);
-        showBmoFace(speaking ? faceUrls.speaking[0] : faceUrls.idle);
       }
 
       bmoFaceImage.addEventListener('load', () => {
         bmoFaceImage.style.display = 'block';
+        bmoFaceFallback.style.display = 'none';
       });
       bmoFaceImage.addEventListener('error', () => {
         bmoFaceImage.style.display = 'none';
+        bmoFaceFallback.style.display = 'grid';
       });
-      window.setInterval(() => {
-        if (!bmoSpeaking || latestState?.animations === false) return;
-        bmoSpeakingFrame = (bmoSpeakingFrame + 1) % faceUrls.speaking.length;
-        showBmoFace(faceUrls.speaking[bmoSpeakingFrame]);
-      }, 120);
+      function refreshBmoFace() {
+        const next = new URL(currentFaceUrl.href);
+        next.searchParams.set('frame', String(Date.now()));
+        showBmoFace(next.href);
+        window.setTimeout(refreshBmoFace, compactLayout.refresh_ms);
+      }
+      refreshBmoFace();
 
       const weatherStates = {
         sunny: { name:'Sunny', temp:88, feels:92, high:93, low:75, rain:5, modifier:'Warm sunshine', speech:'The sun is smiling! Grab water and sunscreen.', icons:['sun','sun','partly','moon'], hours:[89,93,91,84] },
@@ -1121,7 +1102,6 @@
           const active = root.querySelector(`[data-action="${CSS.escape(data.speaking)}"]`);
           active?.classList.add('wm-speaking');
         }
-        setBmoSpeaking(Boolean(live && data.speaking));
         alertBanner.textContent = data.alert ? `⚠ BMO SAFETY ALERT — ${data.alert}` : '⚠ BMO SAFETY ALERT — GO WITH A GROWN-UP AND FOLLOW OFFICIAL INSTRUCTIONS';
         alertBanner.style.display = data.alert || state.condition === 'severe' ? 'block' : '';
         syncControls();

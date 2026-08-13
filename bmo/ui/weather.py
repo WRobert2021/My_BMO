@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 import os
 import queue
 import secrets
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Any, Protocol, TypeAlias
 from urllib.parse import urlsplit
 
+from PIL import Image
+
 from bmo.features.weather_alerts import WeatherAlert
 from bmo.features.weather_config import WeatherLocationConfig
 from bmo.features.weather_narration import (
@@ -36,19 +39,18 @@ from bmo.features.weather_narration import (
     narrate_temperature,
     season_for,
 )
+from bmo.ui.compact_face import (
+    CompactFace,
+    CompactFaceConfig,
+    load_compact_face_config,
+    normalize_face_image,
+)
 from bmo.weather import WEATHER_DESCRIPTIONS, HourlyWeather, WeatherSnapshot
 
 
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
 WEB_ASSET = Path(__file__).with_name("weather_web") / "index.html"
-FACE_ASSET_ROOT = Path(__file__).resolve().parents[2] / "faces"
-FACE_ASSETS = {
-    "idle": Path("idle") / "idle 01.png",
-    "speaking-1": Path("speaking") / "speaking 01.png",
-    "speaking-2": Path("speaking") / "speaking 02.png",
-    "speaking-3": Path("speaking") / "speaking 03.png",
-}
 MOON_PHASES = (
     "new",
     "waxing_crescent",
@@ -166,7 +168,7 @@ class WeatherCarousel:
 
 
 WeatherPageProvider: TypeAlias = Callable[[WeatherLocationConfig], WeatherPageData]
-FaceProvider: TypeAlias = Callable[[], object | None]
+FaceProvider: TypeAlias = Callable[[], Image.Image | None]
 AnnouncementCompletion: TypeAlias = Callable[[], None]
 Announcer: TypeAlias = Callable[[str, AnnouncementCompletion | None], bool]
 
@@ -461,18 +463,21 @@ class WeatherWebBridge:
         actions: queue.Queue[dict[str, Any]],
         *,
         asset_path: Path = WEB_ASSET,
-        face_asset_root: Path = FACE_ASSET_ROOT,
+        compact_face_config: CompactFaceConfig | None = None,
     ) -> None:
         self.actions = actions
         self.token = secrets.token_urlsafe(32)
         self.nonce = secrets.token_urlsafe(24)
         self.asset_path = asset_path
-        self.face_assets = {
-            name: face_asset_root / relative_path
-            for name, relative_path in FACE_ASSETS.items()
+        self.compact_face_config = compact_face_config or load_compact_face_config()
+        self.compact_face_payload = {
+            "layout": self.compact_face_config.web_layout(),
+            "frame_url": "face/current",
         }
         self._state_lock = threading.Lock()
         self._state: dict[str, Any] = {"status": "loading", "debug": False}
+        self._face_lock = threading.Lock()
+        self._face_content: bytes | None = None
         self._closed = False
         self._started = False
         self._server = _WeatherHTTPServer(("127.0.0.1", 0), self._handler())
@@ -507,25 +512,19 @@ class WeatherWebBridge:
                         "<script>",
                         f'<script nonce="{bridge.nonce}">',
                     )
+                    content = content.replace(
+                        "__COMPACT_FACE_JSON__",
+                        json.dumps(bridge.compact_face_payload, separators=(",", ":")),
+                    )
                     self._send(
                         HTTPStatus.OK,
                         content.encode("utf-8"),
                         "text/html; charset=utf-8",
                     )
                     return
-                face_prefix = f"/{bridge.token}/face/"
-                if path.startswith(face_prefix):
-                    face_name = path.removeprefix(face_prefix)
-                    face_path = bridge.face_asset(face_name)
-                    if face_path is None:
-                        self._send_json(
-                            HTTPStatus.NOT_FOUND,
-                            {"error": "face not found"},
-                        )
-                        return
-                    try:
-                        face_content = face_path.read_bytes()
-                    except OSError:
+                if path == f"/{bridge.token}/face/current":
+                    face_content = bridge.face_content()
+                    if face_content is None:
                         self._send_json(
                             HTTPStatus.NOT_FOUND,
                             {"error": "face unavailable"},
@@ -535,7 +534,6 @@ class WeatherWebBridge:
                         HTTPStatus.OK,
                         face_content,
                         "image/png",
-                        cache_control="private, max-age=3600, immutable",
                     )
                     return
                 if path == f"/{bridge.token}/state":
@@ -623,9 +621,26 @@ class WeatherWebBridge:
 
         return Handler
 
-    def face_asset(self, name: str) -> Path | None:
-        """Resolve only one of the explicitly exposed canonical face frames."""
-        return self.face_assets.get(name)
+    def set_face(self, face: object | None) -> None:
+        """Publish the host-selected frame as one normalized browser raster."""
+        content: bytes | None = None
+        if isinstance(face, Image.Image):
+            try:
+                output = BytesIO()
+                normalize_face_image(face, self.compact_face_config).save(
+                    output,
+                    format="PNG",
+                )
+                content = output.getvalue()
+            except (OSError, ValueError):
+                content = None
+        with self._face_lock:
+            self._face_content = content
+
+    def face_content(self) -> bytes | None:
+        """Return the latest immutable frame snapshot for an HTTP response."""
+        with self._face_lock:
+            return self._face_content
 
     @staticmethod
     def _validated_action(payload: object) -> dict[str, Any]:
@@ -807,10 +822,8 @@ class WeatherApp:
         browser_launcher: BrowserLauncher = ChromiumSession,
         bridge_factory: BridgeFactory = WeatherWebBridge,
     ) -> None:
-        # Weather uses the same canonical idle/speaking assets as the main face.
-        # Keep the provider in the feature contract for host compatibility.
-        del face_provider
         self.root = root
+        self.face_provider = face_provider
         self.locations = tuple(locations)
         self.page_provider = page_provider
         self.announce = announce
@@ -843,11 +856,15 @@ class WeatherApp:
         self._after_ids: set[str] = set()
         self._renderer_started_at = time.monotonic()
         self._renderer_last_seen: float | None = None
+        self._compact_face_suspended = False
         self._bridge = bridge_factory(self._actions)
+        self._sync_face()
         self._bridge.set_state(self._loading_state())
         try:
             self._bridge.start()
             self._browser = browser_launcher(self._bridge.url)
+            CompactFace.suspend_for_external_surface(root)
+            self._compact_face_suspended = True
         except Exception:
             self._bridge.close()
             raise
@@ -921,6 +938,7 @@ class WeatherApp:
     def _poll(self) -> None:
         if self.closed:
             return
+        self._sync_face()
         if self._browser.poll() is not None:
             self.close()
             return
@@ -953,6 +971,17 @@ class WeatherApp:
         self._refresh_if_stale()
         self._publish_state()
         self._schedule(self.POLL_MS, self._poll)
+
+    def _sync_face(self) -> None:
+        """Forward the host runtime's current frame without owning animation state."""
+        try:
+            face = self.face_provider()
+            self._bridge.set_face(face)
+        except Exception:
+            try:
+                self._bridge.set_face(None)
+            except Exception:
+                pass
 
     def _handle_actions(self) -> bool:
         while True:
@@ -1174,4 +1203,7 @@ class WeatherApp:
                 f"[WEATHER] Local bridge cleanup failed: {type(exc).__name__}",
                 flush=True,
             )
+        if getattr(self, "_compact_face_suspended", False):
+            CompactFace.resume_after_external_surface(self.root)
+            self._compact_face_suspended = False
         self.on_close()

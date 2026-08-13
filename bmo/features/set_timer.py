@@ -444,6 +444,7 @@ class SetTimerTool:
                 context.master,
                 timer_provider=self._menu_timer_items,
                 cancel_timer=self._cancel_from_menu,
+                face_provider=context.current_face,
                 on_close=handle_close,
             )
         except Exception:

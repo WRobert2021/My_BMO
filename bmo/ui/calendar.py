@@ -11,8 +11,9 @@ import tkinter as tk
 from tkinter import colorchooser, messagebox, ttk
 from typing import Literal
 
-from PIL import Image, ImageTk
+from PIL import Image
 
+from bmo.ui.compact_face import CompactFace
 from bmo.ui.scrolling import VerticalScrollController
 
 
@@ -132,8 +133,6 @@ class CalendarApp:
     DAY_ROW_HEIGHT = 64
     DAY_ROW_GAP = 8
     DAY_ROW_STRIDE = DAY_ROW_HEIGHT + DAY_ROW_GAP
-    FACE_REFRESH_MS = 150
-
     def __init__(
         self,
         root: tk.Misc,
@@ -154,7 +153,6 @@ class CalendarApp:
         self.delete_event = delete_event
         self.summary_provider = summary_provider
         self.categories = categories
-        self.face_provider = face_provider
         self.announce = announce
         self.on_close = on_close
         self.today_provider = today_provider
@@ -171,12 +169,6 @@ class CalendarApp:
         self._year_month_bounds: list[tuple[tuple[int, int, int, int], int]] = []
         self._editor_event: CalendarViewEvent | None = None
         self._editor_color = BLUE
-        self._face_image: ImageTk.PhotoImage | None = None
-        self._face_item: int | None = None
-        self._face_fallback_item: int | None = None
-        self._face_after_id: str | None = None
-        self._face_speaking = False
-        self._face_speaking_phase = False
         self.scroller = VerticalScrollController(self.DAY_LIST_HEIGHT)
         self.day_canvas: tk.Canvas | None = None
 
@@ -193,8 +185,13 @@ class CalendarApp:
         self.canvas.bind("<ButtonRelease-1>", self._handle_release)
         self.canvas.bind("<MouseWheel>", self._handle_mouse_wheel)
         self._press_point: tuple[int, int] | None = None
+        self.compact_face = CompactFace(
+            root,
+            self.canvas,
+            face_provider=face_provider,
+            auto_mount=False,
+        )
         self._show_day()
-        self._refresh_face()
 
     @staticmethod
     def _font(size: int, *, bold: bool = False) -> tuple[str, int, str]:
@@ -218,6 +215,7 @@ class CalendarApp:
         return INK if 0.299 * red + 0.587 * green + 0.114 * blue > 165 else WHITE
 
     def _clear_view(self) -> None:
+        self.compact_face.unmount()
         if self.day_canvas is not None:
             self.day_canvas.destroy()
             self.day_canvas = None
@@ -229,9 +227,6 @@ class CalendarApp:
         self._day_event_bounds.clear()
         self._month_day_bounds.clear()
         self._year_month_bounds.clear()
-        self._face_item = None
-        self._face_fallback_item = None
-        self._face_image = None
 
     def _draw_button(
         self,
@@ -285,15 +280,7 @@ class CalendarApp:
         self._draw_button((x_value, 10, x_value + 68, 53), "TODAY", self._go_today, color=TEAL, font_size=8)
         x_value += 74
         self._draw_button((x_value, 10, x_value + 62, 53), "MENU", self.close, font_size=8)
-        self.canvas.create_rectangle(688, 5, 794, 59, fill="#72C9BF", outline=WHITE, width=2)
-        self._face_item = self.canvas.create_image(741, 32, anchor=tk.CENTER)
-        self._face_fallback_item = self.canvas.create_text(
-            741,
-            32,
-            text="BMO",
-            fill=NAVY,
-            font=self._font(13, bold=True),
-        )
+        self.compact_face.mount()
 
     def _show_day(self) -> None:
         self.view = "day"
@@ -1043,34 +1030,7 @@ class CalendarApp:
 
     def _speak_day_summary(self) -> None:
         text = self.summary_provider(self.selected_date, self.selected_date)
-        self._face_speaking = True
-        if not self.announce(text, self._finish_face_speaking):
-            self._face_speaking = False
-
-    def _finish_face_speaking(self) -> None:
-        self._face_speaking = False
-        self._face_speaking_phase = False
-
-    def _refresh_face(self) -> None:
-        if self.closed:
-            return
-        if self._face_item is not None and self._face_fallback_item is not None:
-            try:
-                face = self.face_provider()
-                if face is not None:
-                    self._face_speaking_phase = (
-                        not self._face_speaking_phase if self._face_speaking else False
-                    )
-                    height = 46 if self._face_speaking_phase else 50
-                    resized = face.convert("RGB").resize((96, height), Image.Resampling.LANCZOS)
-                    canvas = Image.new("RGB", (96, 50), "#72C9BF")
-                    canvas.paste(resized, (0, (50 - height) // 2))
-                    self._face_image = ImageTk.PhotoImage(canvas)
-                    self.canvas.itemconfigure(self._face_item, image=self._face_image)
-                    self.canvas.itemconfigure(self._face_fallback_item, state=tk.HIDDEN)
-            except (OSError, ValueError, tk.TclError):
-                pass
-        self._face_after_id = self.root.after(self.FACE_REFRESH_MS, self._refresh_face)
+        self.announce(text, None)
 
     def _handle_press(self, event: tk.Event) -> str:
         point = int(event.x), int(event.y)
@@ -1147,12 +1107,7 @@ class CalendarApp:
         if self.closed:
             return
         self.closed = True
-        if self._face_after_id is not None:
-            try:
-                self.root.after_cancel(self._face_after_id)
-            except tk.TclError:
-                pass
-            self._face_after_id = None
+        self.compact_face.destroy()
         for control in self._controls:
             control.destroy()
         self._controls.clear()

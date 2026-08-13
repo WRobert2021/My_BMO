@@ -545,7 +545,6 @@ class EvaluationAndSpeechTests(unittest.TestCase):
         app.closed = False
         app.speech_available = True
         app._speech_failed = False
-        app._face_speaking = False
         app.announce = Mock(return_value=accepted)
         return app
 
@@ -558,9 +557,7 @@ class EvaluationAndSpeechTests(unittest.TestCase):
         app.announce.assert_called_once()
         text, callback = app.announce.call_args.args
         self.assertEqual(text, "Find A.")
-        self.assertTrue(app._face_speaking)
         callback()
-        self.assertFalse(app._face_speaking)
         completed.assert_called_once_with()
 
     def test_rejected_or_failed_announcement_redraws_lesson_with_replay_disabled(self) -> None:
@@ -759,79 +756,21 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
         self.assertIs(app.previous_screen, LearningScreen.TEACHER_PLAN)
         app._draw_stats.assert_called_once_with("REPORT: FOUNDATIONS")
 
-    def test_face_provider_updates_image_and_hides_fallback_art(self) -> None:
-        app = LearningApp.__new__(LearningApp)
-        app.closed = False
-        app.canvas = Mock()
-        app._face_after_id = None
-        app._after_ids = set()
-        app._face_item = 99
-        app._fallback_items = (10, 11)
-        app.face_provider = lambda: Image.new("RGB", (20, 20), "blue")
-        app.root = Mock()
-        app.root.after.return_value = "next-face"
-
-        with patch("bmo.ui.learning.ImageTk.PhotoImage", return_value="photo"):
-            app._refresh_face()
-
-        app.canvas.itemconfigure.assert_any_call(99, image="photo")
-        app.canvas.itemconfigure.assert_any_call(10, state="hidden")
-        app.canvas.itemconfigure.assert_any_call(11, state="hidden")
-        self.assertIn("next-face", app._after_ids)
-
-    def test_cached_face_is_reused_immediately_after_screen_redraw(self) -> None:
+    def test_screen_header_mounts_shared_compact_face(self) -> None:
         app = LearningApp.__new__(LearningApp)
         app.canvas = Mock()
-        app.canvas.create_image.return_value = 99
-        app.canvas.create_oval.side_effect = (10, 11)
-        app.canvas.create_line.return_value = 12
-        app.canvas.create_text.return_value = 13
         app.font_family = "Arial"
-        app._face_source = Image.new("RGB", (20, 20), "blue")
-        app._face_speaking = False
-        app._face_speaking_phase = False
-
-        with patch("bmo.ui.learning.ImageTk.PhotoImage", return_value="photo"):
-            app._draw_face_panel()
-
-        app.canvas.itemconfigure.assert_any_call(99, image="photo")
-        app.canvas.itemconfigure.assert_any_call(10, state="hidden")
-
-    def test_speaking_face_alternates_between_open_and_rest_frames(self) -> None:
-        app = LearningApp.__new__(LearningApp)
-        app.canvas = Mock()
-        app._face_item = 99
-        app._fallback_items = ()
-        app._face_speaking = True
-        app._face_speaking_phase = True
-        captured = []
-
-        with patch(
-            "bmo.ui.learning.ImageTk.PhotoImage",
-            side_effect=lambda image: captured.append(image.copy()) or "photo",
-        ):
-            app._render_face(Image.new("RGB", (20, 20), "blue"))
-            app._face_speaking_phase = False
-            app._render_face(Image.new("RGB", (20, 20), "blue"))
-
-        self.assertNotEqual(captured[0].getpixel((0, 0)), captured[1].getpixel((0, 0)))
-
-    def test_raising_face_provider_keeps_fallback_and_refresh_schedule(self) -> None:
-        app = LearningApp.__new__(LearningApp)
         app.closed = False
-        app.canvas = Mock()
-        app._face_after_id = None
-        app._after_ids = set()
-        app._face_item = 99
-        app._fallback_items = (10, 11)
-        app.face_provider = Mock(side_effect=RuntimeError("optional face failed"))
-        app.root = Mock()
-        app.root.after.return_value = "next-face"
+        app.screen = LearningScreen.HOME
+        app.compact_face = Mock()
+        app.close = Mock()
+        app._action_serial = 0
+        app._regions = []
+        app._callbacks = {}
 
-        app._refresh_face()
+        app._header("LEARNING")
 
-        app.canvas.itemconfigure.assert_not_called()
-        self.assertIn("next-face", app._after_ids)
+        app.compact_face.mount.assert_called_once_with()
 
     def test_atomic_transition_is_preferred_over_two_separate_writes(self) -> None:
         app = LearningApp.__new__(LearningApp)
@@ -866,14 +805,15 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
         app.root = Mock()
         canvas = Mock()
         app.canvas = canvas
-        app._after_ids = {"face", "feedback"}
-        app._face_after_id = "face"
+        app._after_ids = {"feedback"}
+        app.compact_face = Mock()
 
         app.close()
         app.close()
 
         app.cancel_announcements.assert_called_once_with()
-        self.assertEqual(app.root.after_cancel.call_count, 2)
+        app.root.after_cancel.assert_called_once_with("feedback")
+        app.compact_face.destroy.assert_called_once_with()
         canvas.destroy.assert_called_once_with()
         app.on_close.assert_called_once_with()
         self.assertTrue(app.closed)
@@ -891,7 +831,7 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
         with (
             patch("bmo.ui.learning.tk.Canvas", return_value=fake_canvas) as canvas_type,
             patch.object(LearningApp, "_show_home"),
-            patch.object(LearningApp, "_refresh_face"),
+            patch("bmo.ui.learning.CompactFace") as compact_face,
         ):
             app = LearningApp(
                 root,
@@ -914,6 +854,7 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
             highlightthickness=0,
         )
         fake_canvas.place.assert_called_once_with(x=0, y=0, width=800, height=480)
+        compact_face.assert_called_once()
         self.assertFalse(app.replay_enabled)
 
     def test_invoke_filters_optional_adapter_keywords(self) -> None:

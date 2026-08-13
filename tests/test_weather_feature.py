@@ -8,9 +8,12 @@ import signal
 import threading
 import unittest
 from datetime import datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
+
+from PIL import Image
 
 from bmo.features.contracts import FeatureMenuContext
 from bmo.features.get_weather import GetWeatherTool, register
@@ -350,13 +353,15 @@ class WeatherMenuTests(unittest.TestCase):
         bridge = Mock(url="http://127.0.0.1:1234/token/")
         browser = Mock()
         browser.poll.return_value = None
+        current_face = Image.new("RGB", (800, 480), "blue")
+        face_provider = Mock(return_value=current_face)
         location = WeatherLocationConfig("home", "Home", "Tomball")
         app = WeatherApp(
             root,
             locations=(location,),
             default_index=0,
             page_provider=Mock(),
-            face_provider=Mock(return_value=None),
+            face_provider=face_provider,
             announce=Mock(return_value=True),
             cancel_announcements=cancel_speech,
             announcements_available=True,
@@ -381,6 +386,8 @@ class WeatherMenuTests(unittest.TestCase):
         self.assertEqual(published["condition"], "severe")
         self.assertEqual(published["alert"], "Severe Thunderstorm Warning")
         self.assertTrue(published["speech_available"])
+        face_provider.assert_called_once_with()
+        bridge.set_face.assert_called_once_with(current_face)
         bridge.start.assert_called_once_with()
         thread_type.return_value.start.assert_called_once_with()
 
@@ -467,6 +474,15 @@ class WeatherMenuTests(unittest.TestCase):
             app._refresh_if_stale()
 
         app._load_current.assert_called_once_with(force=True)
+
+    def test_face_provider_failure_clears_browser_face_without_closing_weather(self) -> None:
+        app = WeatherApp.__new__(WeatherApp)
+        app.face_provider = Mock(side_effect=RuntimeError("face unavailable"))
+        app._bridge = Mock()
+
+        app._sync_face()
+
+        app._bridge.set_face.assert_called_once_with(None)
 
     def test_tool_opens_one_view_with_scoped_menu_services(self) -> None:
         created: dict[str, object] = {}
@@ -736,31 +752,32 @@ class WeatherWebRendererTests(unittest.TestCase):
         ):
             self.assertIn(f'data-value="{condition}"', asset)
         self.assertIn("function hourIconSvg", asset)
-        self.assertIn('data-bmo-face-image src="face/idle"', asset)
-        self.assertIn("new URL('face/speaking-3'", asset)
-        self.assertIn("setBmoSpeaking(Boolean(live && data.speaking))", asset)
+        self.assertIn("data-bmo-face-image", asset)
+        self.assertIn("__COMPACT_FACE_JSON__", asset)
+        self.assertIn("compactFaceConfig.frame_url", asset)
+        self.assertIn("function refreshBmoFace", asset)
+        self.assertNotIn("urlsForState", asset)
+        self.assertNotIn("setBmoSpeaking", asset)
+        self.assertNotIn("advanceBmoFace", asset)
         self.assertNotIn("☀️", asset)
         self.assertNotIn("🌧", asset)
 
-    def test_loopback_bridge_exposes_only_named_core_face_frames(self) -> None:
-        with TemporaryDirectory() as temp_dir:
-            face_root = Path(temp_dir)
-            idle = face_root / "idle" / "idle 01.png"
-            idle.parent.mkdir()
-            idle.write_bytes(b"canonical-idle-frame")
-            bridge = WeatherWebBridge.__new__(WeatherWebBridge)
-            bridge.face_assets = {
-                "idle": idle,
-                "speaking-1": face_root / "speaking" / "speaking 01.png",
-            }
+    def test_loopback_bridge_clears_frame_when_host_has_no_face(self) -> None:
+        server = Mock()
+        server.server_address = ("127.0.0.1", 1234)
+        with patch("bmo.ui.weather._WeatherHTTPServer", return_value=server):
+            bridge = WeatherWebBridge(Mock())
+        self.addCleanup(bridge.close)
+        bridge.set_face(Image.new("RGB", (5, 3), "blue"))
 
-            self.assertEqual(bridge.face_asset("idle"), idle)
-            self.assertEqual(
-                bridge.face_asset("idle").read_bytes(),  # type: ignore[union-attr]
-                b"canonical-idle-frame",
-            )
-            self.assertIsNone(bridge.face_asset("../../config/settings.json"))
-            self.assertIsNone(bridge.face_asset("not-a-frame"))
+        content = bridge.face_content()
+        self.assertIsNotNone(content)
+        with Image.open(BytesIO(content or b"")) as published:
+            self.assertEqual(published.size, (108, 65))
+
+        bridge.set_face(None)
+
+        self.assertIsNone(bridge.face_content())
 
     def test_loopback_action_validation_rejects_unbounded_or_unknown_input(self) -> None:
         self.assertEqual(

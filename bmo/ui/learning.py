@@ -15,12 +15,13 @@ import time
 import tkinter as tk
 from typing import Any
 
-from PIL import Image, ImageTk
+from PIL import Image
+
+from bmo.ui.compact_face import CompactFace
 
 
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
-FACE_REFRESH_MS = 150
 MAX_QUESTION_ATTEMPTS = 2
 
 Point = tuple[int, int]
@@ -850,8 +851,6 @@ class LearningApp:
     RED = "#B83D4A"
     DISABLED = "#AAB8C4"
     WHITE = "#FFFFFF"
-    FACE_BOUNDS = Rect(680, 7, 792, 59)
-
     def __init__(
         self,
         root: tk.Misc,
@@ -871,7 +870,6 @@ class LearningApp:
         self.catalog = catalog
         self.engine = engine
         self.store = store
-        self.face_provider = face_provider
         self.announce = announce
         self.cancel_announcements = cancel_announcements
         self.on_close = on_close
@@ -892,13 +890,6 @@ class LearningApp:
         self._callbacks: dict[str, Callable[[], None]] = {}
         self._action_serial = 0
         self._after_ids: set[str] = set()
-        self._face_after_id: str | None = None
-        self._face_image: ImageTk.PhotoImage | None = None
-        self._face_source: Image.Image | None = None
-        self._face_item: int | None = None
-        self._fallback_items: tuple[int, ...] = ()
-        self._face_speaking = False
-        self._face_speaking_phase = False
         self._speech_failed = False
         self._input_locked = False
         self._status = ""
@@ -959,9 +950,14 @@ class LearningApp:
             self.canvas.bind("<ButtonPress-1>", self._handle_press)
             self.canvas.bind("<B1-Motion>", self._handle_motion)
             self.canvas.bind("<ButtonRelease-1>", self._handle_release)
+            self.compact_face = CompactFace(
+                root,
+                self.canvas,
+                face_provider=face_provider,
+                auto_mount=False,
+            )
             self._load_profiles()
             self._show_home()
-            self._refresh_face()
         except Exception:
             self._dispose(notify=False)
             raise
@@ -1056,14 +1052,12 @@ class LearningApp:
         canvas = self.canvas
         if canvas is None:
             return
+        self.compact_face.unmount()
         canvas.configure(bg=self.BACKGROUND)
         canvas.delete("all")
         self._regions.clear()
         self._callbacks.clear()
         self._action_serial = 0
-        self._face_item = None
-        self._fallback_items = ()
-        self._face_image = None
 
     def _header(self, title: str, *, home: bool = True) -> None:
         canvas = self.canvas
@@ -1080,20 +1074,7 @@ class LearningApp:
             fill=self.WHITE,
             font=self._font(22, bold=True),
         )
-        self._draw_face_panel()
-
-    def _draw_face_panel(self) -> None:
-        canvas = self.canvas
-        assert canvas is not None
-        bounds = self.FACE_BOUNDS
-        canvas.create_rectangle(*bounds.as_tuple(), fill="#68C8BB", outline=self.WHITE, width=2)
-        self._face_item = canvas.create_image(*bounds.center, anchor=tk.CENTER)
-        left_eye = canvas.create_oval(714, 21, 722, 34, fill=self.NAVY, outline="")
-        right_eye = canvas.create_oval(750, 21, 758, 34, fill=self.NAVY, outline="")
-        mouth = canvas.create_line(730, 43, 742, 43, fill=self.NAVY, width=3)
-        label = canvas.create_text(693, 33, text="B", fill=self.NAVY, font=self._font(9, bold=True))
-        self._fallback_items = (left_eye, right_eye, mouth, label)
-        self._render_face(self._face_source)
+        self.compact_face.mount()
 
     def _button(
         self,
@@ -2074,16 +2055,10 @@ class LearningApp:
     def _speak(self, text: str, on_complete: Callable[[], None] | None) -> bool:
         if not self.replay_enabled or not str(text).strip():
             return False
-        self._face_speaking = True
-        self._face_speaking_phase = True
-        self._render_face(getattr(self, "_face_source", None))
 
         def complete() -> None:
             if self.closed:
                 return
-            self._face_speaking = False
-            self._face_speaking_phase = False
-            self._render_face(getattr(self, "_face_source", None))
             if on_complete is not None:
                 on_complete()
 
@@ -2092,8 +2067,6 @@ class LearningApp:
         except Exception:
             accepted = False
         if not accepted:
-            self._face_speaking = False
-            self._face_speaking_phase = False
             self._speech_failed = True
             if (
                 getattr(self, "screen", None) is LearningScreen.LESSON
@@ -3010,57 +2983,6 @@ class LearningApp:
         self._after_ids.add(after_id)
         return after_id
 
-    def _render_face(self, face: Image.Image | None) -> None:
-        canvas = getattr(self, "canvas", None)
-        face_item = getattr(self, "_face_item", None)
-        if face is None or canvas is None or face_item is None:
-            return
-        height = 42 if (
-            getattr(self, "_face_speaking", False)
-            and getattr(self, "_face_speaking_phase", False)
-        ) else 48
-        resized = face.convert("RGB").resize(
-            (108, height),
-            Image.Resampling.LANCZOS,
-        )
-        frame = Image.new("RGB", (108, 48), "#68C8BB")
-        frame.paste(resized, (0, (48 - height) // 2))
-        self._face_image = ImageTk.PhotoImage(frame)
-        canvas.itemconfigure(face_item, image=self._face_image)
-        for item in getattr(self, "_fallback_items", ()):
-            canvas.itemconfigure(item, state=tk.HIDDEN)
-
-    def _refresh_face(self) -> None:
-        if self.closed or self.canvas is None:
-            return
-        if self._face_after_id is not None:
-            self._after_ids.discard(self._face_after_id)
-        try:
-            self.canvas.lift()
-        except tk.TclError:
-            pass
-        if self._face_item is not None:
-            try:
-                face = self.face_provider()
-            except Exception:
-                face = None
-            try:
-                if face is not None:
-                    self._face_source = face.copy()
-                if getattr(self, "_face_speaking", False):
-                    self._face_speaking_phase = not getattr(
-                        self,
-                        "_face_speaking_phase",
-                        False,
-                    )
-                else:
-                    self._face_speaking_phase = False
-                self._render_face(self._face_source)
-            except Exception:
-                pass
-        self._face_after_id = self.root.after(FACE_REFRESH_MS, self._refresh_face)
-        self._after_ids.add(self._face_after_id)
-
     def _handle_press(self, event: tk.Event) -> str:
         if not self._input_locked:
             self.touch.press((int(event.x), int(event.y)))
@@ -3101,7 +3023,9 @@ class LearningApp:
             except (tk.TclError, ValueError):
                 pass
         self._after_ids.clear()
-        self._face_after_id = None
+        compact_face = getattr(self, "compact_face", None)
+        if compact_face is not None:
+            compact_face.destroy()
         canvas = self.canvas
         self.canvas = None
         if canvas is not None:

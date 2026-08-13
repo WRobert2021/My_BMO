@@ -12,7 +12,9 @@ from unittest.mock import Mock, patch
 from bmo.app import BotGUI, _FeatureMenuAnnouncer, _SpeechQueueItem
 from bmo.features import FeatureMenuContext, FeatureMenuItem
 from bmo.modes import ModeMenuItem
+from bmo.state import BotStates
 from bmo.ui import (
+    COMPACT_FACE_CENTER,
     EmptyMenuPage,
     GestureKind,
     HorizontalSwipeRecognizer,
@@ -160,11 +162,15 @@ class MenuViewGestureTests(unittest.TestCase):
         view.selection_pending = False
         view.close = Mock()
         view._draw_page = Mock()
+        view.compact_face = Mock()
+        view.compact_face.contains.side_effect = lambda point: (
+            684 <= point[0] <= 792 and 5 <= point[1] <= 70
+        )
         return view
 
     def test_tapping_minimized_bmo_returns_directly_to_face(self) -> None:
         view = self.make_view()
-        event = self.event(714, 123)
+        event = self.event(*map(int, COMPACT_FACE_CENTER))
 
         view._handle_press(event)
         view._handle_release(event)
@@ -217,7 +223,7 @@ class MenuViewGestureTests(unittest.TestCase):
         view = self.make_view()
         view.selection_pending = True
         view.navigator.page_index = 1
-        event = self.event(714, 123)
+        event = self.event(*map(int, COMPACT_FACE_CENTER))
 
         view._handle_press(event)
         view._handle_release(event)
@@ -226,18 +232,14 @@ class MenuViewGestureTests(unittest.TestCase):
         view.on_select.assert_not_called()
         self.assertEqual(view.navigator.page_index, 1)
 
-    def test_corner_face_refresh_continues_while_launch_is_pending(self) -> None:
-        view = MenuApp.__new__(MenuApp)
-        view.closed = False
+    def test_pending_launch_keeps_shared_face_owned_by_menu(self) -> None:
+        view = self.make_view()
         view.selection_pending = True
-        view.face_provider = Mock(return_value=None)
-        view.root = Mock()
 
-        view._refresh_face()
+        view.finish_selection()
 
-        view.face_provider.assert_called_once_with()
-        view.root.after.assert_called_once_with(150, view._refresh_face)
-        self.assertEqual(view.face_after_id, view.root.after.return_value)
+        view.compact_face.suspend.assert_not_called()
+        view.compact_face.destroy.assert_not_called()
 
 
 class BotGuiMenuIntegrationTests(unittest.TestCase):
@@ -436,6 +438,7 @@ class FeatureMenuAnnouncementTests(unittest.TestCase):
         gui.tts_queue_lock = threading.Lock()
         gui.tts_queue = []
         gui.active_tts_item = None
+        gui.set_state = Mock()
         return gui
 
     def test_new_tap_coalesces_only_speech_from_the_same_view(self) -> None:
@@ -454,6 +457,7 @@ class FeatureMenuAnnouncementTests(unittest.TestCase):
             ["normal reply", "second weather card"],
         )
         self.assertFalse(unrelated.cancelled.is_set())
+        gui.set_state.assert_called_with(BotStates.SPEAKING, "Speaking...")
 
     def test_cancel_stops_active_scoped_speech_but_preserves_other_scopes(self) -> None:
         gui = self.make_gui()
@@ -469,6 +473,32 @@ class FeatureMenuAnnouncementTests(unittest.TestCase):
         self.assertTrue(weather_item.cancelled.is_set())
         self.assertEqual([item.text for item in gui.tts_queue], ["album talking"])
         self.assertTrue(weather.available)
+        self.assertEqual(
+            gui.set_state.call_args_list,
+            [
+                unittest.mock.call(BotStates.SPEAKING, "Speaking..."),
+                unittest.mock.call(BotStates.SPEAKING, "Speaking..."),
+            ],
+        )
+
+    def test_scoped_completion_restores_idle_before_feature_callback(self) -> None:
+        gui = self.make_gui()
+        completion = Mock()
+        announcer = _FeatureMenuAnnouncer(gui)
+        announcer.speak("weather talking", completion)
+
+        queued_completion = gui.tts_queue[-1].on_complete
+        self.assertIsNotNone(queued_completion)
+        queued_completion()
+
+        self.assertEqual(
+            gui.set_state.call_args_list,
+            [
+                unittest.mock.call(BotStates.SPEAKING, "Speaking..."),
+                unittest.mock.call(BotStates.IDLE, "Ready"),
+            ],
+        )
+        completion.assert_called_once_with()
 
     def test_context_visibly_disables_announcements_without_runtime_speech(self) -> None:
         context = FeatureMenuContext(master=object(), on_close=lambda: None)

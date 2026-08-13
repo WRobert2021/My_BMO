@@ -20,7 +20,7 @@ from bmo.features.album import (
 from bmo.prompts import build_routing_prompt, build_system_prompt
 from bmo.tools import ToolRouter
 from bmo.ui.album import AlbumApp, AlbumPaginator
-from bmo.ui.gestures import HorizontalSwipeRecognizer
+from bmo.ui.gestures import GestureKind, HorizontalSwipeRecognizer
 
 
 def make_image(path: Path, color: str = "blue") -> Path:
@@ -164,6 +164,8 @@ class AlbumAppInteractionTests(unittest.TestCase):
         app._delete_selected_photo = Mock()
         app._begin_analysis = Mock()
         app.close = Mock()
+        app.compact_face = Mock()
+        app.compact_face.contains.return_value = False
         return app
 
     def test_grid_swipes_between_photo_pages(self) -> None:
@@ -236,21 +238,14 @@ class AlbumAppInteractionTests(unittest.TestCase):
         self.assertEqual(app.view, "photo")
         app._draw_fullscreen_photo.assert_called_with(show_bmo=False)
 
-    def test_album_stays_above_runtime_overlay_during_vision(self) -> None:
-        app = AlbumApp.__new__(AlbumApp)
-        app.closed = False
-        app.canvas = Mock()
-        app.root = Mock()
-        app.face_item = None
-        app.face_fallback_item = None
+    def test_album_uses_shared_face_hit_target(self) -> None:
+        app = self.make_app()
+        app.compact_face.contains.return_value = True
 
-        app._refresh_face()
+        app._handle_grid_gesture(GestureKind.TAP, (738, 37))
 
-        app.canvas.lift.assert_called_once_with()
-        app.root.after.assert_called_once_with(
-            AlbumApp.FACE_REFRESH_MS,
-            app._refresh_face,
-        )
+        app.compact_face.contains.assert_called_once_with((738, 37))
+        app.close.assert_called_once_with()
 
 
 class AlbumFeatureTests(unittest.TestCase):

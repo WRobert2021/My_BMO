@@ -57,6 +57,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — UI-independent tap and horizontal-swipe recognition.
+- `bmo.ui.compact_face` — validated contained face-frame configuration, the
+  canonical 108×65 top-right layout, distortion-free normalization, and the
+  stack-aware Tk lifecycle shared by menus, features, and modes.
 - `bmo.ui.scrolling` — bounded vertical finger scrolling shared by touch views.
 - `bmo.ui.menu` — ordered menu-page navigation and the touch menu overlay.
 - `bmo.ui.timer` — live countdown rendering, touch deletion, and vertical
@@ -97,9 +100,21 @@ The application keeps `agent.py` as the stable startup command while implementat
 
 The full-screen face recognizes taps separately from horizontal swipes. A
 right-to-left swipe opens the menu without coupling menu behavior to the
-conversation, feature-tool, or interaction-mode registries. The menu keeps a
-live 140×84 BMO face in the same upper-right position used by Pup Pairs. Tapping
-that face returns immediately to the full-screen face.
+conversation, feature-tool, or interaction-mode registries. Every compact BMO
+presentation uses `bmo.ui.compact_face.CompactFace`: one fixed 108×65 viewport
+at the canonical upper-right bounds. Its artwork is normalized into the
+largest exact integer 5:3 area inside that viewport, so state changes never
+stretch or shift the face. Tapping the menu face returns immediately to the
+full-screen face.
+
+`config/compact_face.json` is an optional private UI configuration with the
+tracked `config/example.compact_face.json` as its template. It maps state names
+to deterministic PNG sequences contained under `faces/` and supplies frame and
+refresh timing. Missing, malformed, empty, or escaping paths fall back safely.
+The application animation loop remains the sole runtime state/frame owner;
+compact Tk views receive only its narrow current-frame provider. The shared
+component owns placement, normalization, fallback art, image references,
+scheduling, and cleanup.
 
 Menu pages satisfy the small `bmo.ui.menu.MenuPage` rendering contract and are
 supplied to `MenuApp` in display order. Left swipes advance through that tuple.
@@ -121,17 +136,21 @@ blank fallback page.
 
 Selecting a menu item does not destroy or navigate away from `MenuApp`. The
 originating grid page remains placed below the launched mode's newer embedded
-canvas, and its upper-right face continues its 150 ms refresh schedule during
-launch and while covered. Closing the game destroys only the game canvas, which
-reveals the same live menu instance with its original page index. Voice-launched
-modes still return to the full-screen face because no menu instance owns their
-launch path.
+canvas. Compact faces on the same Tk root form a visibility stack: mounting a
+newer face suspends the covered menu renderer, and destroying the newer view
+resumes the menu face. A feature such as Album may temporarily unmount its face
+while retaining stack ownership, preventing the covered menu from doing
+duplicate refresh work. Closing a game destroys only its game canvas and shared
+face, revealing the same live menu instance with its original page index.
+Voice-launched modes still return to the full-screen face because no menu
+instance owns their launch path.
 
 The timer tool contributes `graphics/icons/timer.png` by reference and opens a
 full-screen list only when that icon is selected. The list polls immutable
 snapshots of the same scheduler used by voice commands, refreshes countdowns
 four times per second, and cancels through the scheduler when a delete button is
-tapped. Vertical finger drags move a bounded list viewport when the active timer
+tapped. It mounts the same canonical compact face as every other menu-launched
+view. Vertical finger drags move a bounded list viewport when the active timer
 rows exceed the display. Closing the view destroys only its canvases and reveals
 the originating menu page. Timer cancellation removes the timer from both the
 active index and priority queue immediately, so a deleted row cannot later
@@ -219,6 +238,15 @@ accepts a result only when its per-location request token is current. A late
 worker can therefore finish safely after navigation or close without touching
 destroyed widgets or replacing newer data.
 
+Because Chromium cannot instantiate the Tk component, `WeatherWebBridge`
+builds a narrow JSON adapter from the same validated `CompactFaceConfig`. The
+adapter injects canonical bounds, timing, and a current-frame endpoint into the
+local HTML before it is served. The host selects the runtime frame; the bridge
+normalizes and publishes that one raster, so CSS and JavaScript contain no
+independent face coordinates, state choice, or frame list. Weather therefore
+matches the 108×65 Tk viewport while remaining failure-isolated behind its
+tokenized loopback bridge.
+
 `WeatherSnapshot` is the immutable neutral data boundary used by both the
 historical short spoken report and the GUI. Open-Meteo supplies current values,
 the daily high/low and precipitation total, sunrise/sunset, and upcoming hourly
@@ -229,10 +257,12 @@ humidity, and high gusts. Seasons affect only scenery—winter never implies
 snow. The 800×480 presentation uses weather-owned HTML, CSS, and inline SVG:
 layered seasonal ground, animated condition particles, childlike current and
 hourly icons, and locally calculated eight-phase moon art. Forecast cards use
-real alpha transparency. The close control reuses the canonical core idle and
-speaking face frames; it cycles the speaking frames only while weather-owned
-narration is active and falls back to a simple inline face if those optional
-images are unavailable. The hourly strip drops
+real alpha transparency. The close control samples the current frame selected
+by the application animation loop through the feature's narrow face provider.
+The loopback bridge normalizes that frame with the shared compact-face adapter
+and exposes only the resulting 108×65 raster; the browser owns neither face
+state nor animation sequencing and falls back to a simple inline face whenever
+the current host frame is unavailable. The hourly strip drops
 past local forecast points as the view remains open, and each cached location
 is refreshed on a bounded fifteen-minute interval so its remaining hours and
 day period advance without reopening the menu. All tap speech uses

@@ -6,7 +6,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 import math
 import tkinter as tk
+from typing import Any
 
+from bmo.ui.compact_face import CompactFace
 from bmo.ui.scrolling import VerticalScrollController
 
 
@@ -60,7 +62,7 @@ class TimerApp:
     ROW_GAP = 10
     ROW_STRIDE = ROW_HEIGHT + ROW_GAP
     REFRESH_MS = 250
-    BACK_BOUNDS = (638, 10, 784, 51)
+    BACK_BOUNDS = (522, 10, 668, 51)
 
     def __init__(
         self,
@@ -69,6 +71,7 @@ class TimerApp:
         timer_provider: TimerProvider,
         cancel_timer: TimerCanceller,
         on_close: Callable[[], None],
+        face_provider: Callable[[], Any | None] | None = None,
     ) -> None:
         self.root = root
         self.timer_provider = timer_provider
@@ -111,6 +114,11 @@ class TimerApp:
         self.list_canvas.bind("<MouseWheel>", self._handle_mouse_wheel)
 
         self._draw_header()
+        self.compact_face = CompactFace(
+            root,
+            self.canvas,
+            face_provider=face_provider,
+        )
         self._refresh()
 
     def _draw_header(self) -> None:
@@ -359,6 +367,7 @@ class TimerApp:
             except tk.TclError:
                 pass
             self.refresh_after_id = None
+        self.compact_face.destroy()
         self.list_canvas.destroy()
         self.canvas.destroy()
         self.on_close()

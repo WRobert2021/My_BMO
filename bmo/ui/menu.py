@@ -11,11 +11,11 @@ from typing import Protocol
 
 from PIL import Image, ImageTk
 
+from bmo.ui.compact_face import CompactFace
 from bmo.ui.gestures import GestureKind, HorizontalSwipeRecognizer
 
 
 WINDOW_SIZE = (800, 480)
-FACE_BOUNDS = (636, 76, 792, 182)
 PAGE_BOUNDS = (24, 76, 612, 448)
 
 
@@ -252,14 +252,11 @@ class MenuApp:
     ) -> None:
         self.root = root
         self.on_close = on_close
-        self.face_provider = face_provider
         self.on_select = on_select or (lambda name: None)
         supplied_pages = tuple(pages)
         self.pages: tuple[MenuPage, ...] = supplied_pages or (EmptyMenuPage(),)
         self.navigator = MenuNavigator(len(self.pages))
         self.gesture = HorizontalSwipeRecognizer()
-        self.face_after_id: str | None = None
-        self.face_image: ImageTk.PhotoImage | None = None
         self.closed = False
         self.selection_pending = False
 
@@ -275,8 +272,12 @@ class MenuApp:
         self.canvas.bind("<ButtonRelease-1>", self._handle_release)
 
         self._draw_static_ui()
+        self.compact_face = CompactFace(
+            root,
+            self.canvas,
+            face_provider=face_provider,
+        )
         self._draw_page()
-        self._refresh_face()
 
     def _draw_static_ui(self) -> None:
         self.canvas.create_rectangle(
@@ -295,28 +296,6 @@ class MenuApp:
             fill=self.WHITE,
             font=("Arial Rounded MT Bold", 24, "bold"),
         )
-        self.canvas.create_rectangle(
-            *FACE_BOUNDS,
-            fill=self.NAVY,
-            outline=self.WHITE,
-            width=3,
-        )
-        self.face_item = self.canvas.create_image(714, 123, anchor=tk.CENTER)
-        self.face_fallback_item = self.canvas.create_text(
-            714,
-            123,
-            text="BMO",
-            fill=self.WHITE,
-            font=("Arial Rounded MT Bold", 20, "bold"),
-        )
-        self.canvas.create_text(
-            714,
-            170,
-            text="BMO",
-            fill="#bde7ff",
-            font=("Arial", 9, "bold"),
-        )
-
     def _draw_page(self) -> None:
         self.canvas.delete("menu-page")
         page = self.pages[self.navigator.page_index]
@@ -373,40 +352,13 @@ class MenuApp:
         """Allow another selection after the launched view covers the menu."""
         self.selection_pending = False
 
-    @staticmethod
-    def _point_in_face(point: tuple[int, int]) -> bool:
-        left, top, right, bottom = FACE_BOUNDS
-        return left <= point[0] <= right and top <= point[1] <= bottom
-
-    def _refresh_face(self) -> None:
-        if self.closed:
-            return
-        try:
-            face = self.face_provider()
-            if face is not None:
-                resized = face.convert("RGB").resize(
-                    (140, 84),
-                    Image.Resampling.LANCZOS,
-                )
-                self.face_image = ImageTk.PhotoImage(resized)
-                self.canvas.itemconfigure(self.face_item, image=self.face_image)
-                self.canvas.itemconfigure(
-                    self.face_fallback_item,
-                    state=tk.HIDDEN,
-                )
-        except (tk.TclError, ValueError):
-            pass
-        self.face_after_id = self.root.after(150, self._refresh_face)
+    def _point_in_face(self, point: tuple[int, int]) -> bool:
+        return self.compact_face.contains(point)
 
     def close(self) -> None:
         if self.closed:
             return
         self.closed = True
-        if self.face_after_id:
-            try:
-                self.root.after_cancel(self.face_after_id)
-            except tk.TclError:
-                pass
-            self.face_after_id = None
+        self.compact_face.destroy()
         self.canvas.destroy()
         self.on_close()

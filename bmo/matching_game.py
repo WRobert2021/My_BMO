@@ -14,6 +14,8 @@ from typing import Callable
 
 from PIL import Image, ImageDraw, ImageTk
 
+from bmo.ui.compact_face import CompactFace
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PAW_PATROL_DIR = PROJECT_ROOT / "graphics" / "Paw Patrol"
@@ -356,7 +358,6 @@ class MatchingGameApp:
         self.embedded = embedded
         self.on_close = on_close
         self.announce = announce
-        self.face_provider = face_provider
         self.on_player_change = on_player_change
         self.history = history or MatchingGameHistory()
         self.pair_count = self.history.pair_count
@@ -386,17 +387,19 @@ class MatchingGameApp:
         self.animating = False
         self.pending_after_ids: set[str] = set()
         self.tick_after_id: str | None = None
-        self.face_after_id: str | None = None
-        self.face_image: ImageTk.PhotoImage | None = None
         self.win_items: list[int] = []
         self.game_recorded = False
 
         self._configure_window()
         self._load_source_images()
         self._draw_static_ui()
+        self.compact_face = CompactFace(
+            root,
+            self.canvas,
+            face_provider=face_provider,
+        )
         self.new_game()
         self._tick()
-        self._refresh_face()
 
     def _configure_window(self) -> None:
         if self.embedded:
@@ -488,35 +491,7 @@ class MatchingGameApp:
             fill=self.WHITE,
             font=("Arial Rounded MT Bold", 24, "bold"),
         )
-        self._draw_button(668, 10, 784, 51, "EXIT GAME", self.close)
-        self.canvas.create_rectangle(
-            636,
-            76,
-            792,
-            182,
-            fill=self.NAVY,
-            outline=self.WHITE,
-            width=3,
-        )
-        self.face_item = self.canvas.create_image(
-            714,
-            123,
-            anchor=tk.CENTER,
-        )
-        self.face_fallback_item = self.canvas.create_text(
-            714,
-            123,
-            text="BMO",
-            fill=self.WHITE,
-            font=("Arial Rounded MT Bold", 20, "bold"),
-        )
-        self.canvas.create_text(
-            714,
-            170,
-            text="BMO",
-            fill="#bde7ff",
-            font=("Arial", 9, "bold"),
-        )
+        self._draw_button(552, 10, 668, 51, "EXIT GAME", self.close)
         self.canvas.create_text(
             714,
             207,
@@ -937,28 +912,6 @@ class MatchingGameApp:
         )
         self.tick_after_id = self.root.after(250, self._tick)
 
-    def _refresh_face(self) -> None:
-        if self.face_provider:
-            try:
-                face = self.face_provider()
-                if face is not None:
-                    face = face.convert("RGB").resize(
-                        (140, 84),
-                        Image.Resampling.LANCZOS,
-                    )
-                    self.face_image = ImageTk.PhotoImage(face)
-                    self.canvas.itemconfigure(
-                        self.face_item,
-                        image=self.face_image,
-                    )
-                    self.canvas.itemconfigure(
-                        self.face_fallback_item,
-                        state=tk.HIDDEN,
-                    )
-            except (tk.TclError, ValueError):
-                pass
-        self.face_after_id = self.root.after(150, self._refresh_face)
-
     def _show_win(self) -> None:
         self.animating = True
         human_score = self.model.scores["human"]
@@ -1055,12 +1008,7 @@ class MatchingGameApp:
             except tk.TclError:
                 pass
             self.tick_after_id = None
-        if self.face_after_id:
-            try:
-                self.root.after_cancel(self.face_after_id)
-            except tk.TclError:
-                pass
-            self.face_after_id = None
+        self.compact_face.destroy()
         if self.embedded:
             self.canvas.destroy()
         else:

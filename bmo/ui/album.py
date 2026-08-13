@@ -8,12 +8,12 @@ from pathlib import Path
 
 from PIL import Image, ImageOps, ImageTk
 
+from bmo.ui.compact_face import CompactFace
 from bmo.ui.gestures import GestureKind, HorizontalSwipeRecognizer
 
 
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
-FACE_BOUNDS = (636, 76, 792, 182)
 GRID_BOUNDS = (24, 76, 612, 448)
 
 PhotoProvider = Callable[[], Iterable[Path]]
@@ -78,8 +78,6 @@ class AlbumApp:
     ACTION_BACK_BOUNDS = (42, 367, 246, 451)
     ACTION_DELETE_BOUNDS = (298, 367, 502, 451)
     ACTION_BMO_BOUNDS = (554, 367, 758, 451)
-    FACE_REFRESH_MS = 150
-
     def __init__(
         self,
         root: tk.Misc,
@@ -95,7 +93,6 @@ class AlbumApp:
         self.root = root
         self.photo_provider = photo_provider
         self.delete_photo = delete_photo
-        self.face_provider = face_provider
         self.request_vision = request_vision
         self.bmo_button_path = Path(bmo_button_path)
         self.on_close = on_close
@@ -104,10 +101,6 @@ class AlbumApp:
         self.view = "grid"
         self.selected_photo: Path | None = None
         self.closed = False
-        self.face_after_id: str | None = None
-        self.face_item: int | None = None
-        self.face_fallback_item: int | None = None
-        self.face_image: ImageTk.PhotoImage | None = None
         self._photo_bounds: tuple[
             tuple[tuple[int, int, int, int], Path], ...
         ] = ()
@@ -128,8 +121,13 @@ class AlbumApp:
         )
         self.canvas.bind("<ButtonPress-1>", self._handle_press)
         self.canvas.bind("<ButtonRelease-1>", self._handle_release)
+        self.compact_face = CompactFace(
+            root,
+            self.canvas,
+            face_provider=face_provider,
+            auto_mount=False,
+        )
         self.refresh_photos()
-        self._refresh_face()
 
     def refresh_photos(self) -> None:
         """Rescan the configured library and redraw its current page."""
@@ -418,58 +416,12 @@ class AlbumApp:
         self._show_grid()
 
     def _draw_face_panel(self) -> None:
-        self.canvas.create_rectangle(
-            *FACE_BOUNDS,
-            fill=self.NAVY,
-            outline=self.WHITE,
-            width=3,
-        )
-        self.face_item = self.canvas.create_image(714, 123, anchor=tk.CENTER)
-        self.face_fallback_item = self.canvas.create_text(
-            714,
-            123,
-            text="BMO",
-            fill=self.WHITE,
-            font=("Arial Rounded MT Bold", 20, "bold"),
-        )
-
-    def _refresh_face(self) -> None:
-        if self.closed:
-            return
-        try:
-            self.canvas.lift()
-        except tk.TclError:
-            pass
-        if self.face_item is not None and self.face_fallback_item is not None:
-            try:
-                face = self.face_provider()
-                if face is not None:
-                    resized = face.convert("RGB").resize(
-                        (140, 84),
-                        Image.Resampling.LANCZOS,
-                    )
-                    self.face_image = ImageTk.PhotoImage(resized)
-                    self.canvas.itemconfigure(
-                        self.face_item,
-                        image=self.face_image,
-                    )
-                    self.canvas.itemconfigure(
-                        self.face_fallback_item,
-                        state=tk.HIDDEN,
-                    )
-            except (OSError, ValueError, tk.TclError):
-                pass
-        self.face_after_id = self.root.after(
-            self.FACE_REFRESH_MS,
-            self._refresh_face,
-        )
+        self.compact_face.mount()
 
     def _clear_canvas(self, background: str) -> None:
+        self.compact_face.unmount()
         self.canvas.configure(bg=background)
         self.canvas.delete("all")
-        self.face_item = None
-        self.face_fallback_item = None
-        self.face_image = None
         self._photo_bounds = ()
         self._image_refs.clear()
 
@@ -493,7 +445,7 @@ class AlbumApp:
         gesture: GestureKind,
         point: tuple[int, int],
     ) -> None:
-        if gesture is GestureKind.TAP and self._point_in(point, FACE_BOUNDS):
+        if gesture is GestureKind.TAP and self.compact_face.contains(point):
             self.close()
             return
         if gesture is GestureKind.TAP:
@@ -529,11 +481,6 @@ class AlbumApp:
         if self.closed:
             return
         self.closed = True
-        if self.face_after_id is not None:
-            try:
-                self.root.after_cancel(self.face_after_id)
-            except tk.TclError:
-                pass
-            self.face_after_id = None
+        self.compact_face.destroy()
         self.canvas.destroy()
         self.on_close()

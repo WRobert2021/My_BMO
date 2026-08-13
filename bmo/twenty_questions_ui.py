@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 import tkinter as tk
 
-from PIL import Image, ImageTk
+from PIL import Image
 
 from bmo.twenty_questions import TwentyQuestionsGame
+from bmo.ui.compact_face import CompactFace
 
 
 WINDOW_SIZE = (800, 480)
@@ -45,7 +46,6 @@ class TwentyQuestionsApp:
         self.on_play_again = on_play_again
         self.on_close = on_close
         self.thing_history_provider = thing_history_provider
-        self.face_provider = face_provider
         self.closed = False
         self.canvas = tk.Canvas(
             root,
@@ -57,12 +57,14 @@ class TwentyQuestionsApp:
         self.canvas.place(x=0, y=0, width=WINDOW_SIZE[0], height=WINDOW_SIZE[1])
         self.button_items: list[int] = []
         self.button_tags: list[str] = []
-        self.face_image: ImageTk.PhotoImage | None = None
-        self.face_after_id: str | None = None
         self.reveal_entry: tk.Entry | None = None
         self._draw_static_ui()
+        self.compact_face = CompactFace(
+            root,
+            self.canvas,
+            face_provider=face_provider,
+        )
         self.refresh()
-        self._refresh_face()
 
     def _draw_static_ui(self) -> None:
         self.canvas.create_rectangle(0, 0, 800, 62, fill=self.NAVY, outline="")
@@ -74,7 +76,7 @@ class TwentyQuestionsApp:
             fill=self.WHITE,
             font=("Arial Rounded MT Bold", 24, "bold"),
         )
-        self._draw_button(668, 10, 784, 51, "EXIT GAME", self.close, color=self.BLUE)
+        self._draw_button(552, 10, 668, 51, "EXIT GAME", self.close, color=self.BLUE)
         # The EXIT control is static; dynamic answer controls are tracked
         # separately and rebuilt whenever the game state changes.
         self.button_items.clear()
@@ -88,21 +90,6 @@ class TwentyQuestionsApp:
             fill=self.NAVY,
             outline=self.WHITE,
             width=3,
-        )
-        self.face_item = self.canvas.create_image(709, 123, anchor=tk.CENTER)
-        self.face_fallback_item = self.canvas.create_text(
-            709,
-            123,
-            text="BMO",
-            fill=self.WHITE,
-            font=("Arial Rounded MT Bold", 20, "bold"),
-        )
-        self.canvas.create_text(
-            709,
-            169,
-            text="BMO",
-            fill=self.CYAN,
-            font=("Arial", 9, "bold"),
         )
         self.candidate_item = self.canvas.create_text(
             709,
@@ -342,31 +329,11 @@ class TwentyQuestionsApp:
         self._draw_answer_buttons()
         self._show_reveal_entry()
 
-    def _refresh_face(self) -> None:
-        if self.closed:
-            return
-        if self.face_provider:
-            try:
-                face = self.face_provider()
-                if face is not None:
-                    face = face.convert("RGB").resize((140, 84), Image.Resampling.LANCZOS)
-                    self.face_image = ImageTk.PhotoImage(face)
-                    self.canvas.itemconfigure(self.face_item, image=self.face_image)
-                    self.canvas.itemconfigure(self.face_fallback_item, state=tk.HIDDEN)
-            except (tk.TclError, ValueError):
-                pass
-        self.face_after_id = self.root.after(150, self._refresh_face)
-
     def close(self) -> None:
         if self.closed:
             return
         self.closed = True
-        if self.face_after_id:
-            try:
-                self.root.after_cancel(self.face_after_id)
-            except tk.TclError:
-                pass
-            self.face_after_id = None
+        self.compact_face.destroy()
         if self.reveal_entry is not None:
             self.reveal_entry.destroy()
             self.reveal_entry = None

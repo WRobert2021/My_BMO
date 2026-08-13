@@ -62,6 +62,7 @@ from bmo.prompts import build_system_prompt
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
+from bmo.ui.compact_face import load_compact_face_config
 from bmo.ui import (
     GestureKind,
     HorizontalSwipeRecognizer,
@@ -105,6 +106,12 @@ class _FeatureMenuAnnouncer:
         self.gui = gui
         self.scope = object()
 
+    def _release_speaking_state(self) -> None:
+        if getattr(self.gui, "_feature_speaking_scope", None) is not self.scope:
+            return
+        self.gui._feature_speaking_scope = None
+        self.gui.set_state(BotStates.IDLE, "Ready")
+
     @property
     def available(self) -> bool:
         return (
@@ -121,16 +128,25 @@ class _FeatureMenuAnnouncer:
     ) -> bool:
         if not self.available:
             return False
+
+        def finished() -> None:
+            self._release_speaking_state()
+            if on_complete is not None:
+                on_complete()
+
+        self.gui._feature_speaking_scope = self.scope
+        self.gui.set_state(BotStates.SPEAKING, "Speaking...")
         self.gui._enqueue_scoped_speech(
             text,
             scope=self.scope,
-            on_complete=on_complete,
+            on_complete=finished,
         )
         return True
 
     def cancel(self) -> None:
         if hasattr(self.gui, "tts_queue_lock"):
             self.gui._cancel_speech_scope(self.scope)
+            self._release_speaking_state()
 
 
 class BotGUI:
@@ -147,6 +163,7 @@ class BotGUI:
         self.current_attention_frame: ImageTk.PhotoImage | None = None
         self._attention_overlay_cache: dict[Path, Image.Image] = {}
         self.config = load_config()
+        self.compact_face_config = load_compact_face_config()
         self.kiosk_access = KioskAccessPolicy(
             load_quiet_hours_config(self.config["quiet_hours_config_path"])
         )
@@ -221,6 +238,7 @@ class BotGUI:
         self.tts_thread: threading.Thread | None = None
         self.tts_active = threading.Event()
         self.active_tts_item: _SpeechQueueItem | None = None
+        self._feature_speaking_scope: object | None = None
         self.exiting = False
         self.main_thread: threading.Thread | None = None
         mode_result = load_mode_registry(
@@ -653,25 +671,18 @@ class BotGUI:
         self.set_state(BotStates.IDLE, "Interrupted.")
 
     def load_animations(self) -> None:
-        base_path = Path("faces")
-        states = [
-            BotStates.IDLE,
-            BotStates.LISTENING,
-            BotStates.THINKING,
-            BotStates.SPEAKING,
-            BotStates.ERROR,
-            BotStates.CAPTURING,
-            BotStates.WARMUP,
-        ]
-        for state in states:
-            folder = base_path / state
+        for state in self.compact_face_config.states or ():
             self.animations[state] = []
-            if folder.exists():
-                for image_path in sorted(folder.glob("*.png")):
-                    image = Image.open(image_path).resize(
-                        (self.BG_WIDTH, self.BG_HEIGHT)
-                    )
+            for image_path in self.compact_face_config.frame_paths(state):
+                try:
+                    with Image.open(image_path) as source:
+                        image = source.convert("RGB").resize(
+                            (self.BG_WIDTH, self.BG_HEIGHT),
+                            Image.Resampling.LANCZOS,
+                        )
                     self.animations[state].append(ImageTk.PhotoImage(image))
+                except (OSError, ValueError, tk.TclError):
+                    continue
 
             if not self.animations[state]:
                 idle_frames = self.animations.get(BotStates.IDLE, [])
@@ -710,7 +721,7 @@ class BotGUI:
             self.current_attention_frame = None
         self.background_label.config(image=frame)
         self._refresh_runtime_attention_ui()
-        speed = 50 if self.current_state == BotStates.SPEAKING else 500
+        speed = self.compact_face_config.state_duration(self.current_state)
         self.master.after(speed, self.update_animation)
 
     def _runtime_attention_is_visible(self) -> bool:

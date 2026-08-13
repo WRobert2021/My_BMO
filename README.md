@@ -42,12 +42,14 @@ be-more-agent/
 │   ├── example.calendar.json  # Tracked calendar example
 │   ├── example.quiet_hours.json # Tracked global kiosk-lock example
 │   ├── example.learning.json  # Tracked Pre-K learning example
+│   ├── example.compact_face.json # Tracked shared compact-face example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)
 │   ├── calendar.json          # Local calendar behavior settings (ignored)
 │   ├── quiet_hours.json       # Local global quiet-hours settings (ignored)
-│   └── learning.json          # Local learning behavior/settings (ignored)
+│   ├── learning.json          # Local learning behavior/settings (ignored)
+│   └── compact_face.json      # Local shared face layout/animation settings
 ├── data/calendar/             # Local events and acknowledgments (ignored)
 ├── data/learning/             # Local learners, plans, and progress (ignored)
 ├── chat_memory.json           # Conversation history
@@ -138,6 +140,11 @@ Configuration is split by audience:
 - `config/learning.json` is owned only by the menu-launched Pre-K learning
   feature. It controls its contained data/art roots, teacher PIN, session and
   mastery limits, readable fonts, and scoped speech/replay behavior.
+- `config/compact_face.json` is owned by the neutral UI layer. It maps runtime
+  states to contained PNG directories under `faces/` and controls the one
+  shared refresh/layout specification used by Menu, features, modes, and
+  Weather. Its outer viewport is always 108×65; invalid files safely use
+  defaults.
 
 The application does **not** create these local files. If a file is absent or
 invalid, BMO reports a parsing error when applicable and uses defaults for that
@@ -151,6 +158,7 @@ cp config/example.weather.json config/weather.json
 cp config/example.calendar.json config/calendar.json
 cp config/example.quiet_hours.json config/quiet_hours.json
 cp config/example.learning.json config/learning.json
+cp config/example.compact_face.json config/compact_face.json
 ```
 
 When upgrading from the former root `config.json`, move its `features` and
@@ -372,7 +380,12 @@ larger/private disk.
 
 This software is a generic framework. You can give it a new personality by replacing the assets:
 
-1.  **Faces:** The script looks for PNG sequences in `faces/[state]/`. It will loop through all images found in the folder.
+1.  **Faces:** The directories and deterministic PNG sequences are configured
+    in `config/compact_face.json`; start from
+    `config/example.compact_face.json`. Add frames or map a new state there
+    without editing individual feature screens. Every compact view uses the
+    same fixed top-right 108×65 component, and 5:3 artwork is letterboxed
+    without stretching.
 2.  **Sounds:** Put multiple `.wav` files in the `sounds/[category]/` folders. The robot will pick one at random each time (e.g., different "thinking" hums or "error" buzzes).
 
 ---
