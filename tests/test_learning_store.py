@@ -346,6 +346,61 @@ class LearningStoreTests(unittest.TestCase):
             self.assertEqual(profile.profile_id, "learner_profileid")
             self.assertEqual(plan.plan_id, "plan_planid")
 
+    def test_lesson_mastery_uses_lesson_identity_and_resume_can_filter_lesson(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.make_store(Path(directory) / "learning")
+            profile = store.create_profile("Riley")
+            plan = store.create_plan(
+                profile.profile_id,
+                "Letters",
+                ("letters.uppercase", "letters.lowercase"),
+            )
+            for index in (1, 2):
+                store.append_attempt(
+                    make_attempt(
+                        index,
+                        profile.profile_id,
+                        plan.plan_id,
+                        session_id=f"session_{index}",
+                        lesson_id="letters.uppercase",
+                        skills=("letter.recognition",),
+                    )
+                )
+            uppercase = make_session(profile.profile_id, plan.plan_id)
+            lowercase = replace(
+                make_session(profile.profile_id, plan.plan_id),
+                session_id="session_two",
+                questions=(make_question(2, "letters.lowercase"),),
+                updated_at="2026-08-12T12:01:00Z",
+            )
+            store.save_session(uppercase)
+            store.save_session(lowercase)
+
+            mastery = store.lesson_mastery(
+                profile.profile_id,
+                "letters.uppercase",
+                plan_id=plan.plan_id,
+            )
+
+            self.assertEqual(mastery.status.value, "mastered")
+            self.assertEqual(mastery.skill, "letters.uppercase")
+            self.assertEqual(
+                store.resumable_session(
+                    profile.profile_id,
+                    plan.plan_id,
+                    "letters.uppercase",
+                ),
+                uppercase,
+            )
+            self.assertEqual(
+                store.resumable_session(
+                    profile.profile_id,
+                    plan.plan_id,
+                    "letters.lowercase",
+                ),
+                lowercase,
+            )
+
     def test_archive_delete_and_progress_reset_require_explicit_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = self.make_store(Path(directory) / "learning")

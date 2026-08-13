@@ -10,6 +10,8 @@ from unittest.mock import Mock
 from bmo.app import BotGUI
 from bmo.features import (
     FeatureMenuContext,
+    RuntimeAttention,
+    RuntimeAttentionDismissal,
     RuntimeNotification,
     ToolRegistry,
     ToolResult,
@@ -368,8 +370,50 @@ class TimerSchedulerTests(unittest.TestCase):
         self.assertEqual(kwargs["timer_provider"](), ())
         self.assertEqual(tool.scheduler._heap, [])
 
+        self.assertTrue(kwargs["create_timer"](90))
+        self.assertEqual(kwargs["timer_provider"]()[0].remaining_seconds, 90.0)
+
         kwargs["on_close"]()
         on_close.assert_called_once_with()
+
+    def test_expiration_publishes_alarm_attention_until_acknowledged(self) -> None:
+        clock = FakeClock()
+        notifications: list[RuntimeNotification] = []
+        attention_events: list[RuntimeAttention | RuntimeAttentionDismissal] = []
+        registry = ToolRegistry(
+            runtime_callback=notifications.append,
+            attention_callback=attention_events.append,
+        )
+        tool = SetTimerTool(
+            registry.notify_runtime,
+            notify_attention=registry.notify_attention,
+            dismiss_attention=registry.dismiss_attention,
+            clock=clock,
+        )
+        registry.register(tool)
+        self.addCleanup(registry.close)
+        tool.execute({"duration": "5 seconds"})
+
+        clock.advance(5)
+        tool.scheduler.notify_clock_changed()
+        for _attempt in range(100):
+            if attention_events:
+                break
+            threading.Event().wait(0.005)
+
+        attention = attention_events[0]
+        self.assertIsInstance(attention, RuntimeAttention)
+        assert isinstance(attention, RuntimeAttention)
+        self.assertEqual(attention.animation_state, BotStates.ALARM)
+        self.assertEqual(attention.badge_label, "TIMER")
+        self.assertFalse(attention.announce_on_acknowledge)
+        self.assertIn(1, tool._expired)
+        self.assertTrue(attention.acknowledge())
+        self.assertNotIn(1, tool._expired)
+        self.assertEqual(
+            attention_events[-1],
+            RuntimeAttentionDismissal("set_timer", "timer-1"),
+        )
 
 
 class TimerIntegrationTests(unittest.TestCase):
@@ -418,7 +462,9 @@ class TimerIntegrationTests(unittest.TestCase):
         gui.exiting = False
         gui.set_state = Mock()
         gui.append_to_text = Mock()
-        gui.enqueue_speech = Mock()
+        gui.current_interaction = None
+        gui.tts_queue = []
+        gui.tts_queue_lock = threading.Lock()
         notification = RuntimeNotification("set_timer", "Timer 3 is done.")
 
         BotGUI._handle_runtime_notification(gui, notification)
@@ -428,7 +474,9 @@ class TimerIntegrationTests(unittest.TestCase):
             "Timer 3 is done.",
         )
         gui.append_to_text.assert_called_once_with("BOT: Timer 3 is done.")
-        gui.enqueue_speech.assert_called_once_with("Timer 3 is done.")
+        self.assertEqual([item.text for item in gui.tts_queue], ["Timer 3 is done."])
+        gui.tts_queue[0].on_complete()
+        gui.set_state.assert_called_with(BotStates.IDLE, "Ready")
 
 
 if __name__ == "__main__":

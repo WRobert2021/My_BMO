@@ -26,7 +26,7 @@ from bmo.features.calendar_store import (
 from bmo.features.contracts import RuntimeAttention, RuntimeAttentionDismissal
 from bmo.features.registry import ToolRegistry
 from bmo.state import BotStates
-from bmo.ui.calendar import CalendarApp, month_dot_positions
+from bmo.ui.calendar import CALENDAR_COLOR_PALETTE, CalendarApp, month_dot_positions
 from bmo.ui.scrolling import VerticalScrollController
 
 
@@ -289,9 +289,32 @@ class CalendarToolTests(unittest.TestCase):
 
             self.assertEqual(
                 summary,
-                "For today, you have Birthday, all day; and Dentist at 9:30 AM.",
+                "For today, you have Birthday, all day; and Dentist at 9:30 am.",
             )
             self.assertNotIn("Secret", summary or "")
+
+    def test_specific_date_speaks_ordinal_and_natural_start_end_times(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            tool, _notices, _dismissals = self.make_tool(directory)
+            tool.store.add(
+                CalendarEvent(
+                    "school",
+                    "school",
+                    date(2026, 8, 13),
+                    start_time=time(9),
+                    end_time=time(14, 30),
+                )
+            )
+
+            summary = tool.execute(
+                {"action": "get_calendar", "date": "2026-08-13"}
+            ).content
+
+            self.assertEqual(
+                summary,
+                "On Thursday August 13th you have school at "
+                "9 o'clock am to 2:30 pm.",
+            )
 
     def test_notes_are_spoken_only_when_calendar_config_enables_them(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -382,6 +405,11 @@ class CalendarToolTests(unittest.TestCase):
 
 
 class CalendarUiGeometryTests(unittest.TestCase):
+    def test_touch_palette_offers_named_colors_without_rgb_entry(self) -> None:
+        self.assertGreaterEqual(len(CALENDAR_COLOR_PALETTE), 12)
+        self.assertEqual(len({color for _name, color in CALENDAR_COLOR_PALETTE}), len(CALENDAR_COLOR_PALETTE))
+        self.assertTrue(all(color.startswith("#") and len(color) == 7 for _name, color in CALENDAR_COLOR_PALETTE))
+
     def test_month_dots_start_beside_number_and_never_cross_cell(self) -> None:
         positions = month_dot_positions(0, 0, 109, 52, 100)
 
@@ -479,6 +507,30 @@ class RuntimeAttentionBoundaryTests(unittest.TestCase):
         self.assertEqual(gui.runtime_attentions, {})
         self.assertEqual([item.text for item in gui.tts_queue], [attention.message])
         gui.set_state.assert_called_once_with(BotStates.SPEAKING, attention.message)
+
+    def test_alarm_attention_overrides_face_until_silent_acknowledgment(self) -> None:
+        gui = self.make_gui()
+        attention = RuntimeAttention(
+            "set_timer",
+            "timer-1",
+            "Timer 1 is done.",
+            lambda: True,
+            animation_state="ALARM",
+            badge_label="timer",
+            announce_on_acknowledge=False,
+        )
+        gui.runtime_attentions[(attention.source, attention.attention_id)] = attention
+
+        self.assertIs(gui._runtime_animation_attention(), attention)
+        self.assertIs(gui._first_runtime_attention(), attention)
+        gui._refresh_runtime_attention_ui()
+        gui.attention_badge.configure.assert_called_with(text="TIMER  1")
+
+        gui._acknowledge_runtime_attention()
+
+        self.assertEqual(gui.runtime_attentions, {})
+        self.assertEqual(gui.tts_queue, [])
+        gui.set_state.assert_called_once_with(BotStates.IDLE, "Ready")
 
 
 if __name__ == "__main__":

@@ -69,6 +69,9 @@ class RuntimeAttention:
     acknowledge: Callable[[], bool]
     overlay_kind: str | None = None
     overlay_path: Path | None = None
+    animation_state: str | None = None
+    badge_label: str | None = None
+    announce_on_acknowledge: bool = True
 
     def __post_init__(self) -> None:
         for name in ("source", "attention_id", "message"):
@@ -83,6 +86,17 @@ class RuntimeAttention:
             object.__setattr__(self, "overlay_kind", overlay_kind or None)
         if self.overlay_path is not None:
             object.__setattr__(self, "overlay_path", Path(self.overlay_path))
+        for name in ("animation_state", "badge_label"):
+            value = getattr(self, name)
+            if value is not None:
+                normalized = str(value).strip()
+                if name == "animation_state":
+                    normalized = normalized.lower()
+                else:
+                    normalized = normalized.upper()[:20]
+                object.__setattr__(self, name, normalized or None)
+        if not isinstance(self.announce_on_acknowledge, bool):
+            raise TypeError("Runtime attention announce_on_acknowledge must be boolean.")
 
 
 @dataclass(frozen=True)

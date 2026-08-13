@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 from bmo.ui.timer import (
     TimerApp,
+    TimerDurationDraft,
     TimerViewItem,
     VerticalScrollController,
     format_countdown,
@@ -21,6 +22,12 @@ class TimerFormattingTests(unittest.TestCase):
         self.assertEqual(format_countdown(65), "01:05")
         self.assertEqual(format_countdown(3661), "01:01:01")
         self.assertEqual(format_countdown(90061), "1 day  01:01:01")
+
+    def test_touch_duration_draft_clamps_fields_and_totals_seconds(self) -> None:
+        draft = TimerDurationDraft().adjusted("hours", 2).adjusted("seconds", 30)
+        self.assertEqual(draft.total_seconds, 2 * 3600 + 5 * 60 + 30)
+        self.assertEqual(draft.adjusted("minutes", 100).minutes, 59)
+        self.assertEqual(draft.adjusted("hours", -100).hours, 0)
 
 
 class VerticalScrollControllerTests(unittest.TestCase):
@@ -64,6 +71,19 @@ class TimerAppInteractionTests(unittest.TestCase):
         app._draw_list = Mock()
         app._refresh_items_now = Mock()
         return app
+
+    def test_add_editor_starts_timer_from_touch_duration(self) -> None:
+        app = TimerApp.__new__(TimerApp)
+        app._duration_draft = TimerDurationDraft(minutes=3, seconds=15)
+        app.create_timer = Mock(return_value=True)
+        app._close_add_editor = Mock()
+        app._refresh_items_now = Mock()
+
+        app._handle_editor_action("save")
+
+        app.create_timer.assert_called_once_with(195.0)
+        app._close_add_editor.assert_called_once_with()
+        app._refresh_items_now.assert_not_called()
 
     def test_delete_button_cancels_its_timer_after_a_tap(self) -> None:
         app = self.make_app()

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, time, timedelta
 from pathlib import Path
 import tkinter as tk
-from tkinter import colorchooser, messagebox, ttk
+from tkinter import messagebox, ttk
 from typing import Literal
 
 from PIL import Image
@@ -19,6 +19,21 @@ from bmo.ui.scrolling import VerticalScrollController
 
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
+
+CALENDAR_COLOR_PALETTE = (
+    ("Ocean", "#1578D3"),
+    ("Teal", "#16847D"),
+    ("Leaf", "#3B8E63"),
+    ("Sun", "#E0A800"),
+    ("Orange", "#D96B27"),
+    ("Coral", "#D9545D"),
+    ("Berry", "#A83E7C"),
+    ("Purple", "#7051B8"),
+    ("Navy", "#29466F"),
+    ("Slate", "#607D8B"),
+    ("Brown", "#795548"),
+    ("Black", "#303030"),
+)
 BACKGROUND = "#EAF8F8"
 INK = "#16324F"
 MUTED = "#5D7185"
@@ -678,7 +693,7 @@ class CalendarApp:
         self.color_swatch.place(x=18, y=347, width=54, height=35)
         self._controls.append(self.color_swatch)
         if not read_only:
-            self._draw_button((84, 347, 378, 382), "CHOOSE FROM COLOR WHEEL…", self._choose_color)
+            self._draw_button((84, 347, 378, 382), "CHOOSE FROM COLOR PALETTE…", self._choose_color)
 
         self._label("REPEAT", 410, 77)
         self.frequency_box = self._combo(
@@ -790,14 +805,52 @@ class CalendarApp:
         return value.strftime("%H:%M") if value else ""
 
     def _choose_color(self) -> None:
-        _rgb, color = colorchooser.askcolor(
-            color=self._editor_color,
-            title="Choose an event color",
-            parent=self.root,
-        )
-        if color:
-            self._editor_color = color.upper()
-            self.color_swatch.configure(bg=self._editor_color)
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Choose an event color")
+        dialog.configure(bg=BACKGROUND)
+        dialog.geometry("620x320")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        tk.Label(
+            dialog,
+            text="CHOOSE AN EVENT COLOR",
+            bg=BACKGROUND,
+            fg=INK,
+            font=self._font(16, bold=True),
+        ).pack(pady=(18, 10))
+        grid = tk.Frame(dialog, bg=BACKGROUND)
+        grid.pack(padx=18, pady=4, fill=tk.BOTH, expand=True)
+
+        def choose(color: str) -> None:
+            self._editor_color = color
+            self.color_swatch.configure(bg=color)
+            dialog.grab_release()
+            dialog.destroy()
+
+        for index, (name, color) in enumerate(CALENDAR_COLOR_PALETTE):
+            button = tk.Button(
+                grid,
+                text=name.upper(),
+                bg=color,
+                fg=self._contrast(color),
+                activebackground=color,
+                activeforeground=self._contrast(color),
+                command=lambda selected=color: choose(selected),
+                font=self._font(9, bold=True),
+                relief=tk.FLAT,
+            )
+            button.grid(
+                row=index // 4,
+                column=index % 4,
+                padx=6,
+                pady=6,
+                sticky="nsew",
+            )
+        for column in range(4):
+            grid.grid_columnconfigure(column, weight=1)
+        for row in range(3):
+            grid.grid_rowconfigure(row, weight=1)
 
     def _refresh_repeat_controls(self, *_args) -> None:
         for child in self.repeat_frame.winfo_children():

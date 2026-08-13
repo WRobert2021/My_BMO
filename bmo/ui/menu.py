@@ -16,7 +16,7 @@ from bmo.ui.gestures import GestureKind, HorizontalSwipeRecognizer
 
 
 WINDOW_SIZE = (800, 480)
-PAGE_BOUNDS = (24, 76, 612, 448)
+PAGE_BOUNDS = (18, 76, 782, 448)
 
 
 @dataclass(frozen=True)
@@ -86,12 +86,12 @@ class IconMenuItem:
 class IconMenuPage:
     """A page-sized grid of tappable extension-provided menu items."""
 
-    COLUMNS = 3
-    ROWS = 2
+    COLUMNS = 5
+    ROWS = 3
     CAPACITY = COLUMNS * ROWS
-    ICON_SIZE = 118
-    HORIZONTAL_PADDING = 10
-    VERTICAL_PADDING = 8
+    ICON_SIZE = 88
+    HORIZONTAL_PADDING = 7
+    VERTICAL_PADDING = 6
 
     def __init__(
         self,

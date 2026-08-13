@@ -239,7 +239,7 @@ class CalendarTool:
     def _request_range(self, request: ToolRequest) -> tuple[date, date, str]:
         if request.get("date"):
             selected = date.fromisoformat(str(request["date"]))
-            return selected, selected, selected.strftime("%A, %B %-d")
+            return selected, selected, self._speakable_date(selected)
         current = self._now().date()
         period = str(request.get("period") or "today").strip().lower()
         if period == "today":
@@ -270,7 +270,7 @@ class CalendarTool:
     def summary(self, start: date, end: date, *, label: str | None = None) -> str:
         occurrences = self.occurrences(start, end)
         range_label = label or (
-            start.strftime("%A, %B %-d")
+            self._speakable_date(start)
             if start == end
             else f"{start.strftime('%B %-d')} through {end.strftime('%B %-d')}"
         )
@@ -279,7 +279,10 @@ class CalendarTool:
         items = []
         for occurrence in occurrences[:8]:
             event = occurrence.event
-            when = "all day" if event.all_day else self._speakable_time(event.start_time)
+            when = "all day" if event.all_day else self._speakable_time_range(
+                event.start_time,
+                event.end_time,
+            )
             day = "" if start == end else occurrence.occurrence_date.strftime("%A") + ", "
             item = f"{day}{event.name} at {when}" if not event.all_day else f"{day}{event.name}, {when}"
             if self.config.speak_notes and event.notes:
@@ -291,13 +294,43 @@ class CalendarTool:
             detail = "; ".join(items[:-1]) + f"; and {items[-1]}"
         extra = len(occurrences) - len(items)
         suffix = f" There are {extra} more items." if extra else ""
-        return f"For {range_label}, you have {detail}.{suffix}"
+        prefix = (
+            f"On {range_label}"
+            if start == end and range_label not in {"today", "tomorrow"}
+            else f"For {range_label}"
+        )
+        separator = " " if prefix.startswith("On ") else ", "
+        return f"{prefix}{separator}you have {detail}.{suffix}"
+
+    @staticmethod
+    def _speakable_date(value: date) -> str:
+        day = value.day
+        if 10 < day % 100 < 14:
+            suffix = "th"
+        else:
+            suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+        return f"{value.strftime('%A %B')} {day}{suffix}"
 
     @staticmethod
     def _speakable_time(value: time | None) -> str:
         if value is None:
             return "an unspecified time"
-        return value.strftime("%I:%M %p").lstrip("0")
+        hour = value.strftime("%I").lstrip("0")
+        suffix = value.strftime("%p").lower()
+        if value.minute == 0:
+            return f"{hour} o'clock {suffix}"
+        return f"{hour}:{value.minute:02d} {suffix}"
+
+    @classmethod
+    def _speakable_time_range(
+        cls,
+        start: time | None,
+        end: time | None,
+    ) -> str:
+        spoken = cls._speakable_time(start)
+        if end is not None:
+            spoken += f" to {cls._speakable_time(end)}"
+        return spoken
 
     def _publish_attentions(self, selected_date: date) -> None:
         occurrences = self.occurrences(selected_date, selected_date)
@@ -324,7 +357,10 @@ class CalendarTool:
 
     def _acknowledgement_message(self, occurrence: CalendarOccurrence) -> str:
         event = occurrence.event
-        when = "all day" if event.all_day else self._speakable_time(event.start_time)
+        when = "all day" if event.all_day else self._speakable_time_range(
+            event.start_time,
+            event.end_time,
+        )
         message = f"Today: {event.name}, {when}."
         if self.config.speak_notes and event.notes:
             message += f" Note: {event.notes}"

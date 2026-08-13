@@ -23,6 +23,7 @@ from bmo.ui.compact_face import CompactFace
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
 MAX_QUESTION_ATTEMPTS = 2
+TEXT_ENTRY_KEYS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 Point = tuple[int, int]
 
@@ -414,9 +415,9 @@ class TextEntry:
         if character == " ":
             if not self.value or self.value.endswith(" "):
                 return False
-        elif len(character) != 1 or not character.isalpha():
+        elif len(character) != 1 or character.upper() not in TEXT_ENTRY_KEYS:
             return False
-        self.value += character
+        self.value += character.upper()
         return True
 
     def backspace(self) -> None:
@@ -596,6 +597,59 @@ class LessonSnapshot:
     title: str
     prerequisites: tuple[str, ...]
     raw: Any = field(compare=False, repr=False)
+
+
+@dataclass(frozen=True)
+class PlanLessonProgress:
+    """Learner-facing state for one assigned lesson."""
+
+    lesson: LessonSnapshot
+    mastery_status: str
+    mastered: bool
+    locked: bool
+    unmet_prerequisites: tuple[str, ...] = ()
+
+
+def ordered_plan_lessons(
+    lesson_ids: Iterable[str],
+    lessons: Iterable[LessonSnapshot],
+    mastery_statuses: Mapping[str, object],
+) -> tuple[PlanLessonProgress, ...]:
+    """Keep plan order while moving mastered lessons behind active work."""
+    lesson_by_id = {lesson.lesson_id: lesson for lesson in lessons}
+
+    def status_for(lesson_id: str) -> str:
+        value = mastery_statuses.get(lesson_id, "not_started")
+        value = getattr(value, "value", value)
+        return str(value).strip().lower().replace(" ", "_")
+
+    progress: list[PlanLessonProgress] = []
+    for lesson_id in lesson_ids:
+        lesson = lesson_by_id.get(lesson_id)
+        if lesson is None:
+            continue
+        status = status_for(lesson_id)
+        mastered = status == "mastered"
+        unmet = tuple(
+            prerequisite
+            for prerequisite in lesson.prerequisites
+            if status_for(prerequisite) != "mastered"
+        )
+        progress.append(
+            PlanLessonProgress(
+                lesson=lesson,
+                mastery_status=status,
+                mastered=mastered,
+                locked=bool(unmet) and not mastered,
+                unmet_prerequisites=unmet,
+            )
+        )
+    return tuple(
+        sorted(
+            progress,
+            key=lambda item: item.mastered,
+        )
+    )
 
 
 def profile_snapshot(value: Any) -> ProfileSnapshot:
@@ -801,6 +855,7 @@ def evaluation_snapshot(value: Any, question: QuestionSnapshot, attempt: int) ->
 class LearningScreen(str, Enum):
     HOME = "home"
     PLANS = "plans"
+    PLAN_LESSONS = "plan_lessons"
     RESUME = "resume"
     LESSON = "lesson"
     FEEDBACK = "feedback"
@@ -902,10 +957,12 @@ class LearningApp:
         self._teacher_pages = PageCursor(3)
         self._lesson_pages = PageCursor(4)
         self._plan_lesson_pages = PageCursor(4)
+        self._assigned_lesson_pages = PageCursor(4)
         self._filter_picker_pages = PageCursor(4)
         self._mastery_pages = PageCursor(3)
         self._selected_profile: ProfileSnapshot | None = None
         self._selected_plan: PlanSnapshot | None = None
+        self._selected_lesson_id: str | None = None
         self._session: Any = None
         self._question: QuestionSnapshot | None = None
         self._question_controller: InteractionController | None = None
@@ -1266,15 +1323,135 @@ class LearningApp:
 
     def _choose_plan(self, plan: PlanSnapshot) -> None:
         self._selected_plan = plan
+        self._selected_lesson_id = None
+        self._assigned_lesson_pages.page_index = 0
+        self._show_plan_lessons()
+
+    def _plan_lesson_progress(self) -> tuple[PlanLessonProgress, ...]:
+        plan = self._selected_plan
         profile = self._selected_profile
+        if plan is None or profile is None:
+            return ()
+        lesson_by_id = {lesson.lesson_id: lesson for lesson in self._lessons}
+        relevant_ids = set(plan.lesson_ids)
+        for lesson_id in plan.lesson_ids:
+            lesson = lesson_by_id.get(lesson_id)
+            if lesson is not None:
+                relevant_ids.update(lesson.prerequisites)
+        statuses: dict[str, object] = {}
+        mastery = getattr(self.store, "lesson_mastery", None)
+        if callable(mastery):
+            for lesson_id in relevant_ids:
+                try:
+                    result = self._invoke(
+                        mastery,
+                        profile.profile_id,
+                        lesson_id,
+                    )
+                    statuses[lesson_id] = _field(
+                        result,
+                        "status",
+                        default="not_started",
+                    )
+                except Exception:
+                    statuses[lesson_id] = "not_started"
+        return ordered_plan_lessons(plan.lesson_ids, self._lessons, statuses)
+
+    def _show_plan_lessons(self) -> None:
+        plan = self._selected_plan
+        if plan is None:
+            self._show_plans()
+            return
+        self.screen = LearningScreen.PLAN_LESSONS
+        self._clear()
+        self._header(plan.name.upper())
+        assert self.canvas is not None
+        self.canvas.create_text(
+            400,
+            91,
+            text=f"Pick a lesson • {plan.question_count} questions each",
+            fill=self.MUTED,
+            font=self._font(12, bold=True),
+        )
+        progress = self._plan_lesson_progress()
+        self._assigned_lesson_pages.set_count(len(progress))
+        for index, item in enumerate(self._assigned_lesson_pages.current(progress)):
+            top = 112 + index * 72
+            if item.mastered:
+                marker = "★"
+                color = self.GREEN
+                suffix = "MASTERED"
+            elif item.locked:
+                marker = "🔒"
+                color = self.DISABLED
+                suffix = "LOCKED"
+            else:
+                marker = "▶"
+                color = self.TEAL
+                suffix = item.mastery_status.replace("_", " ").upper()
+            self._button(
+                Rect(70, top, 730, top + 60),
+                f"{marker}  {item.lesson.title}    {suffix}",
+                lambda selected=item: self._choose_plan_lesson(selected),
+                color=color,
+                enabled=not item.locked,
+                font_size=12,
+            )
+        if self._assigned_lesson_pages.page_count > 1:
+            self._button(
+                Rect(16, 402, 176, 468),
+                "PREV",
+                lambda: self._turn_page(
+                    self._assigned_lesson_pages,
+                    -1,
+                    self._show_plan_lessons,
+                ),
+                color=self.NAVY,
+                enabled=self._assigned_lesson_pages.page_index > 0,
+                font_size=9,
+            )
+            self._button(
+                Rect(624, 402, 784, 468),
+                "NEXT",
+                lambda: self._turn_page(
+                    self._assigned_lesson_pages,
+                    1,
+                    self._show_plan_lessons,
+                ),
+                color=self.NAVY,
+                enabled=(
+                    self._assigned_lesson_pages.page_index
+                    < self._assigned_lesson_pages.page_count - 1
+                ),
+                font_size=9,
+            )
+        self._button(
+            Rect(300, 402, 500, 468),
+            "BACK TO PLANS",
+            self._show_plans,
+            color=self.NAVY,
+            font_size=9,
+        )
+
+    def _choose_plan_lesson(self, progress: PlanLessonProgress) -> None:
+        if progress.locked:
+            return
+        self._selected_lesson_id = progress.lesson.lesson_id
+        profile = self._selected_profile
+        plan = self._selected_plan
         resumable = None
-        if profile is not None:
+        if profile is not None and plan is not None:
             method = getattr(self.store, "resumable_session", None)
             if callable(method):
                 try:
-                    resumable = self._invoke(method, profile.profile_id, plan.plan_id)
+                    resumable = self._invoke(
+                        method,
+                        profile.profile_id,
+                        plan.plan_id,
+                        lesson_id=self._selected_lesson_id,
+                    )
                 except Exception:
-                    self._status = "A saved session could not be opened."
+                    self._status = "A saved lesson could not be opened."
         if resumable is not None:
             self._session = resumable
             self._show_resume()
@@ -1294,7 +1471,7 @@ class LearningApp:
     def _confirm_start_over(self) -> None:
         self._ask_confirmation(
             "START OVER?",
-            "The saved session stays in history, but this plan will begin a new session.",
+            "The saved session stays in history, but this lesson will begin again.",
             "START NEW",
             self._start_new_session,
             self._show_resume,
@@ -1303,7 +1480,10 @@ class LearningApp:
     def _start_new_session(self) -> None:
         profile = self._selected_profile
         plan = self._selected_plan
-        if profile is None or plan is None or not plan.lesson_ids:
+        lesson_id = getattr(self, "_selected_lesson_id", None) or (
+            plan.lesson_ids[0] if plan is not None and plan.lesson_ids else None
+        )
+        if profile is None or plan is None or lesson_id is None:
             self._show_error("This plan needs at least one lesson before it can start.", self._show_plans)
             return
         method = getattr(self.engine, "start_session", None)
@@ -1311,48 +1491,11 @@ class LearningApp:
             self._show_error("The lesson engine is unavailable.", self._show_plans)
             return
         try:
-            eligible_lesson_ids = plan.lesson_ids
-            if plan.mastery_gate:
-                eligibility = getattr(self.engine, "eligible_lesson_ids", None)
-                attempts_reader = getattr(self.store, "list_attempts", None)
-                if callable(eligibility) and callable(attempts_reader):
-                    attempts = self._invoke(
-                        attempts_reader,
-                        profile.profile_id,
-                        plan.plan_id,
-                    )
-                    eligible_lesson_ids = tuple(
-                        self._invoke(
-                            eligibility,
-                            plan.raw,
-                            attempts,
-                            mastery_threshold=float(
-                                _field(self.config, "mastery_threshold", default=0.8)
-                            ),
-                            minimum_evidence=int(
-                                _field(
-                                    self.config,
-                                    "mastery_min_evidence",
-                                    default=5,
-                                )
-                            ),
-                        )
-                    )
-                    if len(eligible_lesson_ids) < len(plan.lesson_ids):
-                        self._status = (
-                            "Later lessons unlock as foundation skills are mastered."
-                        )
-            if not eligible_lesson_ids:
-                self._show_error(
-                    "This plan is waiting for a foundation lesson to be mastered.",
-                    self._show_plans,
-                )
-                return
             self._session = self._invoke(
                 method,
                 profile_id=profile.profile_id,
                 plan_id=plan.plan_id,
-                lesson_ids=eligible_lesson_ids,
+                lesson_ids=(lesson_id,),
                 question_count=plan.question_count,
                 repetitions=int(_field(plan, "repetitions", default=1)),
             )
@@ -2042,7 +2185,7 @@ class LearningApp:
             x_value = 305 + index * 95
             self.canvas.create_polygon(x_value, 120, x_value + 14, 155, x_value + 51, 158, x_value + 22, 181, x_value + 31, 218, x_value, 197, x_value - 31, 218, x_value - 22, 181, x_value - 51, 158, x_value - 14, 155, fill=self.YELLOW, outline=self.CORAL, width=2)
         self.canvas.create_text(400, 278, text="You practiced, learned, and kept going!", fill=self.INK, font=self._font(20, bold=True))
-        self._button(Rect(105, 365, 375, 455), "MORE LEARNING", self._show_plans, color=self.BLUE, font_size=15)
+        self._button(Rect(105, 365, 375, 455), "MORE LEARNING", self._show_plan_lessons, color=self.BLUE, font_size=15)
         self._button(Rect(425, 365, 695, 455), "HOME", self._show_home, color=self.GREEN, font_size=17)
         self._speak("Session complete. You practiced, learned, and kept going!", None)
 
@@ -2207,17 +2350,17 @@ class LearningApp:
         assert self.canvas is not None
         self.canvas.create_rectangle(78, 79, 722, 137, fill=self.WHITE, outline=self.TEAL, width=3)
         self.canvas.create_text(400, 108, text=self._text_entry.value or " ", fill=self.INK, width=620, font=self._font(20, bold=True))
-        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        columns = 9
-        for index, letter in enumerate(letters):
+        keys = TEXT_ENTRY_KEYS
+        columns = 10
+        for index, letter in enumerate(keys):
             row, column = divmod(index, columns)
-            left = 42 + column * 81
-            top = 152 + row * 66
-            self._button(Rect(left, top, left + 70, top + 56), letter, lambda value=letter: self._text_key(value), color=self.BLUE, font_size=15)
-        self._button(Rect(42, 354, 188, 416), "CANCEL", self._return_from_text, color=self.NAVY, font_size=11)
-        self._button(Rect(199, 354, 405, 416), "SPACE", lambda: self._text_key(" "), color=self.TEAL, font_size=11)
-        self._button(Rect(416, 354, 562, 416), "BACK", self._text_backspace, color=self.CORAL, font_size=11)
-        self._button(Rect(573, 354, 758, 416), "SAVE", self._save_text_entry, color=self.GREEN, enabled=bool(self._text_entry.cleaned), font_size=12)
+            left = 42 + column * 72
+            top = 146 + row * 57
+            self._button(Rect(left, top, left + 62, top + 48), letter, lambda value=letter: self._text_key(value), color=self.BLUE, font_size=13)
+        self._button(Rect(42, 382, 188, 448), "CANCEL", self._return_from_text, color=self.NAVY, font_size=11)
+        self._button(Rect(199, 382, 405, 448), "SPACE", lambda: self._text_key(" "), color=self.TEAL, font_size=11)
+        self._button(Rect(416, 382, 562, 448), "BACK", self._text_backspace, color=self.CORAL, font_size=11)
+        self._button(Rect(573, 382, 758, 448), "SAVE", self._save_text_entry, color=self.GREEN, enabled=bool(self._text_entry.cleaned), font_size=12)
 
     def _text_key(self, value: str) -> None:
         self._text_entry.push(value)
@@ -2232,6 +2375,7 @@ class LearningApp:
             LearningScreen.TEACHER_PROFILES: self._show_teacher_profiles,
             LearningScreen.TEACHER_PROFILE: lambda: self._show_teacher_profile(self._selected_profile) if self._selected_profile else self._show_teacher_profiles(),
             LearningScreen.TEACHER_PLANS: self._show_teacher_plans,
+            LearningScreen.TEACHER_PLAN_EDIT: self._show_plan_editor,
         }
         callbacks.get(self._text_return, self._show_teacher_home)()
 
@@ -2259,6 +2403,24 @@ class LearningApp:
                 self._lesson_family_filter = "all"
                 self._lesson_pages.page_index = 0
                 self._show_lesson_selector()
+            elif self._text_purpose == "rename_plan" and self._selected_plan is not None:
+                plan = self._selected_plan
+                raw = plan.raw
+                if is_dataclass(raw):
+                    field_names = getattr(raw, "__dataclass_fields__", {})
+                    key = "title" if "title" in field_names else "name"
+                    raw = replace(raw, **{key: name})
+                elif isinstance(raw, Mapping):
+                    key = "title" if "title" in raw else "name"
+                    raw = {**raw, key: name}
+                updated = self.store.update_plan(raw)
+                self._plan_draft_name = name
+                self._selected_plan = plan_snapshot(
+                    updated if updated is not None else raw,
+                    default_questions=self.default_question_count,
+                )
+                self._load_plans()
+                self._show_plan_editor()
         except Exception:
             self._show_error("That change could not be saved.", self._return_from_text)
 
@@ -2349,7 +2511,7 @@ class LearningApp:
             126,
             text=(
                 f"{len(plan.lesson_ids)} lessons  |  "
-                f"{plan.question_count} questions  |  "
+                f"{plan.question_count} questions per lesson  |  "
                 f"{plan.repetitions} practice round{'s' if plan.repetitions != 1 else ''}  |  "
                 f"Mastery gate {'ON' if plan.mastery_gate else 'OFF'}"
             ),
@@ -2400,11 +2562,18 @@ class LearningApp:
         assert self.canvas is not None
         self.canvas.create_text(195, 90, text=self._plan_draft_name, fill=self.INK, width=260, font=self._font(15, bold=True))
         self._button(
+            Rect(300, 70, 356, 116),
+            "NAME",
+            self._rename_plan,
+            color=self.CORAL,
+            font_size=7,
+        )
+        self._button(
             Rect(365, 70, 421, 116),
             "-",
             lambda: self._adjust_plan_questions(-1),
             color=self.BLUE,
-            enabled=self._plan_draft_question_count > 3,
+            enabled=self._plan_draft_question_count > 1,
             font_size=18,
         )
         self.canvas.create_text(
@@ -2417,7 +2586,7 @@ class LearningApp:
         self.canvas.create_text(
             467,
             105,
-            text="QUESTIONS",
+            text="QUESTIONS / LESSON",
             fill=self.MUTED,
             font=self._font(7, bold=True),
         )
@@ -2514,10 +2683,18 @@ class LearningApp:
 
     def _adjust_plan_questions(self, offset: int) -> None:
         self._plan_draft_question_count = max(
-            3,
+            1,
             min(20, self._plan_draft_question_count + int(offset)),
         )
         self._show_plan_editor()
+
+    def _rename_plan(self) -> None:
+        self._begin_text_entry(
+            "CHANGE PLAN NAME",
+            "rename_plan",
+            self._plan_draft_name,
+            LearningScreen.TEACHER_PLAN_EDIT,
+        )
 
     def _toggle_draft_mastery(self) -> None:
         self._plan_draft_mastery_gate = not self._plan_draft_mastery_gate
@@ -3053,12 +3230,14 @@ __all__ = [
     "PageCursor",
     "PinEntry",
     "PlanSnapshot",
+    "PlanLessonProgress",
     "Point",
     "ProfileSnapshot",
     "QuestionSnapshot",
     "Rect",
     "SelectionResult",
     "TextEntry",
+    "TEXT_ENTRY_KEYS",
     "TouchTracker",
     "WINDOW_HEIGHT",
     "WINDOW_WIDTH",
@@ -3075,6 +3254,7 @@ __all__ = [
     "lesson_snapshot",
     "missing_prerequisites",
     "plan_snapshot",
+    "ordered_plan_lessons",
     "profile_snapshot",
     "question_snapshot",
     "reorder_item",

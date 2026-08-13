@@ -938,6 +938,8 @@ class MatchingGameApp:
             headline = "IT'S A TIE!"
             spoken = "It's a tie! Great game!"
         if self.announce:
+            if self.on_player_change:
+                self.on_player_change("speaking")
             self.announce(spoken)
         self.win_items = [
             self.canvas.create_rectangle(

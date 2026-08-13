@@ -102,27 +102,27 @@ class MenuNavigatorTests(unittest.TestCase):
 
 
 class IconMenuPageTests(unittest.TestCase):
-    BOUNDS = MenuBounds(24, 76, 612, 448)
+    BOUNDS = MenuBounds(18, 76, 782, 448)
 
-    def test_six_icons_share_one_page_and_seventh_starts_next_page(self) -> None:
-        items = tuple(icon_item(f"game-{index}") for index in range(7))
+    def test_fifteen_icons_share_one_page_and_sixteenth_starts_next_page(self) -> None:
+        items = tuple(icon_item(f"game-{index}") for index in range(16))
 
         pages = IconMenuPage.paginate(items)
 
         self.assertEqual(len(pages), 2)
-        self.assertEqual(pages[0].items, items[:6])
-        self.assertEqual(pages[1].items, items[6:])
-        self.assertEqual(IconMenuPage.CAPACITY, 6)
-        self.assertLessEqual(IconMenuPage.ICON_SIZE, 120)
+        self.assertEqual(pages[0].items, items[:15])
+        self.assertEqual(pages[1].items, items[15:])
+        self.assertEqual(IconMenuPage.CAPACITY, 15)
+        self.assertEqual((IconMenuPage.COLUMNS, IconMenuPage.ROWS), (5, 3))
 
     def test_each_grid_tile_maps_to_its_own_action(self) -> None:
-        items = tuple(icon_item(f"game-{index}") for index in range(6))
+        items = tuple(icon_item(f"game-{index}") for index in range(15))
         page = IconMenuPage(items)
 
-        self.assertEqual(page.action_at((122, 169), self.BOUNDS), "game-0")
-        self.assertEqual(page.action_at((318, 169), self.BOUNDS), "game-1")
-        self.assertEqual(page.action_at((514, 355), self.BOUNDS), "game-5")
-        self.assertIsNone(page.action_at((620, 300), self.BOUNDS))
+        self.assertEqual(page.action_at((94, 138), self.BOUNDS), "game-0")
+        self.assertEqual(page.action_at((246, 138), self.BOUNDS), "game-1")
+        self.assertEqual(page.action_at((702, 386), self.BOUNDS), "game-14")
+        self.assertIsNone(page.action_at((790, 300), self.BOUNDS))
 
     @patch("bmo.ui.menu.ImageTk.PhotoImage", return_value=object())
     @patch("bmo.ui.menu.Image.open")
@@ -194,7 +194,7 @@ class MenuViewGestureTests(unittest.TestCase):
         calls = Mock()
         view.close = calls.close
         view.on_select = calls.select
-        event = self.event(122, 169)
+        event = self.event(94, 138)
 
         view._handle_press(event)
         view._handle_release(event)

@@ -756,6 +756,7 @@ class WeatherWebRendererTests(unittest.TestCase):
         self.assertIn("__COMPACT_FACE_JSON__", asset)
         self.assertIn("compactFaceConfig.frame_url", asset)
         self.assertIn("function refreshBmoFace", asset)
+        self.assertIn("position: fixed", asset)
         self.assertNotIn("urlsForState", asset)
         self.assertNotIn("setBmoSpeaking", asset)
         self.assertNotIn("advanceBmoFace", asset)

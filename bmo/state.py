@@ -9,3 +9,4 @@ class BotStates:
     ERROR = "error"
     CAPTURING = "capturing"
     WARMUP = "warmup"
+    ALARM = "alarm"

@@ -25,6 +25,31 @@ class TimerViewItem:
     remaining_seconds: float
 
 
+@dataclass(frozen=True)
+class TimerDurationDraft:
+    """Touch-editor values for a new timer."""
+
+    hours: int = 0
+    minutes: int = 5
+    seconds: int = 0
+
+    @property
+    def total_seconds(self) -> int:
+        return self.hours * 3600 + self.minutes * 60 + self.seconds
+
+    def adjusted(self, field: str, amount: int) -> "TimerDurationDraft":
+        values = {
+            "hours": self.hours,
+            "minutes": self.minutes,
+            "seconds": self.seconds,
+        }
+        if field not in values:
+            raise ValueError("unknown timer duration field")
+        maximum = 168 if field == "hours" else 59
+        values[field] = max(0, min(maximum, values[field] + int(amount)))
+        return TimerDurationDraft(**values)
+
+
 def format_countdown(seconds: float) -> str:
     """Format remaining time without showing zero before expiration."""
     remaining = max(0, math.ceil(seconds))
@@ -42,6 +67,7 @@ def format_countdown(seconds: float) -> str:
 
 TimerProvider = Callable[[], Iterable[TimerViewItem]]
 TimerCanceller = Callable[[int], bool]
+TimerCreator = Callable[[float], bool]
 
 
 class TimerApp:
@@ -53,6 +79,7 @@ class TimerApp:
     WHITE = "#ffffff"
     MUTED = "#58708c"
     DANGER = "#c83a4a"
+    GREEN = "#3B8E63"
 
     LIST_LEFT = 24
     LIST_TOP = 76
@@ -63,6 +90,7 @@ class TimerApp:
     ROW_STRIDE = ROW_HEIGHT + ROW_GAP
     REFRESH_MS = 250
     BACK_BOUNDS = (522, 10, 668, 51)
+    ADD_BOUNDS = (366, 10, 510, 51)
 
     def __init__(
         self,
@@ -70,12 +98,14 @@ class TimerApp:
         *,
         timer_provider: TimerProvider,
         cancel_timer: TimerCanceller,
+        create_timer: TimerCreator,
         on_close: Callable[[], None],
         face_provider: Callable[[], Any | None] | None = None,
     ) -> None:
         self.root = root
         self.timer_provider = timer_provider
         self.cancel_timer = cancel_timer
+        self.create_timer = create_timer
         self.on_close = on_close
         self.closed = False
         self.refresh_after_id: str | None = None
@@ -83,6 +113,9 @@ class TimerApp:
         self._list_press_x: int | None = None
         self._items: tuple[TimerViewItem, ...] = ()
         self._delete_bounds: dict[int, tuple[int, int, int, int]] = {}
+        self._adding = False
+        self._duration_draft = TimerDurationDraft()
+        self._editor_actions: dict[str, tuple[int, int, int, int]] = {}
         self.scroller = VerticalScrollController(self.LIST_HEIGHT)
 
         self.canvas = tk.Canvas(
@@ -139,6 +172,23 @@ class TimerApp:
             fill="#bde7ff",
             font=("Arial", 10, "bold"),
         )
+        add_left, add_top, add_right, add_bottom = self.ADD_BOUNDS
+        self.canvas.create_rectangle(
+            add_left,
+            add_top,
+            add_right,
+            add_bottom,
+            fill=self.BLUE,
+            outline=self.WHITE,
+            width=2,
+        )
+        self.canvas.create_text(
+            (add_left + add_right) // 2,
+            (add_top + add_bottom) // 2,
+            text="+ ADD TIMER",
+            fill=self.WHITE,
+            font=("Arial Rounded MT Bold", 10, "bold"),
+        )
         left, top, right, bottom = self.BACK_BOUNDS
         self.canvas.create_rectangle(
             left,
@@ -167,7 +217,8 @@ class TimerApp:
             else 0
         )
         self.scroller.set_content_height(content_height)
-        self._draw_list()
+        if not getattr(self, "_adding", False):
+            self._draw_list()
         self.canvas.itemconfigure(
             self.count_item,
             text=f"{len(self._items)} ACTIVE",
@@ -296,9 +347,131 @@ class TimerApp:
         start = self._header_press
         self._header_press = None
         if start is not None and self._is_tap(start, point):
+            if self._adding:
+                for action, bounds in tuple(self._editor_actions.items()):
+                    if self._point_in_bounds(point, bounds):
+                        self._handle_editor_action(action)
+                        return "break"
+                if self._point_in_bounds(point, self.BACK_BOUNDS):
+                    self._close_add_editor()
+                return "break"
             if self._point_in_bounds(point, self.BACK_BOUNDS):
                 self.close()
+            elif self._point_in_bounds(point, self.ADD_BOUNDS):
+                self._show_add_editor()
         return "break"
+
+    def _show_add_editor(self) -> None:
+        self._adding = True
+        self._duration_draft = TimerDurationDraft()
+        self.list_canvas.place_forget()
+        self._draw_add_editor()
+
+    def _draw_add_editor(self) -> None:
+        self.canvas.delete("timer-editor")
+        self._editor_actions.clear()
+        self.canvas.create_text(
+            400,
+            104,
+            text="SET A NEW TIMER",
+            fill=self.NAVY,
+            font=("Arial Rounded MT Bold", 24, "bold"),
+            tags=("timer-editor",),
+        )
+        for index, (field, label) in enumerate(
+            (("hours", "HOURS"), ("minutes", "MINUTES"), ("seconds", "SECONDS"))
+        ):
+            center = 190 + index * 210
+            value = getattr(self._duration_draft, field)
+            self.canvas.create_text(
+                center,
+                213,
+                text=f"{value:02d}",
+                fill=self.NAVY,
+                font=("Arial Rounded MT Bold", 42, "bold"),
+                tags=("timer-editor",),
+            )
+            self.canvas.create_text(
+                center,
+                256,
+                text=label,
+                fill=self.MUTED,
+                font=("Arial", 10, "bold"),
+                tags=("timer-editor",),
+            )
+            self._draw_editor_button(
+                f"{field}:-1",
+                (center - 77, 282, center - 7, 344),
+                "−",
+                self.BLUE,
+            )
+            self._draw_editor_button(
+                f"{field}:1",
+                (center + 7, 282, center + 77, 344),
+                "+",
+                self.BLUE,
+            )
+        self._draw_editor_button("cancel", (168, 382, 382, 454), "CANCEL", self.NAVY)
+        self._draw_editor_button(
+            "save",
+            (418, 382, 632, 454),
+            "START TIMER",
+            self.GREEN if self._duration_draft.total_seconds else self.MUTED,
+        )
+
+    def _draw_editor_button(
+        self,
+        action: str,
+        bounds: tuple[int, int, int, int],
+        label: str,
+        color: str,
+    ) -> None:
+        self._editor_actions[action] = bounds
+        left, top, right, bottom = bounds
+        self.canvas.create_rectangle(
+            left,
+            top,
+            right,
+            bottom,
+            fill=color,
+            outline=self.WHITE,
+            width=2,
+            tags=("timer-editor",),
+        )
+        self.canvas.create_text(
+            (left + right) // 2,
+            (top + bottom) // 2,
+            text=label,
+            fill=self.WHITE,
+            font=("Arial Rounded MT Bold", 13, "bold"),
+            tags=("timer-editor",),
+        )
+
+    def _handle_editor_action(self, action: str) -> None:
+        if action == "cancel":
+            self._close_add_editor()
+            return
+        if action == "save":
+            seconds = self._duration_draft.total_seconds
+            if seconds and self.create_timer(float(seconds)):
+                self._close_add_editor()
+            return
+        field, separator, amount = action.partition(":")
+        if separator:
+            self._duration_draft = self._duration_draft.adjusted(field, int(amount))
+            self._draw_add_editor()
+
+    def _close_add_editor(self) -> None:
+        self._adding = False
+        self.canvas.delete("timer-editor")
+        self._editor_actions.clear()
+        self.list_canvas.place(
+            x=self.LIST_LEFT,
+            y=self.LIST_TOP,
+            width=self.LIST_WIDTH,
+            height=self.LIST_HEIGHT,
+        )
+        self._refresh_items_now()
 
     def _handle_list_press(self, event: tk.Event) -> str:
         point = self._event_point(event)

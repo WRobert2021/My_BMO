@@ -37,6 +37,7 @@ _DEFAULT_STATE_VALUES = {
     "error": (Path("faces/error"), 500),
     "capturing": (Path("faces/capturing"), 500),
     "warmup": (Path("faces/warmup"), 500),
+    "alarm": (Path("faces/alarm"), 180),
 }
 
 

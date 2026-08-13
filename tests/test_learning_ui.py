@@ -20,6 +20,7 @@ from bmo.ui.learning import (
     PageCursor,
     PinEntry,
     Rect,
+    TEXT_ENTRY_KEYS,
     TextEntry,
     TouchTracker,
     WINDOW_HEIGHT,
@@ -34,6 +35,7 @@ from bmo.ui.learning import (
     lesson_filter_families,
     lesson_snapshot,
     missing_prerequisites,
+    ordered_plan_lessons,
     plan_snapshot,
     question_snapshot,
     reorder_item,
@@ -297,6 +299,60 @@ class InteractionControllerTests(unittest.TestCase):
 
 
 class TeacherStateHelperTests(unittest.TestCase):
+    def test_assigned_lessons_lock_prerequisites_and_move_mastered_to_end(self) -> None:
+        foundation = lesson_snapshot(
+            SimpleNamespace(
+                lesson_id="foundation",
+                domain="literacy",
+                title="Foundation",
+                prerequisites=(),
+            )
+        )
+        advanced = lesson_snapshot(
+            SimpleNamespace(
+                lesson_id="advanced",
+                domain="literacy",
+                title="Advanced",
+                prerequisites=("foundation",),
+            )
+        )
+        open_lesson = lesson_snapshot(
+            SimpleNamespace(
+                lesson_id="open",
+                domain="math",
+                title="Open",
+                prerequisites=(),
+            )
+        )
+
+        locked = ordered_plan_lessons(
+            ("foundation", "advanced", "open"),
+            (foundation, advanced, open_lesson),
+            {"foundation": "in_progress"},
+        )
+        unlocked = ordered_plan_lessons(
+            ("foundation", "advanced", "open"),
+            (foundation, advanced, open_lesson),
+            {"foundation": "mastered"},
+        )
+
+        self.assertEqual(
+            tuple(item.lesson.lesson_id for item in locked),
+            ("foundation", "advanced", "open"),
+        )
+        self.assertTrue(locked[1].locked)
+        self.assertEqual(locked[1].unmet_prerequisites, ("foundation",))
+        self.assertEqual(
+            tuple(item.lesson.lesson_id for item in unlocked),
+            ("advanced", "open", "foundation"),
+        )
+        self.assertTrue(unlocked[-1].mastered)
+        self.assertFalse(unlocked[0].locked)
+
+    def test_name_keyboard_includes_letters_and_all_digits(self) -> None:
+        self.assertEqual(TEXT_ENTRY_KEYS[:26], "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        self.assertEqual(TEXT_ENTRY_KEYS[26:], "0123456789")
+
     def test_pin_display_and_repr_never_expose_entered_digits(self) -> None:
         pin = PinEntry()
         pin.push("2")
@@ -311,14 +367,14 @@ class TeacherStateHelperTests(unittest.TestCase):
         self.assertEqual(pin.consume(), "2468")
         self.assertFalse(pin.complete)
 
-    def test_teacher_text_entry_rejects_non_letters_and_normalizes_spacing(self) -> None:
-        entry = TextEntry(maximum=8)
+    def test_teacher_text_entry_accepts_digits_and_normalizes_spacing(self) -> None:
+        entry = TextEntry(maximum=16)
         for character in "ADA  LOVELACE1":
             entry.push(character)
 
-        self.assertNotIn("1", entry.value)
+        self.assertIn("1", entry.value)
         self.assertFalse(entry.value.startswith(" "))
-        self.assertEqual(entry.cleaned, "ADA LOVE")
+        self.assertEqual(entry.cleaned, "ADA LOVELACE1")
 
     def test_page_cursor_clamps_and_reorder_keeps_every_lesson(self) -> None:
         cursor = PageCursor(3)
@@ -414,13 +470,13 @@ class TeacherStateHelperTests(unittest.TestCase):
 
     def test_plan_question_count_clamps_and_mastery_gate_toggles(self) -> None:
         app = LearningApp.__new__(LearningApp)
-        app._plan_draft_question_count = 3
+        app._plan_draft_question_count = 1
         app._plan_draft_repetitions = 1
         app._plan_draft_mastery_gate = False
         app._show_plan_editor = Mock()
 
         app._adjust_plan_questions(-1)
-        self.assertEqual(app._plan_draft_question_count, 3)
+        self.assertEqual(app._plan_draft_question_count, 1)
         app._adjust_plan_questions(50)
         self.assertEqual(app._plan_draft_question_count, 20)
         app._adjust_plan_repetitions(-1)
@@ -889,7 +945,7 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
             elapsed_seconds=3.25,
         )
 
-    def test_mastery_gate_limits_new_session_to_eligible_foundations(self) -> None:
+    def test_selected_lesson_starts_only_its_per_lesson_question_count(self) -> None:
         app = LearningApp.__new__(LearningApp)
         raw_plan = SimpleNamespace(plan_id="plan", profile_id="learner")
         app._selected_profile = SimpleNamespace(profile_id="learner")
@@ -901,11 +957,12 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
             repetitions=1,
             raw=raw_plan,
         )
+        app._selected_lesson_id = "later"
         app.config = SimpleNamespace(
             mastery_threshold=0.8,
             mastery_min_evidence=5,
         )
-        app.store = SimpleNamespace(list_attempts=Mock(return_value=("attempt",)))
+        app.store = object()
         app.engine = SimpleNamespace(
             eligible_lesson_ids=Mock(return_value=("foundation",)),
             start_session=Mock(return_value="session"),
@@ -917,20 +974,45 @@ class PersistenceAndLifecycleTests(unittest.TestCase):
 
         app._start_new_session()
 
-        app.engine.eligible_lesson_ids.assert_called_once_with(
-            raw_plan,
-            ("attempt",),
-            mastery_threshold=0.8,
-            minimum_evidence=5,
-        )
+        app.engine.eligible_lesson_ids.assert_not_called()
         app.engine.start_session.assert_called_once_with(
             profile_id="learner",
             plan_id="plan",
-            lesson_ids=("foundation",),
+            lesson_ids=("later",),
             question_count=4,
             repetitions=1,
         )
-        self.assertIn("unlock", app._status)
+
+    def test_plan_name_can_be_changed_from_edit_flow(self) -> None:
+        raw = {
+            "plan_id": "plan",
+            "profile_id": "learner",
+            "name": "Old Name",
+            "lesson_ids": ("foundation",),
+            "enabled": True,
+            "question_count": 4,
+            "repetitions": 1,
+            "mastery_gate": False,
+            "archived": False,
+        }
+        app = LearningApp.__new__(LearningApp)
+        app._selected_plan = plan_snapshot(raw)
+        app._text_entry = TextEntry(value="New Plan 2")
+        app._text_purpose = "rename_plan"
+        app._plan_draft_name = "Old Name"
+        app.default_question_count = 8
+        app.store = SimpleNamespace(update_plan=Mock(side_effect=lambda value: value))
+        app._load_plans = Mock()
+        app._show_plan_editor = Mock()
+        app._show_error = Mock()
+
+        app._save_text_entry()
+
+        payload = app.store.update_plan.call_args.args[0]
+        self.assertEqual(payload["name"], "New Plan 2")
+        self.assertEqual(app._plan_draft_name, "New Plan 2")
+        self.assertEqual(app._selected_plan.name, "New Plan 2")
+        app._show_plan_editor.assert_called_once_with()
 
     def test_new_session_surfaces_nonfatal_initial_save_failure(self) -> None:
         app = LearningApp.__new__(LearningApp)

@@ -122,8 +122,8 @@ Right swipes decrement the current page index, so every visited page is
 retraced in reverse order; a right swipe from the first page closes the menu.
 Enabled modes and feature tools may optionally contribute typed menu metadata.
 Their registries expose those contributions in configuration order, and
-`BotGUI` maps them to generic three-column, two-row icon-grid pages without
-checking concrete extension names. Each page holds up to six actions;
+`BotGUI` maps them to generic five-column, three-row icon-grid pages without
+checking concrete extension names. Each page holds up to fifteen actions;
 additional actions are placed on later swipeable pages. Grid cells render only
 their alpha-preserving icons, without tile backgrounds, borders, or labels;
 each invisible cell remains the full touch target. A mode tap queues the
@@ -146,7 +146,8 @@ Voice-launched modes still return to the full-screen face because no menu
 instance owns their launch path.
 
 The timer tool contributes `graphics/icons/timer.png` by reference and opens a
-full-screen list only when that icon is selected. The list polls immutable
+full-screen list only when that icon is selected. Its touch editor adds timers
+with bounded hour, minute, and second controls. The list polls immutable
 snapshots of the same scheduler used by voice commands, refreshes countdowns
 four times per second, and cancels through the scheduler when a delete button is
 tapped. It mounts the same canonical compact face as every other menu-launched
@@ -155,6 +156,10 @@ rows exceed the display. Closing the view destroys only its canvases and reveals
 the originating menu page. Timer cancellation removes the timer from both the
 active index and priority queue immediately, so a deleted row cannot later
 expire or retain scheduler state.
+Expired timers publish typed persistent attention. The root face cycles the
+configured `faces/alarm` frames and presents an acknowledgment badge until the
+timer is dismissed; the timer module owns those attention identifiers and
+cleans them up independently of other features.
 
 The calendar tool contributes `graphics/icons/calendar.png` by reference and
 opens only from its touch-menu item. It starts on the local current day, with
@@ -166,8 +171,8 @@ the cell's safe capacity is full. The year view uses month-specific birthstone
 colors and opens a selected month. A live upper-right BMO face animates while
 calendar-owned announcements play.
 
-The touch editor owns event name, all-day or start/end times, category,
-unrestricted color selection, notes, weekly/monthly/yearly recurrence, weekly
+The touch editor owns event name, all-day or start/end times, category, a named
+touch color palette, notes, weekly/monthly/yearly recurrence, weekly
 day selection, repeat end date/count, and monthly short-month behavior. Irrelevant
 controls are hidden or disabled. Editing or deleting one repeated occurrence
 asks whether the change applies to that occurrence or the series. Occurrence
@@ -217,12 +222,21 @@ audio services. If scoped speech is unavailable, replay controls are visibly
 disabled and every visual exercise remains usable. Closing the view cancels its
 speech and reveals the unchanged originating menu page.
 
+Selecting a learner plan opens its assigned lessons instead of repeatedly
+starting at the beginning of the complete plan. Each lesson displays its
+derived mastery state. Mastered lessons receive a star and move behind active
+work; lessons whose curriculum prerequisites are not mastered display a lock
+and cannot be selected. A selected lesson receives the teacher-configured
+questions-per-lesson count. Teacher editing owns plan renaming, lesson
+reordering, and that per-lesson count, and its shared name keypad includes
+letters and digits.
+
 Learning question generation is deterministic when supplied a seeded random
 source and remains independent of Tk. The catalog validates unique lesson IDs,
 prerequisite existence and acyclicity, supported interaction types, and usable
 answer banks before a session begins. Teacher plans retain an ordered lesson
-sequence, bounded varied repetitions, session length, and an optional mastery
-gate. Attempt records distinguish first-try accuracy from eventual correctness;
+sequence, bounded varied repetitions, questions per selected lesson, and an
+optional mastery gate. Attempt records distinguish first-try accuracy from eventual correctness;
 plan completion is reported separately from accuracy, and mastery requires
 multiple recent observations. Learner data never enters conversation memory or
 interaction archives.

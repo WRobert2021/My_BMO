@@ -32,6 +32,10 @@
     "warmup": {
       "directory": "faces/warmup",
       "frame_duration_ms": 500
+    },
+    "alarm": {
+      "directory": "faces/alarm",
+      "frame_duration_ms": 180
     }
   }
 }

@@ -699,14 +699,20 @@ class BotGUI:
     def update_animation(self) -> None:
         if self.exiting:
             return
-        frames = self.animations.get(self.current_state, []) or self.animations.get(
+        animation_attention = self._runtime_animation_attention()
+        animation_state = (
+            animation_attention.animation_state
+            if animation_attention is not None
+            else self.current_state
+        )
+        frames = self.animations.get(animation_state, []) or self.animations.get(
             BotStates.IDLE, []
         )
         if not frames:
             self.master.after(500, self.update_animation)
             return
 
-        if self.current_state == BotStates.SPEAKING:
+        if animation_state == BotStates.SPEAKING:
             self.current_frame_index = (
                 random.randint(1, len(frames) - 1) if len(frames) > 1 else 0
             )
@@ -721,10 +727,23 @@ class BotGUI:
             self.current_attention_frame = None
         self.background_label.config(image=frame)
         self._refresh_runtime_attention_ui()
-        speed = self.compact_face_config.state_duration(self.current_state)
+        speed = self.compact_face_config.state_duration(animation_state)
         self.master.after(speed, self.update_animation)
 
+    def _runtime_animation_attention(self) -> RuntimeAttention | None:
+        if self._quiet_hours_locked() or getattr(self, "menu_ui", None) is not None:
+            return None
+        with self.runtime_attentions_lock:
+            candidates = tuple(
+                attention
+                for _key, attention in sorted(self.runtime_attentions.items())
+                if attention.animation_state
+            )
+        return candidates[0] if candidates else None
+
     def _runtime_attention_is_visible(self) -> bool:
+        if self._runtime_animation_attention() is not None:
+            return False
         if self.current_state != BotStates.IDLE:
             return False
         if self._quiet_hours_locked():
@@ -735,13 +754,22 @@ class BotGUI:
         if lock is None:
             return False
         with lock:
-            return bool(self.runtime_attentions)
+            return any(
+                attention.animation_state is None
+                for attention in self.runtime_attentions.values()
+            )
 
     def _first_runtime_attention(self) -> RuntimeAttention | None:
         with self.runtime_attentions_lock:
             if not self.runtime_attentions:
                 return None
-            key = sorted(self.runtime_attentions)[0]
+            key = min(
+                self.runtime_attentions,
+                key=lambda item: (
+                    self.runtime_attentions[item].animation_state is None,
+                    item,
+                ),
+            )
             return self.runtime_attentions[key]
 
     def _compose_runtime_attention_frame(
@@ -809,14 +837,20 @@ class BotGUI:
             count = len(self.runtime_attentions)
         # This root-owned widget is deliberately hidden whenever a menu or
         # feature view covers the fullscreen face; PIP faces never receive it.
+        animation_attention = self._runtime_animation_attention()
         visible = (
             count > 0
             and getattr(self, "menu_ui", None) is None
-            and self.current_state == BotStates.IDLE
+            and (
+                self.current_state == BotStates.IDLE
+                or animation_attention is not None
+            )
             and not self._quiet_hours_locked()
         )
         if visible:
-            badge.configure(text=f"ITEMS  {count}")
+            attention = self._first_runtime_attention()
+            label = attention.badge_label if attention is not None else None
+            badge.configure(text=f"{label or 'ITEMS'}  {count}")
             badge.place(x=640, y=14, width=145, height=44)
             badge.lift()
         else:
@@ -841,11 +875,15 @@ class BotGUI:
                 (attention.source, attention.attention_id),
                 None,
             )
+        if not attention.announce_on_acknowledge:
+            self.set_state(BotStates.IDLE, "Ready")
+            self._refresh_runtime_attention_ui()
+            return
         self.set_state(BotStates.SPEAKING, attention.message)
         self.append_to_text(f"BOT: {attention.message}")
         speech_path = (
             self.current_interaction.speech_path()
-            if self.current_interaction
+            if getattr(self, "current_interaction", None)
             else None
         )
         with self.tts_queue_lock:
@@ -926,7 +964,19 @@ class BotGUI:
             return
         self.set_state(BotStates.SPEAKING, notification.message)
         self.append_to_text(f"BOT: {notification.message}")
-        self.enqueue_speech(notification.message)
+        speech_path = (
+            self.current_interaction.speech_path()
+            if self.current_interaction
+            else None
+        )
+        with self.tts_queue_lock:
+            self.tts_queue.append(
+                _SpeechQueueItem(
+                    notification.message,
+                    speech_path,
+                    on_complete=lambda: self.set_state(BotStates.IDLE, "Ready"),
+                )
+            )
 
     def _stream_to_text(self, chunk: str) -> None:
         if self.exiting:

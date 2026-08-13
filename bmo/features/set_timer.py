@@ -17,6 +17,8 @@ from bmo.features.contracts import (
     FeatureMenuContext,
     FeatureMenuItem,
     RuntimeCallback,
+    RuntimeAttention,
+    RuntimeAttentionDismissal,
     RuntimeNotification,
     ToolRequest,
     ToolResult,
@@ -386,6 +388,8 @@ class SetTimerTool:
         self,
         runtime_callback: RuntimeCallback,
         *,
+        notify_attention: Callable[[RuntimeAttention], None] | None = None,
+        dismiss_attention: Callable[[RuntimeAttentionDismissal], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         max_timers: int = DEFAULT_MAX_TIMERS,
         max_duration_seconds: float = DEFAULT_MAX_DURATION_SECONDS,
@@ -393,11 +397,14 @@ class SetTimerTool:
         menu_item: FeatureMenuItem | None = TIMER_MENU_ITEM,
     ) -> None:
         self._runtime_callback = runtime_callback
+        self._notify_attention = notify_attention or (lambda _attention: None)
+        self._dismiss_attention = dismiss_attention or (lambda _dismissal: None)
         self._clock = clock
         self._max_duration_seconds = max_duration_seconds
         self._app_factory = app_factory
         self.menu_item = menu_item
         self._menu_ui: TimerApp | None = None
+        self._expired: dict[int, ScheduledTimer] = {}
         self.scheduler = TimerScheduler(
             self._timer_expired,
             clock=clock,
@@ -429,6 +436,11 @@ class SetTimerTool:
         if menu_ui is not None:
             menu_ui.close()
         self.scheduler.close()
+        for timer_id in tuple(self._expired):
+            self._dismiss_attention(
+                RuntimeAttentionDismissal(self.action, f"timer-{timer_id}")
+            )
+        self._expired.clear()
 
     def open_menu(self, context: FeatureMenuContext) -> None:
         """Open the timer list only through its registered menu contribution."""
@@ -444,6 +456,7 @@ class SetTimerTool:
                 context.master,
                 timer_provider=self._menu_timer_items,
                 cancel_timer=self._cancel_from_menu,
+                create_timer=self._create_from_menu,
                 face_provider=context.current_face,
                 on_close=handle_close,
             )
@@ -465,6 +478,20 @@ class SetTimerTool:
 
     def _cancel_from_menu(self, timer_id: int) -> bool:
         return self.scheduler.cancel(timer_id) is not None
+
+    def _create_from_menu(self, duration_seconds: float) -> bool:
+        if (
+            isinstance(duration_seconds, bool)
+            or not isinstance(duration_seconds, (int, float))
+            or not math.isfinite(float(duration_seconds))
+            or not 0 < float(duration_seconds) <= self._max_duration_seconds
+        ):
+            return False
+        try:
+            self.scheduler.schedule(float(duration_seconds), None)
+        except (TimerCapacityError, RuntimeError):
+            return False
+        return True
 
     def _set(self, request: ToolRequest) -> ToolResult:
         raw_duration = request.get("duration_seconds")
@@ -579,12 +606,34 @@ class SetTimerTool:
         name = f"Timer {timer.timer_id}"
         if timer.label:
             name += f" ({timer.label})"
+        self._expired[timer.timer_id] = timer
+        self._notify_attention(
+            RuntimeAttention(
+                source=self.action,
+                attention_id=f"timer-{timer.timer_id}",
+                message=f"{name} is done.",
+                acknowledge=lambda timer_id=timer.timer_id: self._acknowledge_expired(
+                    timer_id
+                ),
+                animation_state="alarm",
+                badge_label="TIMER",
+                announce_on_acknowledge=False,
+            )
+        )
         self._runtime_callback(
             RuntimeNotification(
                 source=self.action,
                 message=f"{name} is done.",
             )
         )
+
+    def _acknowledge_expired(self, timer_id: int) -> bool:
+        if self._expired.pop(timer_id, None) is None:
+            return False
+        self._dismiss_attention(
+            RuntimeAttentionDismissal(self.action, f"timer-{timer_id}")
+        )
+        return True
 
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:
@@ -761,6 +810,8 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
     registry.register(
         SetTimerTool(
             registry.notify_runtime,
+            notify_attention=registry.notify_attention,
+            dismiss_attention=registry.dismiss_attention,
             max_timers=max_timers,
             max_duration_seconds=_duration_setting(settings),
             menu_item=TIMER_MENU_ITEM if show_in_menu else None,

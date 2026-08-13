@@ -32,6 +32,8 @@ class CompactFaceConfigTests(unittest.TestCase):
         self.assertEqual(config.center, (738.0, 37.5))
         self.assertEqual(config.artwork_size, (105, 63))
         self.assertEqual(config.artwork_size[0] / config.artwork_size[1], 5 / 3)
+        self.assertIn("alarm", config.states or {})
+        self.assertEqual(config.state_duration("alarm"), 180)
 
     def test_missing_and_malformed_files_use_safe_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

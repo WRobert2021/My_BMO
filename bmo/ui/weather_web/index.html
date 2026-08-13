@@ -171,7 +171,9 @@
     }
     #weather-design-draft .wm-page-dot:first-child { background: #2f665c; }
     #weather-design-draft .wm-bmo-face {
-      position: absolute;
+      /* The bridge supplies kiosk-window coordinates.  Fixed positioning keeps
+         them relative to the 800x480 viewport instead of this inset header. */
+      position: fixed;
       top: var(--compact-face-top);
       left: var(--compact-face-left);
       width: var(--compact-face-width);
@@ -185,6 +187,7 @@
       padding: 0;
       overflow: hidden;
       cursor: pointer;
+      z-index: 50;
     }
     #weather-design-draft .wm-bmo-face-image {
       position: absolute;
