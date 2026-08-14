@@ -106,7 +106,9 @@ read-only policy, and domain exceptions. Network responses, conversation
 history, Learning configuration, and Twenty Questions persistence all use that
 strict duplicate/non-finite-number policy at their trust boundaries; malformed
 data falls back or raises the owning domain error instead of entering runtime
-state.
+state. Embedded model objects are balanced before decoding, so an incomplete
+outer object cannot expose a nested action. Location owns finite latitude and
+longitude range validation for both configured and provider coordinates.
 `bmo.text` and `bmo.network` own single stable transformations used by otherwise
 independent features.
 
@@ -122,10 +124,10 @@ errors live in dependency-light supporting modules.
 Compatibility metadata such as `ToolRouter.VALID_TOOLS` is built in metadata
 mode from only the default routable modules. Calendar and Weather metadata
 hooks use in-memory dependencies, do not read their private configuration, and
-do not start Calendar's midnight worker. The resulting registry is closed and
-rejects every execution path; prompt construction likewise closes any registry
-it creates. Runtime routers remain the only owners of executable feature
-resources.
+do not start Calendar's midnight worker. A metadata-only router closes its
+registry before construction returns and rejects every execution path; prompt
+construction may safely close it again. Runtime routers remain the only owners
+of executable feature resources.
 
 ## Runtime flow
 
@@ -603,7 +605,10 @@ missing-hook, and hook exceptions are reported and skipped while later entries
 continue. Registration is transactional: if a hook partially registers and
 then fails on an exception or duplicate name, its additions are rolled back
 without disturbing earlier modules. Rolled-back tools and modes are closed
-immediately.
+immediately. Registry construction applies the same cleanup guarantee if a
+later initial tool or mode is invalid, and closed registries reject further
+registration. Diagnostic reporter failures are isolated from extension loading
+so they cannot prevent later valid entries from starting.
 Disabled entries produce no failure because they are not validated or imported.
 Consequently, malformed or disabled extension entries cannot prevent valid
 built-in entries later in the same explicit list from registering. Supplying a

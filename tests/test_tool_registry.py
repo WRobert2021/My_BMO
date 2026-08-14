@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -29,6 +31,26 @@ from bmo.tools import ToolRouter, default_metadata_router
 
 
 class ToolRegistryTests(unittest.TestCase):
+    def test_constructor_failure_closes_already_registered_tools(self) -> None:
+        class ResourceTool:
+            action = "status"
+            aliases = ()
+
+            def __init__(self) -> None:
+                self.close = Mock()
+
+        resource = ResourceTool()
+
+        with self.assertRaisesRegex(DuplicateToolError, "Duplicate tool"):
+            ToolRegistry(
+                (
+                    resource,
+                    ToolContract("status", Mock()),
+                )
+            )
+
+        resource.close.assert_called_once_with()
+
     def test_feature_menu_metadata_and_launch_stay_registry_driven(self) -> None:
         class MenuTool:
             action = "status"
@@ -314,6 +336,42 @@ class ToolRegistryTests(unittest.TestCase):
             registry.execute({"action": "status"})
         handler.assert_not_called()
 
+    def test_closed_registry_rejects_every_registration_path(self) -> None:
+        registry = ToolRegistry()
+        registry.close()
+
+        with self.assertRaisesRegex(RuntimeError, "after closing"):
+            registry.register(ToolContract("status", Mock()))
+        with self.assertRaisesRegex(RuntimeError, "after closing"):
+            with registry.registration():
+                pass
+
+    def test_close_lookup_failure_does_not_skip_other_tools(self) -> None:
+        class HealthyCloseTool:
+            action = "healthy"
+            aliases = ()
+
+            def __init__(self) -> None:
+                self.close = Mock()
+
+        class BrokenCloseTool:
+            action = "broken"
+            aliases = ()
+
+            @property
+            def close(self):
+                raise RuntimeError("close lookup exploded")
+
+        healthy = HealthyCloseTool()
+        registry = ToolRegistry((healthy, BrokenCloseTool()))
+
+        output = StringIO()
+        with redirect_stdout(output):
+            registry.close()
+
+        self.assertIn("Could not close 'broken'", output.getvalue())
+        healthy.close.assert_called_once_with()
+
     def test_rejects_untyped_tool_results(self) -> None:
         registry = ToolRegistry(
             [ToolContract("legacy", Mock(return_value="SENTINEL"))]
@@ -516,6 +574,7 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
     def test_metadata_router_rejects_legacy_search_execution(self) -> None:
         router = default_metadata_router()
 
+        self.assertTrue(router.registry.closed)
         with self.assertRaisesRegex(RuntimeError, "after closing"):
             router._search_web("must not run")
 

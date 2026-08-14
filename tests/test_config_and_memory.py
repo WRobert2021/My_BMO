@@ -246,6 +246,19 @@ class MemoryTests(unittest.TestCase):
                     [{"role": "user", "content": 3}],  # type: ignore[dict-item]
                 )
 
+    def test_save_requires_the_system_message_first(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "memory.json"
+
+            with self.assertRaisesRegex(ValueError, "begin with a system"):
+                save_chat_history(
+                    path,
+                    [{"role": "user", "content": "hello"}],
+                    [],
+                )
+
+            self.assertFalse(path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
-from bmo.modes import InputPolicy, InputPolicyKind, ModeMenuItem, ModeRegistry
+from bmo.modes import (
+    DuplicateModeError,
+    InputPolicy,
+    InputPolicyKind,
+    ModeMenuItem,
+    ModeRegistry,
+)
 from bmo.modes.games import MatchingGameMode, TwentyQuestionsMode
 from bmo.state import BotStates
 from bmo.twenty_questions import OBJECT_NAME_KEY, TwentyQuestionsGame
@@ -58,6 +64,25 @@ class StubMode:
 
 
 class ModeRegistryTests(unittest.TestCase):
+    def test_input_policy_rejects_invalid_silence_timeouts(self) -> None:
+        for invalid in (True, "3", float("nan"), float("inf"), 0):
+            with self.subTest(value=invalid), self.assertRaises(
+                (TypeError, ValueError)
+            ):
+                InputPolicy(
+                    InputPolicyKind.CONTINUOUS,
+                    initial_silence_timeout=invalid,  # type: ignore[arg-type]
+                )
+
+    def test_constructor_failure_closes_already_registered_modes(self) -> None:
+        first = StubMode("duplicate", "first")
+        duplicate = StubMode("duplicate", "second")
+
+        with self.assertRaisesRegex(DuplicateModeError, "Duplicate mode"):
+            ModeRegistry((first, duplicate))
+
+        self.assertEqual(first.close_count, 1)
+
     def assert_failure_isolated(
         self,
         registry: ModeRegistry,
@@ -430,10 +455,20 @@ class TwentyQuestionsModeTests(unittest.TestCase):
             **common,
             answer_wait_seconds="eventually",
         )
+        non_finite = TwentyQuestionsMode(
+            **common,
+            answer_wait_seconds=float("nan"),
+        )
+        boolean = TwentyQuestionsMode(
+            **common,
+            answer_wait_seconds=True,
+        )
 
         self.assertEqual(too_short.input_policy().initial_silence_timeout, 3)
         self.assertEqual(too_long.input_policy().initial_silence_timeout, 30)
         self.assertEqual(invalid.input_policy().initial_silence_timeout, 12)
+        self.assertEqual(non_finite.input_policy().initial_silence_timeout, 12)
+        self.assertEqual(boolean.input_policy().initial_silence_timeout, 12)
 
     def test_llm_fallback_guess_is_used_when_question_nineteen_has_no_candidates(self) -> None:
         calls: list[tuple[str, list[dict[str, object]]]] = []

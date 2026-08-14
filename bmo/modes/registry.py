@@ -24,8 +24,12 @@ class ModeRegistry:
         self._closed_modes: dict[int, InteractionMode] = {}
         self._closed = False
         self._lock = threading.RLock()
-        for mode in modes:
-            self.register(mode)
+        try:
+            for mode in modes:
+                self.register(mode)
+        except Exception:
+            self.close()
+            raise
 
     def register(self, mode: InteractionMode) -> None:
         """Register a mode under its unique normalized name."""
@@ -79,6 +83,10 @@ class ModeRegistry:
     def registration(self):
         """Roll back and close modes registered by a failing hook."""
         with self._lock:
+            if self._closed:
+                raise RuntimeError(
+                    "Cannot register modes after closing the registry."
+                )
             modes_before = self._modes.copy()
             menu_items_before = self._menu_items.copy()
         try:

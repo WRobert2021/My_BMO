@@ -46,6 +46,33 @@ class LocationServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(LocationError, "invalid JSON"):
                 request_json("https://example.invalid", 1.0)
 
+    def test_home_location_must_be_an_object(self) -> None:
+        with self.assertRaisesRegex(LocationError, "must be an object"):
+            LocationService("Dallas")  # type: ignore[arg-type]
+
+    def test_configured_coordinates_must_be_finite_and_in_range(self) -> None:
+        invalid_coordinates = (
+            (True, -96.8),
+            ("nan", -96.8),
+            (91, -96.8),
+            (32.8, -181),
+        )
+        for latitude, longitude in invalid_coordinates:
+            with self.subTest(latitude=latitude, longitude=longitude):
+                service = LocationService(
+                    {"latitude": latitude, "longitude": longitude}
+                )
+                with self.assertRaisesRegex(LocationError, "coordinates"):
+                    service.resolve()
+
+    def test_geocoder_coordinates_must_be_finite_and_in_range(self) -> None:
+        def invalid_request(url: str, timeout: float) -> list[dict[str, str]]:
+            del url, timeout
+            return [{"lat": "inf", "lon": "10"}]
+
+        with self.assertRaisesRegex(LocationError, "invalid coordinates"):
+            LocationService(json_request=invalid_request).resolve("Nowhere")
+
     def test_configured_coordinates_do_not_make_network_request(self) -> None:
         def fail_request(url: str, timeout: float) -> dict:
             raise AssertionError(f"unexpected request: {url}, {timeout}")

@@ -94,6 +94,10 @@ class ToolRouter:
             search_tool = self.registry.get("search_web")
             if search_tool is not None and hasattr(search_tool, "_searcher"):
                 search_tool._searcher = lambda query: self._search_web(query)
+        else:
+            # Metadata, matchers, aliases, and normalizers are immutable after
+            # registration and remain available after resource cleanup.
+            self.registry.close()
 
     def _require_tool(self, action: str) -> Any:
         tool = self.registry.get(action)
@@ -208,9 +212,6 @@ def _get_default_router() -> ToolRouter:
     global _default_router
     if _default_router is None:
         _default_router = ToolRouter({}, metadata_only=True)
-        # Metadata, matchers, aliases, and request normalizers remain usable
-        # after cleanup; execution is intentionally not supported here.
-        _default_router.close()
     return _default_router
 
 

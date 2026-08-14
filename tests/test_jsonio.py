@@ -48,6 +48,13 @@ class StrictJsonTests(unittest.TestCase):
         self.assertIsNone(first_json_object('{"a":1,"a":2}'))
         self.assertIsNone(first_json_object('{"value":NaN}'))
 
+    def test_incomplete_outer_object_does_not_expose_nested_action(self) -> None:
+        self.assertIsNone(
+            first_json_object(
+                'prefix {"wrapper":{"action":"get_time"}'
+            )
+        )
+
 
 class AtomicJsonTests(unittest.TestCase):
     def test_replace_failure_preserves_destination_and_removes_temporary(self) -> None:

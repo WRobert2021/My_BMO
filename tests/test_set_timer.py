@@ -5,7 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
 from bmo.features import (
@@ -417,6 +417,31 @@ class TimerSchedulerTests(unittest.TestCase):
 
 
 class TimerIntegrationTests(unittest.TestCase):
+    def test_boolean_numeric_settings_use_safe_defaults(self) -> None:
+        with patch("builtins.print") as reporter:
+            result = load_feature_registry(
+                {
+                    "features": [
+                        {
+                            "module": "bmo.features.set_timer",
+                            "enabled": True,
+                            "settings": {
+                                "max_timers": float("inf"),
+                                "max_duration_seconds": False,
+                            },
+                        }
+                    ]
+                }
+            )
+        self.addCleanup(result.registry.close)
+        tool = result.registry.get("set_timer")
+        self.assertIsInstance(tool, SetTimerTool)
+        assert isinstance(tool, SetTimerTool)
+
+        self.assertEqual(tool.scheduler._max_timers, 20)
+        self.assertEqual(tool._max_duration_seconds, 604800.0)
+        self.assertEqual(reporter.call_count, 2)
+
     def test_disabled_timer_feature_is_absent_and_starts_no_scheduler(self) -> None:
         result = load_feature_registry(
             {

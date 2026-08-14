@@ -369,6 +369,13 @@ class IndexedGameTests(unittest.TestCase):
         self.assertIn("My guess is", game.offer_llm_guess("bonus final object") or "")
 
     def test_limits_and_cancel(self) -> None:
+        invalid_limits = self.make_game(
+            informative_question_limit=float("inf"),
+            total_prompt_limit=True,
+        )
+        self.assertEqual(invalid_limits.informative_question_limit, 20)
+        self.assertEqual(invalid_limits.total_prompt_limit, 30)
+
         game = self.make_game(informative_question_limit=1)
         game.start()
         game.accept_answer("yes")

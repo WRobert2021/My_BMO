@@ -20,7 +20,7 @@ def online_timeout_seconds(
         timeout = float(raw_timeout)
         if not math.isfinite(timeout):
             raise ValueError
-    except (TypeError, ValueError):
+    except (OverflowError, TypeError, ValueError):
         message = "[CONFIG] online_timeout_seconds must be numeric; using 6."
         if reporter is None:
             print(message, flush=True)

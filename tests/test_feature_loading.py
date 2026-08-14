@@ -6,7 +6,7 @@ import types
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from bmo.features import ToolContract, ToolRegistry, ToolResult
 from bmo.features.loader import load_feature_registry
@@ -141,6 +141,32 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertEqual(len(result.failures), 1)
         self.assertEqual(result.failures[0].stage, "import")
         self.assertIn("does.not.exist", messages[0])
+
+    def test_reporter_failure_cannot_stop_later_feature_loading(self) -> None:
+        reporter = Mock(side_effect=RuntimeError("reporter exploded"))
+        output = StringIO()
+        with redirect_stdout(output):
+            result = load_feature_registry(
+                {
+                    "features": [
+                        {
+                            "module": "does.not.exist",
+                            "enabled": True,
+                            "settings": {},
+                        },
+                        {
+                            "module": "bmo.features.get_time",
+                            "enabled": True,
+                            "settings": {},
+                        },
+                    ]
+                },
+                reporter=reporter,
+            )
+
+        self.assertEqual(result.registry.actions, {"get_time"})
+        self.assertEqual(len(result.failures), 1)
+        self.assertIn("Failure reporter raised", output.getvalue())
 
     def test_registration_hook_lookup_failure_is_isolated(self) -> None:
         class BrokenModule:
@@ -394,6 +420,7 @@ class FeatureLoadingTests(unittest.TestCase):
 
         calendar_config.assert_not_called()
         weather_config.assert_not_called()
+        self.assertTrue(router.registry.closed)
         self.assertIn("get_calendar", router.VALID_TOOLS)
         self.assertIn("get_weather", router.VALID_TOOLS)
 

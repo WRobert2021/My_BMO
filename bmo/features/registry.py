@@ -60,8 +60,12 @@ class ToolRegistry:
         self._runtime_callback = runtime_callback
         self._attention_callback = attention_callback
         self._closed = False
-        for tool in tools:
-            self.register(tool)
+        try:
+            for tool in tools:
+                self.register(tool)
+        except Exception:
+            self.close()
+            raise
 
     def notify_runtime(self, notification: RuntimeNotification) -> None:
         """Present an asynchronous feature notification through the runtime."""
@@ -94,8 +98,8 @@ class ToolRegistry:
         if self._closed:
             return
         self._closed = True
-        for tool in reversed(tuple(self._tools.values())):
-            self._close_tool(tool)
+        for action, tool in reversed(tuple(self._tools.items())):
+            self._close_tool(tool, tool_action=action)
 
     @property
     def closed(self) -> bool:
@@ -155,6 +159,8 @@ class ToolRegistry:
     @contextmanager
     def registration(self):
         """Roll back and close tools registered by a failing hook."""
+        if self._closed:
+            raise RuntimeError("Cannot register tools after closing the registry.")
         tools_before = self._tools.copy()
         aliases_before = self._aliases.copy()
         menu_items_before = self._menu_items.copy()
@@ -162,7 +168,7 @@ class ToolRegistry:
             yield
         except Exception:
             existing_tool_ids = {id(tool) for tool in tools_before.values()}
-            rolled_back = []
+            rolled_back: list[tuple[str, Tool]] = []
             rolled_back_ids: set[int] = set()
             for action, tool in self._tools.items():
                 tool_id = id(tool)
@@ -172,30 +178,41 @@ class ToolRegistry:
                     or tool_id in rolled_back_ids
                 ):
                     continue
-                rolled_back.append(tool)
+                rolled_back.append((action, tool))
                 rolled_back_ids.add(tool_id)
             self._tools = tools_before
             self._aliases = aliases_before
             self._menu_items = menu_items_before
-            for tool in reversed(rolled_back):
-                self._close_tool(tool, action="roll back")
+            for tool_action, tool in reversed(rolled_back):
+                self._close_tool(
+                    tool,
+                    action="roll back",
+                    tool_action=tool_action,
+                )
             raise
 
     @staticmethod
-    def _close_tool(tool: Tool, *, action: str = "close") -> None:
-        close = getattr(tool, "close", None)
-        if not callable(close):
-            return
+    def _close_tool(
+        tool: Tool,
+        *,
+        action: str = "close",
+        tool_action: str = "<unknown>",
+    ) -> None:
         try:
+            close = getattr(tool, "close", None)
+            if not callable(close):
+                return
             close()
         except Exception as exc:
             print(
-                f"[FEATURE] Could not {action} '{tool.action}': {exc}",
+                f"[FEATURE] Could not {action} '{tool_action}': {exc}",
                 flush=True,
             )
 
     def register(self, tool: Tool) -> None:
         """Register one tool, rejecting all ambiguous identifiers."""
+        if self._closed:
+            raise RuntimeError("Cannot register tools after closing the registry.")
         action = self._normalize_identifier(tool.action, "action name")
         aliases = [
             self._normalize_identifier(alias, "alias")

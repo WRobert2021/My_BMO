@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+import math
 from typing import Any, Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -31,6 +33,30 @@ class Location:
 JsonRequest = Callable[[str, float], Any]
 
 
+def _coordinates(
+    latitude: object,
+    longitude: object,
+    *,
+    error: str,
+) -> tuple[float, float]:
+    """Validate and return one finite geographic coordinate pair."""
+    try:
+        if isinstance(latitude, bool) or isinstance(longitude, bool):
+            raise TypeError
+        parsed_latitude = float(latitude)
+        parsed_longitude = float(longitude)
+        if (
+            not math.isfinite(parsed_latitude)
+            or not math.isfinite(parsed_longitude)
+            or not -90.0 <= parsed_latitude <= 90.0
+            or not -180.0 <= parsed_longitude <= 180.0
+        ):
+            raise ValueError
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise LocationError(error) from exc
+    return parsed_latitude, parsed_longitude
+
+
 def request_json(url: str, timeout: float) -> Any:
     """Fetch JSON with a bounded timeout and identifiable user agent."""
     request = Request(url, headers={"User-Agent": "be-more-agent/1.0"})
@@ -48,11 +74,13 @@ class LocationService:
 
     def __init__(
         self,
-        home_location: dict[str, Any] | None = None,
+        home_location: Mapping[str, Any] | None = None,
         timeout: float = 6.0,
         json_request: JsonRequest = request_json,
     ) -> None:
-        self.home_location = home_location or {}
+        if home_location is not None and not isinstance(home_location, Mapping):
+            raise LocationError("configured location must be an object")
+        self.home_location = dict(home_location or {})
         self.timeout = timeout
         self._json_request = json_request
 
@@ -66,17 +94,17 @@ class LocationService:
         latitude = self.home_location.get("latitude")
         longitude = self.home_location.get("longitude")
         if latitude is not None and longitude is not None:
-            try:
-                return Location(
-                    name=configured_name or "your configured location",
-                    latitude=float(latitude),
-                    longitude=float(longitude),
-                    timezone=str(self.home_location.get("timezone") or "auto"),
-                )
-            except (TypeError, ValueError) as exc:
-                raise LocationError(
-                    "configured latitude and longitude must be numbers"
-                ) from exc
+            latitude, longitude = _coordinates(
+                latitude,
+                longitude,
+                error="configured coordinates are invalid",
+            )
+            return Location(
+                name=configured_name or "your configured location",
+                latitude=latitude,
+                longitude=longitude,
+                timezone=str(self.home_location.get("timezone") or "auto"),
+            )
 
         if configured_name:
             return self._geocode(configured_name)
@@ -104,10 +132,15 @@ class LocationService:
         if not isinstance(result, dict):
             raise LocationError("location service returned an invalid place")
         try:
-            latitude = float(result["lat"])
-            longitude = float(result["lon"])
-        except (KeyError, TypeError, ValueError) as exc:
+            raw_latitude = result["lat"]
+            raw_longitude = result["lon"]
+        except KeyError as exc:
             raise LocationError("location service omitted the coordinates") from exc
+        latitude, longitude = _coordinates(
+            raw_latitude,
+            raw_longitude,
+            error="location service returned invalid coordinates",
+        )
 
         address = result.get("address")
         if not isinstance(address, dict):

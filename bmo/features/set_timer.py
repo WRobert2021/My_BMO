@@ -772,8 +772,11 @@ def _integer_setting(
     maximum: int,
 ) -> int:
     try:
-        value = int(settings.get(name, default))
-    except (TypeError, ValueError):
+        raw_value = settings.get(name, default)
+        if isinstance(raw_value, bool):
+            raise TypeError
+        value = int(raw_value)
+    except (OverflowError, TypeError, ValueError):
         print(f"[CONFIG] {name} must be an integer; using {default}.", flush=True)
         return default
     return min(max(value, minimum), maximum)
@@ -781,10 +784,14 @@ def _integer_setting(
 
 def _duration_setting(settings: Mapping[str, Any]) -> float:
     try:
-        value = float(
-            settings.get("max_duration_seconds", DEFAULT_MAX_DURATION_SECONDS)
+        raw_value = settings.get(
+            "max_duration_seconds",
+            DEFAULT_MAX_DURATION_SECONDS,
         )
-    except (TypeError, ValueError):
+        if isinstance(raw_value, bool):
+            raise TypeError
+        value = float(raw_value)
+    except (OverflowError, TypeError, ValueError):
         print(
             "[CONFIG] max_duration_seconds must be numeric; using 604800.",
             flush=True,

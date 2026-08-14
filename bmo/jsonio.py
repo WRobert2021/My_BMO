@@ -30,12 +30,10 @@ def duplicate_key_hook(
 ) -> Callable[[list[tuple[str, Any]]], dict[str, Any]]:
     """Adapt duplicate-key rejection to a domain-specific exception."""
     def hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise error_factory(message)
-            result[key] = value
-        return result
+        try:
+            return reject_duplicate_keys(pairs)
+        except DuplicateJSONKeyError as exc:
+            raise error_factory(message) from exc
 
     return hook
 
@@ -43,6 +41,12 @@ def duplicate_key_hook(
 def reject_json_constant(value: str) -> None:
     """Reject non-finite numbers, which are outside strict JSON."""
     raise ValueError(f"non-finite JSON number {value} is unsupported")
+
+
+_STRICT_JSON_DECODER = json.JSONDecoder(
+    object_pairs_hook=reject_duplicate_keys,
+    parse_constant=reject_json_constant,
+)
 
 
 def load_json(handle: Any) -> Any:
@@ -64,24 +68,50 @@ def loads_json(value: str | bytes | bytearray) -> Any:
 
 
 def first_json_object(value: str) -> dict[str, Any] | None:
-    """Return the first strictly valid JSON object embedded in text."""
+    """Return the first complete, strictly valid object embedded in text."""
     if not isinstance(value, str):
         return None
-    decoder = json.JSONDecoder(
-        object_pairs_hook=reject_duplicate_keys,
-        parse_constant=reject_json_constant,
-    )
+
+    start = None
+    depth = 0
+    in_string = False
+    escaped = False
     for index, character in enumerate(value):
-        if character != "{":
+        if start is None:
+            if character == "{":
+                start = index
+                depth = 1
             continue
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            depth += 1
+        elif character == "}":
+            depth -= 1
+        if depth != 0:
+            continue
+
+        candidate = value[start:index + 1]
         try:
-            decoded, _ = decoder.raw_decode(value, index)
+            decoded = _STRICT_JSON_DECODER.decode(candidate)
         except json.JSONDecodeError:
+            start = None
             continue
         except (DuplicateJSONKeyError, ValueError, TypeError):
             return None
         if isinstance(decoded, dict):
             return decoded
+        start = None
     return None
 
 

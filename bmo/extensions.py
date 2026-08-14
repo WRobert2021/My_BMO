@@ -51,7 +51,14 @@ def load_configured_extensions(
             f"{type(exc).__name__}: {exc}",
         )
         failures.append(failure)
-        reporter(str(failure))
+        try:
+            reporter(str(failure))
+        except Exception as report_exc:
+            print(
+                f"{failure}\n[EXTENSION] Failure reporter raised "
+                f"{type(report_exc).__name__}: {report_exc}",
+                flush=True,
+            )
 
     missing = object()
     raw_entries = config.get(config_key, missing)

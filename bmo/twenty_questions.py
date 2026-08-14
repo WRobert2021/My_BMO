@@ -1207,8 +1207,10 @@ class TwentyQuestionsGame:
     @staticmethod
     def _positive_limit(value: object, default: int) -> int:
         try:
+            if isinstance(value, bool):
+                raise TypeError
             parsed = int(value)
-        except (TypeError, ValueError):
+        except (OverflowError, TypeError, ValueError):
             parsed = default
         return max(parsed, 1)
 

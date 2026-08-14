@@ -66,6 +66,8 @@ def save_chat_history(
         return
     if not all(_valid_message(message) for message in full):
         raise ValueError("chat history contains an invalid message")
+    if full[0]["role"] != "system":
+        raise ValueError("chat history must begin with a system message")
 
     conversation = full[1:]
     if max_conversation_messages == 0:

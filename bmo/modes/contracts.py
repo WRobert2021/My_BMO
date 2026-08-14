@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+import math
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -92,8 +93,19 @@ class InputPolicy:
     trigger_source: str = "MODE"
 
     def __post_init__(self) -> None:
-        if self.initial_silence_timeout <= 0:
+        if (
+            isinstance(self.initial_silence_timeout, bool)
+            or not isinstance(self.initial_silence_timeout, (int, float))
+        ):
+            raise TypeError("Initial silence timeout must be numeric.")
+        try:
+            finite_timeout = math.isfinite(self.initial_silence_timeout)
+        except OverflowError:
+            finite_timeout = False
+        if not finite_timeout or self.initial_silence_timeout <= 0:
             raise ValueError("Initial silence timeout must be positive.")
+        if not isinstance(self.trigger_source, str):
+            raise TypeError("Input policy trigger source must be a string.")
         if not self.trigger_source.strip():
             raise ValueError("Input policy trigger source cannot be empty.")
 

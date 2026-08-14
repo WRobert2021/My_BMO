@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+import math
 from pathlib import Path
 import threading
 from typing import Any
@@ -357,8 +358,12 @@ class TwentyQuestionsMode:
     @staticmethod
     def _clamp_answer_wait(value: object) -> float:
         try:
+            if isinstance(value, bool):
+                raise TypeError
             seconds = float(value)
-        except (TypeError, ValueError):
+            if not math.isfinite(seconds):
+                raise ValueError
+        except (OverflowError, TypeError, ValueError):
             seconds = 12.0
         return min(max(seconds, 3.0), 30.0)
 
