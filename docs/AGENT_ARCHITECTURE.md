@@ -1,4 +1,4 @@
-# Architecture
+# AGENT ARCHITECTURE
 
 The application keeps `agent.py` as the stable startup command while implementation lives in the `bmo` package.
 

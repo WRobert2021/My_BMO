@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Required documentation
+
+- Read `AGENT_BRIEF.md` before working on a coding prompt for a high-level map
+  of the repository's scripts and module ownership.
+- Read `docs/AGENT_ARCHITECTURE.md` before changing application behavior,
+  feature or mode boundaries, registration, configuration, runtime ownership,
+  failure handling, cleanup, or tests.
+- Read `docs/AGENT_LEARNING.md` when working on the Learning feature.
+- Read `docs/AGENT_LOCATION_WEATHER.md` when working on location or weather
+  behavior.
+
 ## Project workflow
 
 - Work only inside this repository.
@@ -37,7 +48,7 @@
 ## Feature modularity
 
 - Every new or modified feature must follow the feature and mode extension
-  contracts in `docs/architecture.md`. Keep feature registration,
+  contracts in `docs/AGENT_ARCHITECTURE.md`. Keep feature registration,
   configuration, runtime ownership, failure handling, cleanup, and tests inside
   the feature's module or its narrowly owned supporting modules.
 - Features must remain independent of one another. Enabling, disabling,

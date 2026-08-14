@@ -1,4 +1,4 @@
-# Location and weather
+# AGENT GUIDE: Location and Weather
 
 Named weather requests resolve the location spoken by the user at request
 time; the weather location does not need to be stored in

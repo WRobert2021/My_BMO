@@ -1,4 +1,4 @@
-# BMO Pre-K Learning
+# AGENT GUIDE: BMO Pre-K Learning
 
 Learning is an offline, touch-only feature for the 800x480 BMO kiosk. It is
 registered through the normal feature allowlist but contributes only the

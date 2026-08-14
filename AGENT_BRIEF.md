@@ -1,0 +1,190 @@
+# Be More Agent script map
+
+This is a high-level map of the repository's executable and supporting code.
+`AGENTS.md` is the sole source of repository workflow rules, while
+`docs/AGENT_ARCHITECTURE.md` contains the detailed extension contracts and design
+rationale.
+
+## Runtime at a glance
+
+`agent.py` creates the Tk application and `bmo.app.BotGUI`. `BotGUI` composes
+configuration, audio, speech recognition, local Ollama models, archives,
+memory, feature tools, interaction modes, and the fullscreen UI.
+
+For each transcript, an active mode receives input first. Otherwise, the tool
+registry checks deterministic phrases and then exposes enabled capabilities to
+the local intent model. Requests not handled by a mode or tool continue as
+ordinary local-model conversation. Touch-menu items come from the feature and
+mode registries.
+
+```text
+agent.py
+  -> bmo.app
+       -> core services: config, audio, speech, memory, archive, prompts
+       -> feature loader -> tool registry -> bmo.features.*
+       -> mode loader    -> mode registry -> bmo.modes.*
+       -> bmo.ui.*
+```
+
+## Launch, installation, and package files
+
+| File | Role |
+| --- | --- |
+| `agent.py` | Production launcher; creates Tk, constructs `BotGUI`, and starts the event loop. |
+| `typed_agent.py` | Debug launcher that replaces microphone turns with an on-screen text field while retaining normal routing and presentation. |
+| `start_agent.sh` | Runs `agent.py` with the repository virtual environment. |
+| `setup.sh` | Raspberry Pi/aarch64 installer for system packages, Whisper.cpp, Piper, voices, Python packages, Ollama models, and the wake-word model. |
+| `be-more-agent.desktop` | Linux desktop shortcut for `start_agent.sh`. |
+| `requirements.txt` | Runtime Python dependency list. |
+| `requirements-dev.txt` | Runtime dependencies plus pytest. |
+| `bmo/__init__.py` | Root Python package marker. |
+
+## Core runtime modules
+
+| File | Role |
+| --- | --- |
+| `bmo/app.py` | Main composition root and interaction coordinator: Tk state, menus, workers, model calls, tool/mode routing, speech queue, attentions, recovery, and shutdown. |
+| `bmo/config.py` | Global defaults, shared paths, Ollama options, and split settings/extension configuration loading. |
+| `bmo/extensions.py` | Shared configuration-driven import, registration transaction, rollback, and failure-isolation mechanism for features and modes. |
+| `bmo/tools.py` | Compatibility facade over the enabled `ToolRegistry`, including resource-free metadata access. |
+| `bmo/intent.py` | Local-model tool classification, game-answer interpretation, and constrained fallback guessing. |
+| `bmo/prompts.py` | Builds system and routing prompts from registered feature capabilities. |
+| `bmo/audio.py` | Audio-device discovery, recording, WAV effects, and Piper playback. |
+| `bmo/speech.py` | OpenWakeWord streaming, Whisper.cpp transcription, and model-action JSON extraction. |
+| `bmo/archive.py` | Per-interaction directories, artifacts, JSONL events, and manifests. |
+| `bmo/memory.py` | Conversation-history validation, loading, bounding, and atomic saving. |
+| `bmo/jsonio.py` | Strict JSON decoding, embedded-object extraction, and atomic JSON/JSONL replacement. |
+| `bmo/state.py` | Shared application and face-state names. |
+| `bmo/text.py` | Shared spoken-command normalization. |
+| `bmo/network.py` | Shared bounded timeout parsing for online features. |
+| `bmo/location.py` | Location validation, home resolution, and Nominatim geocoding. |
+| `bmo/weather.py` | Open-Meteo client, typed forecast records, unit handling, and spoken report formatting. |
+| `bmo/kiosk_access.py` | Quiet-hours configuration, active-period calculation, and current-period unlock state. |
+
+## Feature framework
+
+Features are short-lived tools or menu-only views loaded from the `features`
+configuration list.
+
+| File | Role |
+| --- | --- |
+| `bmo/features/__init__.py` | Feature package with lazy compatibility exports. |
+| `bmo/features/contracts.py` | Typed tool, result, presentation, archive, attachment, follow-up, notification, attention, execution-context, and menu-context records. |
+| `bmo/features/registry.py` | Tool registration, aliases, prompt metadata, direct matching, execution, menu contribution, notifications, attentions, and cleanup. |
+| `bmo/features/loader.py` | Built-in feature list and configuration-driven module loading. |
+
+## Built-in feature modules
+
+| File | Role |
+| --- | --- |
+| `bmo/features/get_time.py` | Local-time action and direct phrases. |
+| `bmo/features/get_location.py` | Configured-home-location action and error response. |
+| `bmo/features/get_weather.py` | Spoken weather action and lifecycle owner for the Weather menu view. |
+| `bmo/features/weather_config.py` | Weather-owned private configuration and ordered location carousel. |
+| `bmo/features/weather_alerts.py` | Optional cached National Weather Service alert provider. |
+| `bmo/features/weather_narration.py` | Child-friendly condition, temperature, season, rain, hourly, and alert narration. |
+| `bmo/features/search_web.py` | DuckDuckGo news/text search, result formatting, and search archive details. |
+| `bmo/features/capture_image.py` | Raspberry Pi still capture, rotation, persistent copy, and vision follow-up. |
+| `bmo/features/set_timer.py` | Duration parsing, multi-timer scheduler, voice operations, menu callbacks, and alarm attentions. |
+| `bmo/features/calendar.py` | Read-only spoken calendar, editable menu view, midnight refresh worker, and current-day attentions. |
+| `bmo/features/calendar_config.py` | Calendar-owned private configuration. |
+| `bmo/features/calendar_store.py` | Event/acknowledgement storage, recurrence expansion, occurrence overrides, and US holidays. |
+| `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
+
+## Learning feature modules
+
+| File | Role |
+| --- | --- |
+| `bmo/features/learning/__init__.py` | Menu-only Learning registration and service/view lifecycle. |
+| `bmo/features/learning/config.py` | Learning-owned private settings and contained data/art paths. |
+| `bmo/features/learning/models.py` | Immutable lessons, questions, attempts, profiles, plans, sessions, mastery, and report records. |
+| `bmo/features/learning/curriculum.py` | Data-driven Pre-K lesson catalog, content banks, prerequisites, and catalog validation. |
+| `bmo/features/learning/engine.py` | Deterministic question generation, grading, retries, reveals, and session transitions. |
+| `bmo/features/learning/analytics.py` | Pure accuracy, grade, trend, mastery, and plan-completion calculations. |
+| `bmo/features/learning/codec.py` | Strict version-one private persistence schema. |
+| `bmo/features/learning/store.py` | Profiles, plans, attempts, sessions, atomic persistence, reports, and read-only recovery. |
+| `bmo/features/learning/errors.py` | Learning persistence and confirmation exception types. |
+
+## Mode framework and games
+
+Modes are longer interactions that temporarily own user input.
+
+| File | Role |
+| --- | --- |
+| `bmo/modes/__init__.py` | Public mode package exports. |
+| `bmo/modes/contracts.py` | Mode lifecycle, runtime context, menu item, and input-policy types. |
+| `bmo/modes/registry.py` | Mode registration, exclusive input routing, menu launch, failure quarantine, and cleanup. |
+| `bmo/modes/loader.py` | Built-in mode list and configuration-driven loading. |
+| `bmo/modes/games.py` | Compatibility imports for the built-in game adapters. |
+| `bmo/modes/matching_game.py` | Adapter connecting Pup Pairs to the mode registry and menu lifecycle. |
+| `bmo/modes/twenty_questions.py` | Adapter connecting Twenty Questions to voice/menu input, model fallback guesses, learning, and history. |
+| `bmo/matching_game.py` | Pup Pairs card model, imperfect BMO memory player, score history, and Tk game application. |
+| `bmo/twenty_questions.py` | Strict dataset loader, learned overlay, bitset candidate index, adaptive game engine, and recent-target history. |
+| `bmo/twenty_questions_contracts.py` | Dataset and learning-persistence errors. |
+| `bmo/twenty_questions_text.py` | Object-name and answer normalization. |
+| `bmo/twenty_questions_ui.py` | Embedded touch board, answer/guess controls, reveal entry, status, and replay. |
+
+## UI modules
+
+| File | Role |
+| --- | --- |
+| `bmo/ui/__init__.py` | Re-exports neutral UI components. |
+| `bmo/ui/gestures.py` | Tap and horizontal-swipe recognition independent of Tk. |
+| `bmo/ui/scrolling.py` | Bounded vertical drag state independent of Tk. |
+| `bmo/ui/compact_face.py` | Shared 108x65 face configuration, image normalization, rendering, and overlay stack lifecycle. |
+| `bmo/ui/menu.py` | Generic swipe menu, icon-grid pagination, navigation, and compact face. |
+| `bmo/ui/timer.py` | Active-timer list, countdown refresh, touch deletion, scrolling, and duration editor. |
+| `bmo/ui/calendar.py` | Day/month/year views, event editor, recurrence controls, event scrolling, and narration actions. |
+| `bmo/ui/quiet_hours.py` | Fullscreen sleeping cover and four-digit touch keypad. |
+| `bmo/ui/album.py` | Thumbnail pages, fullscreen photos, Back/Wastebasket/BMO actions, and vision presentation. |
+| `bmo/ui/learning.py` | Learner sessions, generic activity rendering, teacher controls, plan/profile management, reports, and scoped speech. |
+| `bmo/ui/weather.py` | Forecast-to-view state, asynchronous carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
+| `bmo/ui/weather_web/index.html` | Weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
+
+## Configuration examples
+
+| File | Settings represented |
+| --- | --- |
+| `config/example.settings.json` | Models, audio, camera, prompts, timeout, Weather/quiet-hours paths, and interaction logging. |
+| `config/example.features.json` | Ordered enabled feature and mode modules with module settings. |
+| `config/example.weather.json` | Units, locations, carousel default, visual flags, and optional alerts. |
+| `config/example.calendar.json` | Calendar data/overlay paths, categories, holidays, and spoken notes. |
+| `config/example.learning.json` | Learning data/art paths, teacher area, session/mastery limits, fonts, speech, and debug seed. |
+| `config/example.quiet_hours.json` | Schedule, weekdays, passcode, and sleeping-face path. |
+| `config/example.compact_face.json` | Compact-face state directories and animation timing. |
+
+## Test map
+
+| Area | Test files |
+| --- | --- |
+| Extension framework | `tests/test_extension_architecture.py`, `tests/test_feature_loading.py`, `tests/test_mode_loading.py`, `tests/extension_modules/proof_feature.py`, `tests/extension_modules/proof_mode.py` |
+| Tool routing and presentation | `tests/test_tool_registry.py`, `tests/test_tool_routing.py`, `tests/test_tool_routing_characterization.py`, `tests/test_tool_presentation.py`, `tests/test_intent.py` |
+| Main interaction and menus | `tests/test_interaction_failure_recovery.py`, `tests/test_menu.py`, `tests/test_modes.py` |
+| Core persistence/config | `tests/test_archive.py`, `tests/test_jsonio.py`, `tests/test_config_and_memory.py` |
+| Audio and speech | `tests/test_speech.py` |
+| Installation | `tests/test_setup_script.py` |
+| Time/location/weather | `tests/test_location_weather.py`, `tests/test_weather_feature.py` |
+| Timer | `tests/test_set_timer.py`, `tests/test_timer_ui.py` |
+| Calendar | `tests/test_calendar.py` |
+| Camera | `tests/test_camera.py` |
+| Album | `tests/test_album.py` |
+| Learning | `tests/test_learning_curriculum.py`, `tests/test_learning_feature.py`, `tests/test_learning_store.py`, `tests/test_learning_ui.py` |
+| Matching game | `tests/test_matching_game.py` |
+| Twenty Questions | `tests/test_twenty_questions.py` |
+| Compact face and quiet hours | `tests/test_compact_face.py`, `tests/test_quiet_hours.py` |
+
+`tests/extension_modules/__init__.py` marks the proof-fixture package, and
+`tests/__init__.py` is not present because pytest discovers the suite directly.
+
+## Other repository material
+
+| Path | Role |
+| --- | --- |
+| `README.md` | Operator setup, configuration, feature, customization, archive, and troubleshooting guide. |
+| `docs/AGENT_ARCHITECTURE.md` | Detailed module boundaries, runtime behavior, extension contracts, failure isolation, and shutdown ownership. |
+| `docs/AGENT_LEARNING.md` | Learning setup, scoring, persistence, teacher controls, and lesson extension. |
+| `docs/AGENT_LOCATION_WEATHER.md` | Location/Weather privacy, providers, configuration, supported requests, and licensing. |
+| `faces/` | Fullscreen face animation frames. |
+| `sounds/` | Greeting, acknowledgement, and thinking WAV effects. |
+| `graphics/` | Existing referenced menu/game artwork. |
+| `wakeword.onnx` | Wake-word inference model. |

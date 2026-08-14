@@ -274,12 +274,12 @@ shown in `config/example.features.json`:
   remain inside `photo_root`; symbolic-link escapes are excluded.
 - The menu-only Learning feature uses `graphics/icons/learning.png` and opens
   an offline 800x480 Pre-K suite only when that icon is tapped. Its data-driven
-  curriculum covers the literacy and vocabulary program in
-  `LEARNING FEATURE.md` plus early math and general readiness. Learner profiles,
+  curriculum covers literacy, vocabulary, early math, and general readiness.
+  Learner profiles,
   teacher-authored prerequisite-aware plans, bounded attempt history, mastery,
   and reports stay under `data/learning`. Instructions and feedback use BMO's
   existing view-scoped Piper voice; no model, microphone, direct phrase, or
-  separate TTS path is exposed. See [the Learning guide](docs/learning.md) for
+  separate TTS path is exposed. See [the Learning guide](docs/AGENT_LEARNING.md) for
   configuration, scoring, storage recovery, and lesson-extension details.
 
 A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
@@ -348,7 +348,7 @@ master and approved model, speech, memory, state, announcement, and face
 callbacks. Mode modules never receive the complete `BotGUI` object.
 
 The complete feature and mode contracts, failure boundaries, and a minimal
-`say_hello` feature are in [the architecture guide](docs/architecture.md#extension-contracts).
+`say_hello` feature are in [the architecture guide](docs/AGENT_ARCHITECTURE.md#extension-contracts).
 
 ## Interaction archives
 
