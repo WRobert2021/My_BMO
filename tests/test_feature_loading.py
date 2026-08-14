@@ -142,6 +142,41 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertEqual(result.failures[0].stage, "import")
         self.assertIn("does.not.exist", messages[0])
 
+    def test_registration_hook_lookup_failure_is_isolated(self) -> None:
+        class BrokenModule:
+            def __getattribute__(self, name):
+                if name == "register":
+                    raise RuntimeError("hook lookup exploded")
+                return super().__getattribute__(name)
+
+        after = types.ModuleType("after")
+        after.register = lambda registry, settings: registry.register(
+            ToolContract(
+                "after",
+                lambda request: ToolResult.success("after"),
+            )
+        )
+        modules = {"broken": BrokenModule(), "after": after}
+
+        with patch(
+            "bmo.features.loader._load_module",
+            side_effect=modules.__getitem__,
+        ):
+            result = load_feature_registry(
+                {
+                    "features": [
+                        {"module": name, "enabled": True, "settings": {}}
+                        for name in modules
+                    ]
+                }
+            )
+
+        self.assertEqual(result.registry.actions, {"after"})
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].module, "broken")
+        self.assertEqual(result.failures[0].stage, "register")
+        self.assertIn("hook lookup exploded", result.failures[0].error)
+
     def test_duplicate_registration_is_rolled_back_and_reported(self) -> None:
         first = types.ModuleType("first")
         duplicate = types.ModuleType("duplicate")
@@ -346,6 +381,21 @@ class FeatureLoadingTests(unittest.TestCase):
             result.registry.actions,
             {"specialized", "fallback"},
         )
+
+    def test_default_metadata_does_not_read_calendar_or_weather_files(
+        self,
+    ) -> None:
+        with (
+            patch("bmo.features.calendar.load_calendar_config") as calendar_config,
+            patch("bmo.features.get_weather.load_weather_config") as weather_config,
+        ):
+            router = ToolRouter({}, metadata_only=True)
+        self.addCleanup(router.close)
+
+        calendar_config.assert_not_called()
+        weather_config.assert_not_called()
+        self.assertIn("get_calendar", router.VALID_TOOLS)
+        self.assertIn("get_weather", router.VALID_TOOLS)
 
 
 class RegistryPromptTests(unittest.TestCase):

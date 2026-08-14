@@ -100,8 +100,13 @@ utility module. `bmo.extensions` owns only the common list validation, import,
 registration transaction, failure isolation, and settings-overlay sequence;
 feature and mode loaders retain their typed registries, result records, failure
 wording, defaults, and distinct hook signatures. `bmo.jsonio` owns only JSON
-syntax policy and durable replacement mechanics, while each feature retains its
-schema validation, safe-path rules, read-only policy, and domain exceptions.
+syntax policy, first-object extraction from model text, and durable replacement
+mechanics, while each feature retains its schema validation, safe-path rules,
+read-only policy, and domain exceptions. Network responses, conversation
+history, Learning configuration, and Twenty Questions persistence all use that
+strict duplicate/non-finite-number policy at their trust boundaries; malformed
+data falls back or raises the owning domain error instead of entering runtime
+state.
 `bmo.text` and `bmo.network` own single stable transformations used by otherwise
 independent features.
 
@@ -115,9 +120,12 @@ its stable `bmo.twenty_questions` facade while text normalization and shared
 errors live in dependency-light supporting modules.
 
 Compatibility metadata such as `ToolRouter.VALID_TOOLS` is built in metadata
-mode, closes every constructed tool immediately, and never starts Calendar's
-midnight worker. Prompt construction also closes any registry it creates.
-Runtime routers remain the only owners of executable feature resources.
+mode from only the default routable modules. Calendar and Weather metadata
+hooks use in-memory dependencies, do not read their private configuration, and
+do not start Calendar's midnight worker. The resulting registry is closed and
+rejects every execution path; prompt construction likewise closes any registry
+it creates. Runtime routers remain the only owners of executable feature
+resources.
 
 ## Runtime flow
 

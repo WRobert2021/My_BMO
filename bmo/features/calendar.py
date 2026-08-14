@@ -531,28 +531,37 @@ class CalendarTool:
         self._published_ids.clear()
 
 
-def register(registry: Any, settings: Mapping[str, Any]) -> None:
-    """Register the independently configured local calendar feature."""
-    config = load_calendar_config(settings)
+def _register_calendar(
+    registry: Any,
+    config: CalendarConfig,
+    *,
+    start_worker: bool,
+) -> None:
     registry.register(
         CalendarTool(
             config,
             notify_attention=registry.notify_attention,
             dismiss_attention=registry.dismiss_attention,
             menu_item=CALENDAR_MENU_ITEM if config.show_in_menu else None,
+            start_worker=start_worker,
         )
+    )
+
+
+def register(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Register the independently configured local calendar feature."""
+    _register_calendar(
+        registry,
+        load_calendar_config(settings),
+        start_worker=True,
     )
 
 
 def register_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
     """Register Calendar routing metadata without starting its date worker."""
-    config = load_calendar_config(settings)
-    registry.register(
-        CalendarTool(
-            config,
-            notify_attention=registry.notify_attention,
-            dismiss_attention=registry.dismiss_attention,
-            menu_item=CALENDAR_MENU_ITEM if config.show_in_menu else None,
-            start_worker=False,
-        )
+    del settings
+    _register_calendar(
+        registry,
+        CalendarConfig(show_in_menu=False),
+        start_worker=False,
     )

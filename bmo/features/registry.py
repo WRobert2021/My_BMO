@@ -98,6 +98,11 @@ class ToolRegistry:
             self._close_tool(tool)
 
     @property
+    def closed(self) -> bool:
+        """Return whether execution and resource-backed actions are closed."""
+        return self._closed
+
+    @property
     def actions(self) -> set[str]:
         """Return canonical names exposed to voice and model routing."""
         return {
@@ -322,6 +327,8 @@ class ToolRegistry:
         context: ToolContext | None = None,
     ) -> ToolResponse:
         """Dispatch a request or raise if its action is not registered."""
+        if self._closed:
+            raise RuntimeError("Cannot execute tools after closing the registry.")
         if context is not None and not isinstance(context, ToolContext):
             raise TypeError("Tool execution context must be a ToolContext.")
         normalized_request = self.normalize_request(request)

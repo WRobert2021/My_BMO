@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import select
 import subprocess
 import sys
@@ -16,7 +15,7 @@ import sounddevice as sd
 from openwakeword.model import Model
 
 from bmo.audio import choose_input_samplerate
-from bmo.jsonio import loads_json
+from bmo.jsonio import first_json_object
 
 
 class WhisperTranscriber:
@@ -303,11 +302,4 @@ class WakeWordDetector:
 
 def extract_json_from_text(text: str) -> dict[str, Any] | None:
     """Extract the first JSON object from model output."""
-    try:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            value = loads_json(match.group(0))
-            return value if isinstance(value, dict) else None
-    except (ValueError, TypeError):
-        pass
-    return None
+    return first_json_object(text)

@@ -13,7 +13,7 @@ from bmo.features.contracts import (
     ToolResult,
 )
 from bmo.features.loader import (
-    DEFAULT_FEATURE_MODULES,
+    DEFAULT_ROUTABLE_FEATURE_MODULES,
     FeatureLoadFailure,
     load_feature_registry,
 )
@@ -59,11 +59,7 @@ class ToolRouter:
                 **effective_config,
                 "features": [
                     {"module": module, "enabled": True, "settings": {}}
-                    for module in DEFAULT_FEATURE_MODULES
-                    if module not in {
-                        "bmo.features.album",
-                        "bmo.features.learning",
-                    }
+                    for module in DEFAULT_ROUTABLE_FEATURE_MODULES
                 ],
             }
         shared_settings = {
@@ -84,19 +80,20 @@ class ToolRouter:
         self.VALID_TOOLS = self.registry.actions
         self.ALIASES = self.registry.aliases
 
-        time_tool = self.registry.get("get_time")
-        if time_tool is not None and hasattr(time_tool, "_now"):
-            time_tool._now = lambda: datetime.datetime.now()
+        if not metadata_only:
+            time_tool = self.registry.get("get_time")
+            if time_tool is not None and hasattr(time_tool, "_now"):
+                time_tool._now = lambda: datetime.datetime.now()
 
-        # Concrete names below are intentionally limited to the historical
-        # ToolRouter facade. Core matching, dispatch, and presentation use only
-        # registry metadata and typed result contracts.
-        #
-        # Retain the patchable compatibility boundary used by archive and test
-        # callers while the feature continues to own the real search work.
-        search_tool = self.registry.get("search_web")
-        if search_tool is not None and hasattr(search_tool, "_searcher"):
-            search_tool._searcher = lambda query: self._search_web(query)
+            # Concrete names below are intentionally limited to the historical
+            # ToolRouter facade. Core matching, dispatch, and presentation use
+            # only registry metadata and typed result contracts.
+            #
+            # Retain the patchable compatibility boundary used by archive and
+            # test callers while the feature continues to own the real work.
+            search_tool = self.registry.get("search_web")
+            if search_tool is not None and hasattr(search_tool, "_searcher"):
+                search_tool._searcher = lambda query: self._search_web(query)
 
     def _require_tool(self, action: str) -> Any:
         tool = self.registry.get(action)
@@ -200,6 +197,8 @@ class ToolRouter:
 
     def _search_web(self, query: str) -> ToolResult:
         """Compatibility wrapper retaining search results for archives."""
+        if self.registry.closed:
+            raise RuntimeError("Cannot execute tools after closing the registry.")
         search_tool = self._require_tool("search_web")
         return search_tool.search(query)
 

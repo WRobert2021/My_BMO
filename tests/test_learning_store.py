@@ -234,6 +234,28 @@ class LearningConfigTests(unittest.TestCase):
             self.assertEqual(config, LearningConfig())
             self.assertNotIn("1357", messages[0])
 
+    def test_duplicate_or_non_finite_private_config_uses_safe_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "learning.json"
+            for payload in (
+                '{"teacher_pin":"1111","teacher_pin":"2222"}',
+                '{"mastery_threshold":NaN}',
+            ):
+                messages: list[str] = []
+                path.write_text(payload, encoding="utf-8")
+
+                config = load_learning_config(
+                    {"config_path": path},
+                    reporter=messages.append,
+                    project_root=root,
+                )
+
+                self.assertEqual(config, LearningConfig())
+                self.assertEqual(len(messages), 1)
+                self.assertNotIn("1111", messages[0])
+                self.assertNotIn("2222", messages[0])
+
     def test_invalid_bounds_and_path_escapes_fall_back_without_creating_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

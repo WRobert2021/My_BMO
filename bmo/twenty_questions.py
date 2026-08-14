@@ -19,7 +19,7 @@ from typing import Any
 from bmo.jsonio import (
     atomic_write_json,
     atomic_write_json_lines,
-    duplicate_key_hook,
+    loads_json,
 )
 from bmo.text import normalize_spoken_command
 from bmo.twenty_questions_contracts import (
@@ -135,7 +135,7 @@ class TwentyQuestionsHistory:
         if self.path is None or not self.path.exists():
             return
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
+            data = loads_json(self.path.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("history root must be an object")
             things = data.get("things", [])
@@ -146,7 +146,7 @@ class TwentyQuestionsHistory:
                 for item in things
                 if isinstance(item, str) and canonical_object_name(item)
             ][: self.MAX_THINGS]
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError, TypeError) as exc:
             print(f"[20 QUESTIONS] Thing history ignored: {exc}", flush=True)
 
     def record(self, name: str) -> None:
@@ -174,14 +174,6 @@ class TwentyQuestionsHistory:
             )
         except OSError as exc:
             print(f"[20 QUESTIONS] Could not save thing history: {exc}", flush=True)
-
-
-def _json_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    """Reject duplicate JSON keys instead of silently losing a value."""
-    return duplicate_key_hook(
-        TwentyQuestionsDataError,
-        "duplicate JSON key",
-    )(pairs)
 
 
 class TwentyQuestionsDatasetLoader:
@@ -519,8 +511,8 @@ class TwentyQuestionsDatasetLoader:
     @staticmethod
     def _parse_line(raw_line: str, line_number: int, kind: str) -> dict[str, Any]:
         try:
-            value = json.loads(raw_line, object_pairs_hook=_json_object_pairs)
-        except (json.JSONDecodeError, TwentyQuestionsDataError) as exc:
+            value = loads_json(raw_line)
+        except ValueError as exc:
             raise TwentyQuestionsDataError(
                 f"{kind} row {line_number} is not valid JSON"
             ) from exc
@@ -535,19 +527,20 @@ class TwentyQuestionsDatasetLoader:
         rows: Mapping[str, DatasetRow],
         question_keys: tuple[str, ...],
     ) -> None:
-        payloads = []
-        for row in rows.values():
-            payload = {OBJECT_NAME_KEY: row.name}
-            payload.update(
-                {
-                    key: DISPLAY_ANSWERS[row.answers[index]]
-                    for index, key in enumerate(question_keys)
-                }
-            )
-            payloads.append(payload)
+        def payloads():
+            for row in rows.values():
+                payload = {OBJECT_NAME_KEY: row.name}
+                payload.update(
+                    {
+                        key: DISPLAY_ANSWERS[row.answers[index]]
+                        for index, key in enumerate(question_keys)
+                    }
+                )
+                yield payload
+
         atomic_write_json_lines(
             self.learned_path,
-            payloads,
+            payloads(),
             ensure_ascii=False,
             replace=os.replace,
         )

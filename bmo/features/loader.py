@@ -13,7 +13,7 @@ from bmo.features.contracts import RuntimeAttentionCallback, RuntimeCallback
 from bmo.features.registry import ToolRegistry
 
 
-DEFAULT_FEATURE_MODULES = (
+DEFAULT_ROUTABLE_FEATURE_MODULES = (
     "bmo.features.get_time",
     "bmo.features.set_timer",
     "bmo.features.calendar",
@@ -21,8 +21,14 @@ DEFAULT_FEATURE_MODULES = (
     "bmo.features.get_weather",
     "bmo.features.search_web",
     "bmo.features.capture_image",
+)
+DEFAULT_MENU_FEATURE_MODULES = (
     "bmo.features.album",
     "bmo.features.learning",
+)
+DEFAULT_FEATURE_MODULES = (
+    *DEFAULT_ROUTABLE_FEATURE_MODULES,
+    *DEFAULT_MENU_FEATURE_MODULES,
 )
 
 
@@ -79,7 +85,11 @@ def load_feature_registry(
         registration=registry.registration,
         invoke_register=lambda register, settings: register(registry, settings),
         register_signature="register(registry, settings)",
-        register_names=("register_metadata", "register") if metadata_only else ("register",),
+        register_names=(
+            ("register_metadata", "register")
+            if metadata_only
+            else ("register",)
+        ),
         make_failure=FeatureLoadFailure,
         reporter=emit,
     )

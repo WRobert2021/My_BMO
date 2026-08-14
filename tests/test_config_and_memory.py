@@ -197,6 +197,55 @@ class MemoryTests(unittest.TestCase):
         )
         self.assertEqual(history[1]["content"], "Hello")
 
+    def test_malformed_message_records_are_not_returned(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "memory.json"
+            path.write_text(
+                '[{"role":"user","content":"ok"},42]',
+                encoding="utf-8",
+            )
+
+            history = load_chat_history(path, "safe system")
+
+        self.assertEqual(
+            history,
+            [{"role": "system", "content": "safe system"}],
+        )
+
+    def test_zero_limit_persists_only_the_system_message(self):
+        permanent = [{"role": "system", "content": "system"}]
+        session = [{"role": "user", "content": "discard me"}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "memory.json"
+            save_chat_history(
+                path,
+                permanent,
+                session,
+                max_conversation_messages=0,
+            )
+            saved = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(saved, permanent)
+
+    def test_save_rejects_invalid_limits_and_messages(self):
+        permanent = [{"role": "system", "content": "system"}]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "memory.json"
+            for invalid in (-1, True, 1.5):
+                with self.subTest(limit=invalid), self.assertRaises(ValueError):
+                    save_chat_history(
+                        path,
+                        permanent,
+                        [],
+                        max_conversation_messages=invalid,  # type: ignore[arg-type]
+                    )
+            with self.assertRaisesRegex(ValueError, "invalid message"):
+                save_chat_history(
+                    path,
+                    permanent,
+                    [{"role": "user", "content": 3}],  # type: ignore[dict-item]
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

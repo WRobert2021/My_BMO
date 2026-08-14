@@ -9,9 +9,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 import hmac
-import json
 from pathlib import Path
 from typing import Any
+
+from bmo.jsonio import load_json
 
 
 DEFAULT_LEARNING_CONFIG_PATH = Path("config/learning.json")
@@ -49,19 +50,6 @@ _OWNED_KEYS = frozenset(
         "debug_seed",
     }
 )
-
-
-def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError("learning configuration fields cannot be repeated")
-        value[key] = item
-    return value
-
-
-def _reject_json_constant(_value: str) -> None:
-    raise ValueError("learning configuration numbers must be finite")
 
 
 @dataclass(frozen=True)
@@ -323,15 +311,11 @@ def load_learning_config(
             if path.stat().st_size > MAX_CONFIG_BYTES:
                 raise ValueError("learning configuration file is too large")
             with path.open("r", encoding="utf-8") as handle:
-                loaded = json.load(
-                    handle,
-                    object_pairs_hook=_object_without_duplicate_keys,
-                    parse_constant=_reject_json_constant,
-                )
+                loaded = load_json(handle)
             if not isinstance(loaded, Mapping):
                 raise ValueError("learning configuration root must be an object")
             file_values = loaded
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             # JSON exceptions do not include document contents. In particular,
             # never report the PIN or any other config values.
             reporter(f"[LEARNING] Could not load private configuration: {exc}. Using defaults.")

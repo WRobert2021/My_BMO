@@ -174,6 +174,18 @@ class DatasetLoaderTests(unittest.TestCase):
 
 
 class ThingHistoryTests(unittest.TestCase):
+    def test_history_rejects_duplicate_json_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "history.json"
+            path.write_text(
+                '{"things":["first"],"things":["second"]}',
+                encoding="utf-8",
+            )
+
+            history = TwentyQuestionsHistory(path)
+
+        self.assertEqual(history.snapshot(), ())
+
     def test_history_keeps_the_five_newest_targets_across_loads(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "history.json"

@@ -25,7 +25,7 @@ from bmo.features import (
 )
 from bmo.features.search_web import SEARCH_SUMMARY_PRESENTATION
 from bmo.location import Location
-from bmo.tools import ToolRouter
+from bmo.tools import ToolRouter, default_metadata_router
 
 
 class ToolRegistryTests(unittest.TestCase):
@@ -305,6 +305,15 @@ class ToolRegistryTests(unittest.TestCase):
         ):
             registry.execute({"action": "missing"})
 
+    def test_closed_registry_cannot_execute_cleaned_up_tools(self) -> None:
+        handler = Mock(return_value=ToolResult.success("ok"))
+        registry = ToolRegistry([ToolContract("status", handler)])
+        registry.close()
+
+        with self.assertRaisesRegex(RuntimeError, "after closing"):
+            registry.execute({"action": "status"})
+        handler.assert_not_called()
+
     def test_rejects_untyped_tool_results(self) -> None:
         registry = ToolRegistry(
             [ToolContract("legacy", Mock(return_value="SENTINEL"))]
@@ -503,6 +512,12 @@ class ToolRouterRegistryDelegationTests(unittest.TestCase):
             result,
         )
         router.registry.execute.assert_called_once_with({"action": "look"})
+
+    def test_metadata_router_rejects_legacy_search_execution(self) -> None:
+        router = default_metadata_router()
+
+        with self.assertRaisesRegex(RuntimeError, "after closing"):
+            router._search_web("must not run")
 
 
 if __name__ == "__main__":

@@ -328,3 +328,17 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
             menu_item=WEATHER_MENU_ITEM if show_in_menu else None,
         )
     )
+
+
+def register_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Register weather routing metadata without private config or clients."""
+    timeout = online_timeout_seconds(settings)
+    location_service = LocationService(
+        settings.get("location"),
+        timeout=timeout,
+    )
+    registry.register(
+        GetWeatherTool(
+            WeatherService(location_service, timeout=timeout),
+        )
+    )

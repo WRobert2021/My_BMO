@@ -2,14 +2,50 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 import unittest
+from unittest.mock import patch
 
-from bmo.location import LocationService, LocationNotConfigured
+from bmo.location import (
+    LocationError,
+    LocationNotConfigured,
+    LocationService,
+    request_json,
+)
+from bmo.network import online_timeout_seconds
 from bmo.tools import ToolRouter
 from bmo.weather import WeatherService
 
 
 class LocationServiceTests(unittest.TestCase):
+    def test_online_timeout_rejects_boolean_and_non_finite_values(self) -> None:
+        for invalid in (True, "nan", "inf", "-inf", object()):
+            messages: list[str] = []
+            with self.subTest(value=invalid):
+                self.assertEqual(
+                    online_timeout_seconds(
+                        {"online_timeout_seconds": invalid},
+                        reporter=messages.append,
+                    ),
+                    6.0,
+                )
+                self.assertEqual(len(messages), 1)
+
+        self.assertEqual(
+            online_timeout_seconds({"online_timeout_seconds": 0}),
+            1.0,
+        )
+        self.assertEqual(
+            online_timeout_seconds({"online_timeout_seconds": 60}),
+            30.0,
+        )
+
+    def test_network_json_rejects_duplicate_fields(self) -> None:
+        response = BytesIO(b'{"value":1,"value":2}')
+        with patch("bmo.location.urlopen", return_value=response):
+            with self.assertRaisesRegex(LocationError, "invalid JSON"):
+                request_json("https://example.invalid", 1.0)
+
     def test_configured_coordinates_do_not_make_network_request(self) -> None:
         def fail_request(url: str, timeout: float) -> dict:
             raise AssertionError(f"unexpected request: {url}, {timeout}")

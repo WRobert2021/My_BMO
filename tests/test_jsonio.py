@@ -12,6 +12,7 @@ from unittest.mock import Mock
 from bmo.jsonio import (
     DuplicateJSONKeyError,
     atomic_write_json,
+    first_json_object,
     load_json,
     loads_json,
 )
@@ -30,6 +31,22 @@ class StrictJsonTests(unittest.TestCase):
             path.write_text('{"name":"BMO"}', encoding="utf-8")
             with path.open("r", encoding="utf-8") as handle:
                 self.assertEqual(load_json(handle), {"name": "BMO"})
+
+    def test_first_embedded_object_is_not_confused_by_later_json(self) -> None:
+        self.assertEqual(
+            first_json_object(
+                'prefix {"action":"get_time"} suffix {"action":"chat"}'
+            ),
+            {"action": "get_time"},
+        )
+        self.assertEqual(
+            first_json_object('{"message":"a } brace","ready":true}'),
+            {"message": "a } brace", "ready": True},
+        )
+
+    def test_ambiguous_or_non_finite_embedded_object_is_rejected(self) -> None:
+        self.assertIsNone(first_json_object('{"a":1,"a":2}'))
+        self.assertIsNone(first_json_object('{"value":NaN}'))
 
 
 class AtomicJsonTests(unittest.TestCase):

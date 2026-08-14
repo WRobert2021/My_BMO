@@ -63,6 +63,28 @@ def loads_json(value: str | bytes | bytearray) -> Any:
     )
 
 
+def first_json_object(value: str) -> dict[str, Any] | None:
+    """Return the first strictly valid JSON object embedded in text."""
+    if not isinstance(value, str):
+        return None
+    decoder = json.JSONDecoder(
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=reject_json_constant,
+    )
+    for index, character in enumerate(value):
+        if character != "{":
+            continue
+        try:
+            decoded, _ = decoder.raw_decode(value, index)
+        except json.JSONDecodeError:
+            continue
+        except (DuplicateJSONKeyError, ValueError, TypeError):
+            return None
+        if isinstance(decoded, dict):
+            return decoded
+    return None
+
+
 def atomic_write(
     path: str | Path,
     writer: Callable[[TextIO], None],

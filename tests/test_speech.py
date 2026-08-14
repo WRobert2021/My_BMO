@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from bmo.speech import WakeWordDetector
+from bmo.speech import WakeWordDetector, extract_json_from_text
 
 
 class _TriggeringModel:
@@ -169,6 +169,21 @@ class WakeWordStreamingTests(unittest.TestCase):
         self.assertEqual(stream.read_calls, 2)
         self.assertEqual(len(model.predict_calls), 1)
         self.assertEqual(model.reset_calls, 2)
+
+
+class JsonExtractionTests(unittest.TestCase):
+    def test_extracts_first_complete_object_from_model_wrapping(self) -> None:
+        self.assertEqual(
+            extract_json_from_text(
+                'Result: {"action":"get_time"}\nExtra: {"action":"chat"}'
+            ),
+            {"action": "get_time"},
+        )
+
+    def test_rejects_duplicate_fields(self) -> None:
+        self.assertIsNone(
+            extract_json_from_text('{"action":"chat","action":"get_time"}')
+        )
 
 
 if __name__ == "__main__":

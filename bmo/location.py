@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from bmo.jsonio import load_json
 
 
 class LocationError(RuntimeError):
@@ -33,9 +34,11 @@ JsonRequest = Callable[[str, float], Any]
 def request_json(url: str, timeout: float) -> Any:
     """Fetch JSON with a bounded timeout and identifiable user agent."""
     request = Request(url, headers={"User-Agent": "be-more-agent/1.0"})
-    with urlopen(request, timeout=timeout) as response:
-        payload = json.load(response)
-    return payload
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return load_json(response)
+    except (UnicodeError, ValueError) as exc:
+        raise LocationError("online service returned invalid JSON") from exc
 
 
 class LocationService:

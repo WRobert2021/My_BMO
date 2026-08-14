@@ -53,7 +53,10 @@ def load_configured_extensions(
         failures.append(failure)
         reporter(str(failure))
 
-    raw_entries = config.get(config_key, default_extension_entries(defaults))
+    missing = object()
+    raw_entries = config.get(config_key, missing)
+    if raw_entries is missing:
+        raw_entries = default_extension_entries(defaults)
     if not isinstance(raw_entries, Sequence) or isinstance(
         raw_entries, (str, bytes)
     ):
@@ -114,14 +117,18 @@ def load_configured_extensions(
             fail(module_name, "import", exc)
             continue
 
-        register = next(
-            (
-                candidate
-                for name in register_names
-                if callable(candidate := getattr(module, name, None))
-            ),
-            None,
-        )
+        try:
+            register = next(
+                (
+                    candidate
+                    for name in register_names
+                    if callable(candidate := getattr(module, name, None))
+                ),
+                None,
+            )
+        except Exception as exc:
+            fail(module_name, "register", exc)
+            continue
         if not callable(register):
             fail(
                 module_name,
