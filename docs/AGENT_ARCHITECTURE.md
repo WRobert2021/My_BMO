@@ -74,9 +74,12 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
 - `bmo.prompts` — system-prompt construction.
 - `bmo.state` — shared UI/application states.
+- `bmo.face_config` — UI-toolkit-neutral face layout, validated frame sources,
+  timing, and private configuration loading shared by Tk, Qt, and web views.
+- `bmo.gestures` — UI-toolkit-neutral tap and horizontal-swipe recognition.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
-- `bmo.ui.gestures` — UI-independent tap and horizontal-swipe recognition.
+- `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
 - `bmo.ui.compact_face` — validated contained face-frame configuration, the
   canonical 108×65 top-right layout, distortion-free normalization, and the
   stack-aware Tk lifecycle shared by menus, features, and modes.
@@ -95,6 +98,13 @@ The application keeps `agent.py` as the stable startup command while implementat
   touch exercises, teacher-plan controls, and progress presentation.
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
   secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
+- `bmo.qt.controller` — Qt properties, signals, real face-frame animation,
+  camera overlay state, HUD text, and gesture translation without importing Tk.
+- `bmo.qt.app` — isolated Qt Quick engine and controller lifetime ownership; it
+  intentionally starts no assistant services until the coordinator boundary is
+  ready to replace Tk.
+- `bmo/qt/qml/Main.qml` — fullscreen 800x480 face surface, touch input,
+  diagnostic HUD, image overlay, and kiosk shortcuts.
 
 ## Neutral shared ownership
 
@@ -122,7 +132,9 @@ the same boundary. Location value objects own non-empty labels and finite
 latitude/longitude range validation for configured, provider, and injected
 coordinates. Conversation memory permits one leading system message only.
 `bmo.text` and `bmo.network` own single stable transformations used by otherwise
-independent features.
+independent features. Face configuration and gesture recognition live in
+`bmo.face_config` and `bmo.gestures` so importing the Qt presentation path does
+not initialize the Tk package or create parallel implementations.
 
 Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.
@@ -162,6 +174,13 @@ of executable feature resources.
    persistent directory.
 9. Piper streams speech through `sounddevice` while also writing archival WAVs.
 10. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
+
+The production flow above remains on Tk during the migration. `qt_agent.py`
+currently exercises only the real Qt/QML presentation shell: it loads the
+configured face frames, animation timings, touch gestures, status, response
+text, and camera-overlay path without constructing audio, models, features, or
+modes. Keeping that launcher isolated makes the display/event-loop boundary
+testable on the Pi before runtime ownership moves away from `BotGUI`.
 
 ## Display navigation
 

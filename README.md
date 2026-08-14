@@ -120,6 +120,31 @@ source .venv/bin/activate
 python agent.py
 ```
 
+### Qt/QML Migration Preview
+
+The production launcher remains Tk-based while the interface is migrated in
+tested slices. To run the current fullscreen Qt shell with BMO's real face
+frames, animation timing, touch gestures, image-overlay surface, and diagnostic
+HUD:
+
+```bash
+QT_QPA_PLATFORM=wayland python qt_agent.py
+```
+
+Tap the face to show or hide the HUD. Swipe left and then tap to display the
+`Menu request received` diagnostic. Use **Exit Preview** in the HUD to close the
+shell. The preview intentionally does not start the microphone, models, tools,
+or modes yet.
+
+### Development Tests
+
+Pytest is a development dependency rather than a kiosk runtime dependency:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
 ---
 
 ## 📂 Configuration (`config/`)
