@@ -26,18 +26,23 @@ class ModeRegistry:
         self._registration_ledger = RegistrationLedger[InteractionMode]()
         self._closed = False
         self._lock = threading.RLock()
-        for mode in modes:
-            try:
-                self.register(mode)
-            except Exception:
-                if not any(owned is mode for owned in self._modes.values()):
-                    self._close_mode(
-                        mode,
-                        action="reject",
-                        mode_name="<unregistered>",
-                    )
-                self.close()
-                raise
+        try:
+            for mode in modes:
+                try:
+                    self.register(mode)
+                except BaseException:
+                    if not any(
+                        owned is mode for owned in self._modes.values()
+                    ):
+                        self._close_mode(
+                            mode,
+                            action="reject",
+                            mode_name="<unregistered>",
+                        )
+                    raise
+        except BaseException:
+            self.close()
+            raise
 
     def register(self, mode: InteractionMode) -> None:
         """Register a mode under its unique normalized name."""
@@ -106,7 +111,7 @@ class ModeRegistry:
         with self._registration_ledger.transaction() as attempts:
             try:
                 yield
-            except Exception:
+            except BaseException:
                 with self._lock:
                     self._modes = modes_before
                     self._menu_items = menu_items_before

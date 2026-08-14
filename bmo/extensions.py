@@ -19,7 +19,7 @@ FailureT = TypeVar("FailureT")
 ExtensionT = TypeVar("ExtensionT")
 
 
-@dataclass
+@dataclass(slots=True)
 class RegistrationAttempt(Generic[ExtensionT]):
     """One candidate owned by the active registration transaction."""
 
@@ -51,15 +51,17 @@ class RegistrationLedger(Generic[ExtensionT]):
         """Open a scope and transfer successful nested ownership upward."""
         attempts: list[RegistrationAttempt[ExtensionT]] = []
         self._transactions.append(attempts)
+        completed = False
         try:
             yield attempts
-        except Exception:
-            raise
-        else:
-            if len(self._transactions) > 1:
-                self._transactions[-2].extend(attempts)
+            completed = True
         finally:
-            self._transactions.pop()
+            try:
+                if completed and len(self._transactions) > 1:
+                    self._transactions[-2].extend(attempts)
+            finally:
+                popped = self._transactions.pop()
+                assert popped is attempts
 
 
 def default_extension_entries(modules: Sequence[str]) -> list[dict[str, Any]]:

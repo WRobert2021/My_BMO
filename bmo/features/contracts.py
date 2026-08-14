@@ -7,6 +7,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, TypeAlias
 
+from bmo.archive import (
+    normalize_archive_category,
+    normalize_archive_filename,
+    normalize_archive_suffix,
+)
 from bmo.text import normalize_spoken_command
 
 
@@ -347,8 +352,7 @@ class ToolContext:
         """Allocate a runtime-approved path for one local artifact."""
         if not isinstance(kind, ToolAttachmentKind):
             raise TypeError("Artifact kind must be a ToolAttachmentKind.")
-        if not isinstance(suffix, str) or not suffix.startswith("."):
-            raise ValueError("Artifact suffix must start with '.'.")
+        suffix = normalize_archive_suffix(suffix)
         path = self.artifact_allocator(kind, suffix)
         if not isinstance(path, Path):
             raise TypeError("Artifact allocator must return pathlib.Path.")
@@ -503,10 +507,16 @@ class ToolArchive:
     details: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.category, str) or not self.category.strip():
-            raise ValueError("Tool archive category cannot be empty.")
-        if not isinstance(self.filename, str) or not self.filename.strip():
-            raise ValueError("Tool archive filename cannot be empty.")
+        object.__setattr__(
+            self,
+            "category",
+            normalize_archive_category(self.category),
+        )
+        object.__setattr__(
+            self,
+            "filename",
+            normalize_archive_filename(self.filename),
+        )
         if self.details is not None and not isinstance(self.details, dict):
             raise TypeError("Tool archive details must be a dictionary.")
 

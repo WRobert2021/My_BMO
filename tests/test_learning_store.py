@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import bmo.features.learning.store as learning_store_module
 from bmo.features.learning.config import (
     DEFAULT_DATA_DIRECTORY,
     DEFAULT_GRAPHICS_DIRECTORY,
@@ -341,6 +342,27 @@ class LearningStoreTests(unittest.TestCase):
             self.assertEqual(store.list_profiles(), ())
             self.assertEqual(store.list_plans(), ())
             self.assertFalse(root.exists())
+
+    def test_writes_reuse_each_validated_serialized_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = self.make_store(Path(directory) / "learning")
+            with patch(
+                "bmo.features.learning.store._profile_to_json",
+                wraps=learning_store_module._profile_to_json,
+            ) as profile_to_json:
+                profile = store.create_profile("River")
+            self.assertEqual(profile_to_json.call_count, 1)
+
+            with patch(
+                "bmo.features.learning.store._plan_to_json",
+                wraps=learning_store_module._plan_to_json,
+            ) as plan_to_json:
+                store.create_plan(
+                    profile.profile_id,
+                    "Letters",
+                    ("letters.uppercase",),
+                )
+            self.assertEqual(plan_to_json.call_count, 1)
 
     def test_profile_and_plan_crud_round_trip_with_stable_ids_and_utc_time(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

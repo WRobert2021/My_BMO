@@ -1,4 +1,5 @@
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,6 +52,45 @@ class InteractionArchiveTests(unittest.TestCase):
             manifest = json.loads((archive.path / "manifest.json").read_text())
             self.assertEqual(manifest["status"], "completed")
             self.assertIn("finished_at", manifest)
+
+    def test_archive_paths_are_contained_and_non_finite_values_are_strict_json(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            archive = InteractionArchiveManager(directory).begin("PTT")
+            assert archive is not None
+
+            for filename in ("../manifest.json", "nested/tools.jsonl", ".."):
+                with self.subTest(filename=filename), self.assertRaisesRegex(
+                    ValueError,
+                    "leaf name",
+                ):
+                    archive.append_json("output", filename, {})
+
+            archive.append_json(
+                "output",
+                "numbers.jsonl",
+                {
+                    "timestamp": "spoofed",
+                    "nan": math.nan,
+                    "positive": math.inf,
+                    "negative": -math.inf,
+                },
+            )
+            record = json.loads(
+                (archive.path / "output" / "numbers.jsonl").read_text()
+            )
+            self.assertEqual(
+                (record["nan"], record["positive"], record["negative"]),
+                ("nan", "inf", "-inf"),
+            )
+            self.assertNotEqual(record["timestamp"], "spoofed")
+            for suffix in ("../../outside.jpg", ".tar.gz", "."):
+                with self.subTest(suffix=suffix), self.assertRaisesRegex(
+                    ValueError,
+                    "suffix",
+                ):
+                    archive.image_path(suffix)
 
     def test_disabled_manager_does_not_create_logs(self):
         with tempfile.TemporaryDirectory() as directory:

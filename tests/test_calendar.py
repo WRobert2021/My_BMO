@@ -8,7 +8,7 @@ import threading
 import unittest
 from datetime import date, datetime, time
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from bmo.app import BotGUI
 from bmo.features.calendar import CalendarMidnightWorker, CalendarTool
@@ -55,6 +55,45 @@ class CalendarStoreTests(unittest.TestCase):
                 date(2026, 8, 12),
                 all_day=True,
                 recurrence={},  # type: ignore[arg-type]
+            )
+        with self.assertRaisesRegex(CalendarDataError, "frequency"):
+            RecurrenceRule(frequency=None)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(CalendarDataError, "event name"):
+            CalendarEvent(
+                "event",
+                42,  # type: ignore[arg-type]
+                date(2026, 8, 12),
+                all_day=True,
+            )
+        with self.assertRaisesRegex(CalendarDataError, "notes"):
+            CalendarEvent(
+                "event",
+                "Invalid",
+                date(2026, 8, 12),
+                all_day=True,
+                notes=None,  # type: ignore[arg-type]
+            )
+
+    def test_calendar_json_rejects_values_that_would_be_string_coerced(self) -> None:
+        base = {
+            "id": "event",
+            "name": "Event",
+            "start_date": "2026-08-12",
+            "all_day": True,
+        }
+        for field, value, message in (
+            ("name", 42, "event name"),
+            ("category", False, "event category"),
+            ("notes", None, "event notes"),
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                CalendarDataError,
+                message,
+            ):
+                CalendarEvent.from_json({**base, field: value})
+        with self.assertRaisesRegex(CalendarDataError, "frequency"):
+            CalendarEvent.from_json(
+                {**base, "recurrence": {"frequency": None}}
             )
 
     def test_store_rejects_invalid_write_values_with_domain_errors(self) -> None:
@@ -120,6 +159,23 @@ class CalendarStoreTests(unittest.TestCase):
             self.assertEqual(reloaded.events(), (event,))
             self.assertTrue(reloaded.is_acknowledged("event-1@2026-08-12"))
             self.assertFalse(reloaded.is_acknowledged("event-1@2026-08-17"))
+
+    def test_loaded_acknowledgement_ids_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "acknowledgements.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "acknowledged": [" event@2026-08-12 "],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            store = CalendarStore(directory)
+
+            self.assertTrue(store.is_acknowledged("event@2026-08-12"))
+            self.assertTrue(store.is_acknowledged(" event@2026-08-12 "))
 
     def test_malformed_data_is_not_overwritten_and_disables_writes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -254,6 +310,45 @@ class CalendarStoreTests(unittest.TestCase):
                         date(2400, 12, 31),
                     ),
                     (),
+                )
+
+    def test_exhausted_recurrence_count_stops_after_first_candidate(self) -> None:
+        event = CalendarEvent(
+            "old-weekly",
+            "Old weekly event",
+            date(1900, 1, 1),
+            all_day=True,
+            recurrence=RecurrenceRule(frequency="weekly", count=2),
+        )
+
+        with patch(
+            "bmo.features.calendar_store._occurrence_ordinal",
+            return_value=3,
+        ) as ordinal:
+            self.assertEqual(
+                occurrence_dates(
+                    event,
+                    date(2400, 1, 1),
+                    date(9999, 12, 31),
+                ),
+                (),
+            )
+
+        ordinal.assert_called_once()
+
+    def test_recurrence_generation_handles_maximum_calendar_date(self) -> None:
+        for frequency in ("weekly", "monthly", "yearly"):
+            event = CalendarEvent(
+                f"max-{frequency}",
+                "Maximum date",
+                date.max,
+                all_day=True,
+                recurrence=RecurrenceRule(frequency=frequency),
+            )
+            with self.subTest(frequency=frequency):
+                self.assertEqual(
+                    occurrence_dates(event, date.max, date.max),
+                    (date.max,),
                 )
 
 

@@ -378,6 +378,29 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertEqual(outer.close_count, 1)
         self.assertEqual(inner.close_count, 1)
 
+    def test_caught_inner_interruption_does_not_transfer_rollback_ownership(
+        self,
+    ) -> None:
+        outer = ResourceTool("outer")
+        inner = ResourceTool("inner")
+        registry = ToolRegistry()
+
+        with registry.registration():
+            registry.register(outer)
+            with self.assertRaises(KeyboardInterrupt):
+                with registry.registration():
+                    registry.register(inner)
+                    raise KeyboardInterrupt
+
+        self.assertEqual(registry.actions, {"outer"})
+        self.assertEqual(outer.close_count, 0)
+        self.assertEqual(inner.close_count, 1)
+
+        registry.close()
+
+        self.assertEqual(outer.close_count, 1)
+        self.assertEqual(inner.close_count, 1)
+
     def test_settings_are_passed_to_the_module_registration_hook(self) -> None:
         module = types.ModuleType("configured")
         received = []

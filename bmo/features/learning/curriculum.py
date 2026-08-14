@@ -7,6 +7,7 @@ selects a reusable generator from the definition.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 import string
 from types import MappingProxyType
@@ -862,7 +863,11 @@ def validate_catalog(catalog: Catalog) -> Catalog:
         raise TypeError("catalog must be a Catalog")
     ids = tuple(lesson.lesson_id for lesson in catalog.lessons)
     if len(ids) != len(set(ids)):
-        duplicates = sorted({lesson_id for lesson_id in ids if ids.count(lesson_id) > 1})
+        duplicates = sorted(
+            lesson_id
+            for lesson_id, count in Counter(ids).items()
+            if count > 1
+        )
         raise LearningDataError("duplicate lesson id(s): " + ", ".join(duplicates))
     if len(catalog._by_id) != len(catalog.lessons):
         raise LearningDataError("catalog lesson index lost duplicate ids")

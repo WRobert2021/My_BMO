@@ -159,7 +159,7 @@ def atomic_write(
         replace(temporary, destination)
         if fsync_directory:
             _fsync_directory(destination.parent)
-    except Exception:
+    except BaseException:
         if descriptor_open:
             try:
                 os.close(descriptor)

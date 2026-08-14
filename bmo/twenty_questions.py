@@ -9,11 +9,12 @@ reveals the target object.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
 import re
+from types import MappingProxyType
 from typing import Any
 
 from bmo.jsonio import (
@@ -60,7 +61,7 @@ BONUS_INTRODUCTION = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DatasetRow:
     """One normalized wide row, aligned to a catalog's question ordering."""
 
@@ -71,7 +72,7 @@ class DatasetRow:
         return self.answers[question_index]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DatasetCatalog:
     """Immutable effective catalog used by a game and its index."""
 
@@ -80,6 +81,54 @@ class DatasetCatalog:
     base_rows: tuple[DatasetRow, ...] = ()
     learned_rows: tuple[DatasetRow, ...] = ()
     learning_enabled: bool = True
+    _object_names: tuple[str, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _canonical_names: tuple[str, ...] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _rows_by_name: Mapping[str, DatasetRow] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
+    _question_indices: Mapping[str, int] = field(
+        init=False,
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        object_names = tuple(row.name for row in self.rows)
+        canonical_names = tuple(
+            canonical_object_name(name) for name in object_names
+        )
+        rows_by_name: dict[str, DatasetRow] = {}
+        for canonical, row in zip(
+            canonical_names,
+            self.rows,
+            strict=True,
+        ):
+            rows_by_name.setdefault(canonical, row)
+        object.__setattr__(self, "_object_names", object_names)
+        object.__setattr__(self, "_canonical_names", canonical_names)
+        object.__setattr__(
+            self,
+            "_rows_by_name",
+            MappingProxyType(rows_by_name),
+        )
+        question_indices: dict[str, int] = {}
+        for index, key in enumerate(self.question_keys):
+            question_indices.setdefault(key, index)
+        object.__setattr__(
+            self,
+            "_question_indices",
+            MappingProxyType(question_indices),
+        )
 
     @property
     def object_count(self) -> int:
@@ -96,14 +145,15 @@ class DatasetCatalog:
 
     @property
     def object_names(self) -> tuple[str, ...]:
-        return tuple(row.name for row in self.rows)
+        return self._object_names
 
     def row_by_name(self, name: str) -> DatasetRow | None:
         wanted = canonical_object_name(name)
-        return next(
-            (row for row in self.rows if canonical_object_name(row.name) == wanted),
-            None,
-        )
+        return self._rows_by_name.get(wanted)
+
+    def question_index(self, question_key: str) -> int | None:
+        """Return the stable index for one exact dataset question key."""
+        return self._question_indices.get(question_key)
 
 
 # A more explicit name is useful to integrations without making the internal
@@ -111,7 +161,7 @@ class DatasetCatalog:
 BaseCatalog = DatasetCatalog
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LearningOutcome:
     """Result of one confirmed/revealed target learning operation."""
 
@@ -345,14 +395,7 @@ class TwentyQuestionsDatasetLoader:
 
         current = dict(self._learned_rows)
         existing = current.get(canonical)
-        base_row = next(
-            (
-                row
-                for row in base.rows
-                if canonical_object_name(row.name) == canonical
-            ),
-            None,
-        )
+        base_row = base.row_by_name(display_name)
         if existing is None:
             if base_row is not None:
                 # Do not create an all-Unknown overlay for a base object unless
@@ -371,9 +414,8 @@ class TwentyQuestionsDatasetLoader:
             answer = normalize_player_answer(raw_answer)
             if answer not in {"yes", "no", "sometimes"}:
                 continue
-            try:
-                question_index = base.question_keys.index(question_key)
-            except ValueError:
+            question_index = base.question_index(question_key)
+            if question_index is None:
                 continue
 
             base_answer = (
@@ -559,7 +601,7 @@ def load_dataset(
     return TwentyQuestionsDatasetLoader(base_path, learned_path).load()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class QuestionMasks:
     yes: int
     no: int
@@ -572,7 +614,7 @@ class QuestionMasks:
         return self.often | self.unknown
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CandidateIndex:
     """Compact inverted bitset index for an effective catalog."""
 
@@ -616,7 +658,7 @@ class CandidateIndex:
 
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Turn:
     question_key: str
     question: str
@@ -797,7 +839,8 @@ class TwentyQuestionsGame:
             return REVEAL_PROMPT
 
         question_key = self.current_question
-        question_index = self.catalog.question_keys.index(question_key)
+        question_index = self.catalog.question_index(question_key)
+        assert question_index is not None
         before_pool = self.candidate_pool
         self.asked_keys.add(question_key)
         branches = self.index.branch_masks(question_index, before_pool)  # type: ignore[union-attr]
@@ -1120,7 +1163,8 @@ class TwentyQuestionsGame:
             question_key = self.catalog.question_keys[
                 self.total_prompt_count % len(self.catalog.question_keys)
             ]
-        question_index = self.catalog.question_keys.index(question_key)
+        question_index = self.catalog.question_index(question_key)
+        assert question_index is not None
         branches = self.index.branch_masks(question_index, self.candidate_pool)
         return (
             question_key,
@@ -1140,21 +1184,20 @@ class TwentyQuestionsGame:
     def _next_candidate_guess(self) -> DatasetRow | None:
         if self.catalog is None:
             return None
-        for index, row in enumerate(self.catalog.rows):
-            if (
-                self.candidate_pool & (1 << index)
-                and canonical_object_name(row.name) not in self._attempted_names
-            ):
-                return row
+        candidates = self.candidate_pool
+        while candidates:
+            candidate_bit = candidates & -candidates
+            index = candidate_bit.bit_length() - 1
+            if self.catalog._canonical_names[index] not in self._attempted_names:
+                return self.catalog.rows[index]
+            candidates ^= candidate_bit
         return None
 
     def _only_candidate(self) -> DatasetRow | None:
         if self.catalog is None or self.candidate_count != 1:
             return None
-        for index, row in enumerate(self.catalog.rows):
-            if self.candidate_pool & (1 << index):
-                return row
-        return None
+        index = self.candidate_pool.bit_length() - 1
+        return self.catalog.rows[index] if index >= 0 else None
 
     def _reveal_prompt(self) -> str:
         notice = self._pending_notice

@@ -64,18 +64,23 @@ class ToolRegistry:
         self._attention_callback = attention_callback
         self._registration_ledger = RegistrationLedger[Tool]()
         self._closed = False
-        for tool in tools:
-            try:
-                self.register(tool)
-            except Exception:
-                if not any(owned is tool for owned in self._tools.values()):
-                    self._close_tool(
-                        tool,
-                        action="reject",
-                        tool_action="<unregistered>",
-                    )
-                self.close()
-                raise
+        try:
+            for tool in tools:
+                try:
+                    self.register(tool)
+                except BaseException:
+                    if not any(
+                        owned is tool for owned in self._tools.values()
+                    ):
+                        self._close_tool(
+                            tool,
+                            action="reject",
+                            tool_action="<unregistered>",
+                        )
+                    raise
+        except BaseException:
+            self.close()
+            raise
 
     def notify_runtime(self, notification: RuntimeNotification) -> None:
         """Present an asynchronous feature notification through the runtime."""
@@ -158,7 +163,7 @@ class ToolRegistry:
         with self._registration_ledger.transaction() as attempts:
             try:
                 yield
-            except Exception:
+            except BaseException:
                 existing_tool_ids = {
                     id(tool) for tool in tools_before.values()
                 }

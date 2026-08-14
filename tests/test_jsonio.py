@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 from bmo.jsonio import (
     DuplicateJSONKeyError,
+    atomic_write,
     atomic_write_json,
     first_json_object,
     load_json,
@@ -65,6 +66,23 @@ class StrictJsonTests(unittest.TestCase):
 
 
 class AtomicJsonTests(unittest.TestCase):
+    def test_interruption_removes_temporary_file_and_preserves_destination(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "value.json"
+            path.write_text('{"old":true}\n', encoding="utf-8")
+
+            def interrupt(handle) -> None:
+                handle.write('{"partial":')
+                raise KeyboardInterrupt
+
+            with self.assertRaises(KeyboardInterrupt):
+                atomic_write(path, interrupt)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), '{"old":true}\n')
+            self.assertEqual(list(path.parent.glob(".value.json.*.tmp")), [])
+
     def test_replace_failure_preserves_destination_and_removes_temporary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "value.json"

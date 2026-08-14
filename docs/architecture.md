@@ -67,7 +67,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   the Twenty Questions layers.
 - `bmo.modes.games` — compatibility imports for the two built-in adapters.
 - `bmo.memory` — conversation-history loading and atomic persistence.
-- `bmo.archive` — append-only, per-interaction artifacts and event metadata.
+- `bmo.archive` — contained per-interaction artifacts, strict JSONL event
+  metadata, and the shared archive category/filename policy.
 - `bmo.config` — defaults, paths, Ollama options, and JSON loading.
 - `bmo.prompts` — system-prompt construction.
 - `bmo.state` — shared UI/application states.
@@ -101,8 +102,14 @@ registration ownership ledger, failure isolation, and settings-overlay sequence;
 feature and mode loaders retain their typed registries, result records, failure
 wording, defaults, and distinct hook signatures. `bmo.jsonio` owns only JSON
 syntax policy, first-object extraction from model text, and durable replacement
-mechanics, while each feature retains its schema validation, safe-path rules,
-read-only policy, and domain exceptions. Network responses, conversation
+mechanics, including temporary-file cleanup when a write is interrupted.
+`bmo.archive` owns its fixed category vocabulary, leaf-filename containment,
+and short alphanumeric artifact-suffix policy; feature result contracts
+validate that shared policy before execution, while the archive writer applies
+it again at the filesystem boundary and converts non-finite diagnostic floats
+to strings so every JSONL record remains strict.
+Each feature retains its schema validation, other safe-path rules, read-only
+policy, and domain exceptions. Network responses, conversation
 history, Calendar records, Learning configuration, and Twenty Questions
 persistence all use that strict duplicate/non-finite-number policy at their
 trust boundaries; malformed data falls back, enters the owning read-only mode,
@@ -119,6 +126,8 @@ Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.
 `bmo.features.learning.codec` is the sole private on-disk schema and uses the
 persisted plan field `title`; the store no longer reimplements those records.
+Each store write serializes a record once, validates that exact representation,
+and reuses it for atomic persistence rather than rebuilding the payload.
 Pure progress calculations live in `learning.analytics`, so generation,
 persistence, and reporting can evolve independently. Twenty Questions keeps
 its stable `bmo.twenty_questions` facade while text normalization and shared
@@ -378,10 +387,13 @@ added. Chromium runs only while the weather view is open.
 Calendar persistence, recurrence, color selection, and quiet-hours enforcement
 use only Python's standard library and existing Tk/Pillow packages. The system
 local date and time are authoritative; there is no feature-level timezone.
-Calendar value objects reject `datetime` values where an exact `date` or `time`
-is required and reject non-domain values before persistence. Recurrence count
-ordinals use bounded calendar arithmetic for weekly, monthly, and yearly rules,
-so querying a count-limited event does not walk from a decades-old start date.
+Calendar value objects require exact string, `date`, and `time` domain values;
+they reject `datetime` and values that would otherwise be silently stringified.
+Recurrence candidates are generated lazily, stop at the first exhausted count,
+and use bounded ordinal arithmetic for weekly, monthly, and yearly rules, so a
+count-limited query neither allocates the whole range nor walks from a
+decades-old start date. Frozen recurrence, event, and occurrence records use
+slots because they never accept dynamic attributes.
 Private event data lives under `data/calendar`, optional calendar overlay art
 lives under `faces/calendar`, and calendar/quiet-hours settings live in
 `config/calendar.json` and `config/quiet_hours.json`. These paths are local and
@@ -562,7 +574,8 @@ context must be `ModeRuntimeContext`; it deliberately exposes approved services
 rather than the entire GUI coordinator. Registration order controls the first
 matching start request. The built-in modules construct the existing adapters.
 Twenty Questions owns a lazily loaded immutable base JSONL catalog, an
-integer-bitset adaptive partition index, and its local learned JSONL overlay;
+integer-bitset adaptive partition index, cached canonical name/question lookup
+indices, compact slotted dataset records, and its local learned JSONL overlay;
 it does not use Bayesian seed entities or model-generated candidate expansion.
 
 A mode can expose an optional `ModeMenuItem` with the same normalized name as
@@ -617,11 +630,12 @@ without disturbing earlier modules. Rolled-back tools and modes are closed
 immediately in reverse attempt order, including the rejected candidate that
 raised before it entered the registry. Nested registration transactions merge
 successful inner ownership into their parent so a later outer rollback still
-closes every candidate exactly once. Registry construction applies the same
-cleanup guarantee if a later initial tool or mode is invalid, and closed
-registries reject further registration. Diagnostic reporter failures are
-isolated from extension loading so they cannot prevent later valid entries from
-starting.
+closes every candidate exactly once. Rollback and constructor cleanup also run
+for an escaping process interruption or extension-iterator failure before that
+control flow is re-raised. Registry construction applies the same cleanup
+guarantee if a later initial tool or mode is invalid, and closed registries
+reject further registration. Diagnostic reporter failures are isolated from
+extension loading so they cannot prevent later valid entries from starting.
 Tool action identifiers, aliases, schemas, prompt guidance, and examples are
 validated and normalized during the same transaction. The registry caches that
 immutable capability snapshot, and each prompt build reads one registry

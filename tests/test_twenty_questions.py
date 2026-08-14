@@ -19,6 +19,7 @@ from bmo.twenty_questions import (
     TwentyQuestionsDataError,
     TwentyQuestionsDatasetLoader,
     TwentyQuestionsGame,
+    canonical_object_name,
     normalize_player_answer,
 )
 
@@ -84,7 +85,17 @@ class DatasetLoaderTests(unittest.TestCase):
         catalog = TwentyQuestionsDatasetLoader(self.base, self.learned).load_base()
         self.assertEqual(catalog.question_keys, QUESTIONS)
         self.assertEqual(catalog.object_names, ("Alpha", "Beta", "Gamma", "Delta"))
+        self.assertIs(catalog.object_names, catalog.object_names)
+        self.assertEqual(catalog.question_index(QUESTIONS[2]), 2)
+        self.assertIsNone(catalog.question_index("Unknown question"))
         self.assertEqual(catalog.rows[0].answers, ("yes", "yes", "no", "no"))
+
+        with patch(
+            "bmo.twenty_questions.canonical_object_name",
+            wraps=canonical_object_name,
+        ) as normalize:
+            self.assertEqual(catalog.row_by_name("DELTA").name, "Delta")
+        normalize.assert_called_once_with("DELTA")
 
     def test_case_insensitive_answer_normalization(self) -> None:
         rows = base_rows()

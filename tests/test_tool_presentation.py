@@ -165,6 +165,16 @@ class ToolPresentationTests(unittest.TestCase):
         self.assertEqual(archive_call.args[:2], ("web", "hardware.jsonl"))
         self.assertEqual(archive_call.args[2]["details"], details)
 
+    def test_archive_metadata_is_normalized_and_rejects_escaping_paths(self) -> None:
+        archive = ToolArchive(" output ", " tools.jsonl ")
+
+        self.assertEqual(archive.category, "output")
+        self.assertEqual(archive.filename, "tools.jsonl")
+        with self.assertRaisesRegex(ValueError, "Unknown archive category"):
+            ToolArchive("other", "tools.jsonl")
+        with self.assertRaisesRegex(ValueError, "leaf name"):
+            ToolArchive("output", "../tools.jsonl")
+
 
 if __name__ == "__main__":
     unittest.main()

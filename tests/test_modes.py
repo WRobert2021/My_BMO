@@ -112,6 +112,32 @@ class ModeRegistryTests(unittest.TestCase):
         self.assertEqual(first.close_count, 1)
         self.assertEqual(duplicate.close_count, 1)
 
+    def test_constructor_interruption_while_iterating_closes_owned_modes(
+        self,
+    ) -> None:
+        mode = StubMode("first", "start first")
+
+        def interrupted_modes():
+            yield mode
+            raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            ModeRegistry(interrupted_modes())
+
+        self.assertEqual(mode.close_count, 1)
+
+    def test_registration_interruption_rolls_back_attempted_mode(self) -> None:
+        mode = StubMode("first", "start first")
+        registry = ModeRegistry()
+
+        with self.assertRaises(SystemExit):
+            with registry.registration():
+                registry.register(mode)
+                raise SystemExit
+
+        self.assertEqual(registry.names, ())
+        self.assertEqual(mode.close_count, 1)
+
     def test_nested_mode_registration_rolls_back_outer_resources(self) -> None:
         outer = StubMode("outer", "start outer")
         inner = StubMode("inner", "start inner")

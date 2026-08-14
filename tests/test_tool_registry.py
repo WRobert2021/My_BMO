@@ -18,6 +18,7 @@ from bmo.features import (
     SearchWebTool,
     ToolArchive,
     ToolAttachment,
+    ToolAttachmentKind,
     ToolContract,
     ToolContext,
     ToolRegistry,
@@ -134,6 +135,46 @@ class ToolRegistryTests(unittest.TestCase):
 
         resource.close.assert_called_once_with()
         rejected.close.assert_called_once_with()
+
+    def test_constructor_interruption_while_iterating_closes_owned_tools(
+        self,
+    ) -> None:
+        class ResourceTool:
+            action = "status"
+            aliases = ()
+
+            def __init__(self) -> None:
+                self.close = Mock()
+
+        resource = ResourceTool()
+
+        def interrupted_tools():
+            yield resource
+            raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            ToolRegistry(interrupted_tools())
+
+        resource.close.assert_called_once_with()
+
+    def test_registration_interruption_rolls_back_attempted_tool(self) -> None:
+        class ResourceTool:
+            action = "status"
+            aliases = ()
+
+            def __init__(self) -> None:
+                self.close = Mock()
+
+        resource = ResourceTool()
+        registry = ToolRegistry()
+
+        with self.assertRaises(KeyboardInterrupt):
+            with registry.registration():
+                registry.register(resource)
+                raise KeyboardInterrupt
+
+        self.assertEqual(registry.actions, set())
+        resource.close.assert_called_once_with()
 
     def test_feature_menu_metadata_and_launch_stay_registry_driven(self) -> None:
         class MenuTool:
@@ -281,6 +322,22 @@ class ToolRegistryTests(unittest.TestCase):
             context,
         )
         simple_handler.assert_called_once_with({"action": "simple"})
+
+    def test_tool_context_rejects_artifact_suffix_path_components(self) -> None:
+        allocator = Mock(return_value=Path("/tmp/output.jpg"))
+        context = ToolContext(
+            artifact_allocator=allocator,
+            event_recorder=Mock(),
+            status_requester=Mock(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "suffix"):
+            context.allocate_artifact(
+                ToolAttachmentKind.IMAGE,
+                "../../outside.jpg",
+            )
+
+        allocator.assert_not_called()
 
     def test_prepares_model_requests_without_losing_json_fields_or_types(
         self,

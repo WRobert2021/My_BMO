@@ -410,8 +410,9 @@ class LearningStore:
         supplied = tuple(profiles)
         if any(not isinstance(item, LearnerProfile) for item in supplied):
             raise TypeError("profiles must be LearnerProfile records")
-        for profile in supplied:
-            _profile_from_json(_profile_to_json(profile))
+        serialized = tuple(_profile_to_json(profile) for profile in supplied)
+        for value in serialized:
+            _profile_from_json(value)
         self._assert_unique(supplied, lambda item: item.profile_id, "profile")
         timestamp = self._timestamp()
         self._atomic_write(
@@ -419,7 +420,7 @@ class LearningStore:
             {
                 "version": SCHEMA_VERSION,
                 "updated_at": timestamp,
-                "profiles": [_profile_to_json(profile) for profile in supplied],
+                "profiles": serialized,
             },
         )
         self._profiles = supplied
@@ -428,8 +429,9 @@ class LearningStore:
         supplied = tuple(plans)
         if any(not isinstance(item, LearningPlan) for item in supplied):
             raise TypeError("plans must be LearningPlan records")
-        for plan in supplied:
-            _plan_from_json(_plan_to_json(plan))
+        serialized = tuple(_plan_to_json(plan) for plan in supplied)
+        for value in serialized:
+            _plan_from_json(value)
         self._assert_unique(supplied, lambda item: item.plan_id, "plan")
         profile_ids = {profile.profile_id for profile in self._profiles}
         if any(plan.profile_id not in profile_ids for plan in supplied):
@@ -441,7 +443,7 @@ class LearningStore:
             {
                 "version": SCHEMA_VERSION,
                 "updated_at": self._timestamp(),
-                "plans": [_plan_to_json(plan) for plan in supplied],
+                "plans": serialized,
             },
         )
         self._plans = supplied
@@ -457,10 +459,16 @@ class LearningStore:
             raise TypeError("attempts must be AttemptRecord records")
         if any(not isinstance(item, LearningSession) for item in bounded_sessions):
             raise TypeError("sessions must be LearningSession records")
-        for attempt in bounded_attempts:
-            _attempt_from_json(attempt.to_json())
-        for session in bounded_sessions:
-            _session_from_json(_session_to_json(session))
+        serialized_attempts = tuple(
+            attempt.to_json() for attempt in bounded_attempts
+        )
+        serialized_sessions = tuple(
+            _session_to_json(session) for session in bounded_sessions
+        )
+        for value in serialized_attempts:
+            _attempt_from_json(value)
+        for value in serialized_sessions:
+            _session_from_json(value)
         self._assert_unique(bounded_attempts, lambda item: item.attempt_id, "attempt")
         self._assert_unique(bounded_sessions, lambda item: item.session_id, "session")
         self._assert_unique_attempt_numbers(bounded_attempts)
@@ -471,8 +479,8 @@ class LearningStore:
             {
                 "version": SCHEMA_VERSION,
                 "updated_at": self._timestamp(),
-                "attempts": [attempt.to_json() for attempt in bounded_attempts],
-                "sessions": [_session_to_json(session) for session in bounded_sessions],
+                "attempts": serialized_attempts,
+                "sessions": serialized_sessions,
             },
         )
         self._attempts = bounded_attempts
