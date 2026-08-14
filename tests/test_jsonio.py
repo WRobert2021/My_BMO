@@ -55,6 +55,14 @@ class StrictJsonTests(unittest.TestCase):
             )
         )
 
+    def test_excessive_json_nesting_is_rejected_cleanly(self) -> None:
+        embedded = '{"nested":' * 65 + "null" + "}" * 65
+        deeply_nested = "[" * 20000 + "0" + "]" * 20000
+
+        self.assertIsNone(first_json_object(embedded))
+        with self.assertRaisesRegex(ValueError, "nesting is too deep"):
+            loads_json(deeply_nested)
+
 
 class AtomicJsonTests(unittest.TestCase):
     def test_replace_failure_preserves_destination_and_removes_temporary(self) -> None:

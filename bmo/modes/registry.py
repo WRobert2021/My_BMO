@@ -33,7 +33,10 @@ class ModeRegistry:
 
     def register(self, mode: InteractionMode) -> None:
         """Register a mode under its unique normalized name."""
-        name = str(mode.name).strip().lower()
+        raw_name = mode.name
+        if not isinstance(raw_name, str):
+            raise TypeError("Mode name must be a string.")
+        name = raw_name.strip().lower()
         if not name:
             raise ValueError("Mode name cannot be empty.")
         with self._lock:
@@ -94,14 +97,18 @@ class ModeRegistry:
         except Exception:
             with self._lock:
                 rolled_back = tuple(
-                    mode
+                    (name, mode)
                     for name, mode in self._modes.items()
                     if name not in modes_before
                 )
                 self._modes = modes_before
                 self._menu_items = menu_items_before
-            for mode in reversed(rolled_back):
-                self._close_mode(mode, action="roll back")
+            for mode_name, mode in reversed(rolled_back):
+                self._close_mode(
+                    mode,
+                    action="roll back",
+                    mode_name=mode_name,
+                )
             raise
 
     def match_start_request(self, user_text: str) -> InteractionMode | None:
@@ -131,9 +138,16 @@ class ModeRegistry:
                 raise RuntimeError("Cannot start a mode after closing the registry.")
             if self._current_mode() is not None:
                 raise RuntimeError("Another interaction mode is already active.")
-            registered = self._modes.get(str(mode.name).strip().lower())
-            if registered is not mode:
-                raise LookupError(f"Mode '{mode.name}' is not registered.")
+            mode_name = next(
+                (
+                    name
+                    for name, registered in self._modes.items()
+                    if registered is mode
+                ),
+                None,
+            )
+            if mode_name is None:
+                raise LookupError("The requested mode is not registered.")
             self._active_mode = mode
         try:
             mode.start(user_text)
@@ -200,9 +214,9 @@ class ModeRegistry:
                 return
             self._closed = True
             self._active_mode = None
-            modes = tuple(reversed(tuple(self._modes.values())))
-        for mode in modes:
-            self._close_mode_once(mode)
+            modes = tuple(reversed(tuple(self._modes.items())))
+        for mode_name, mode in modes:
+            self._close_mode_once(mode, mode_name=mode_name)
 
     def _current_mode(self) -> InteractionMode | None:
         mode = self._active_mode
@@ -235,43 +249,51 @@ class ModeRegistry:
     ) -> None:
         """Release, quarantine, and close a mode after a failed callback."""
         with self._lock:
+            mode_name = "<unknown>"
             if self._active_mode is mode:
                 self._active_mode = None
             for name, registered in tuple(self._modes.items()):
                 if registered is mode:
+                    mode_name = name
                     del self._modes[name]
                     self._menu_items.pop(name, None)
             self._quarantined_modes[id(mode)] = mode
         print(
-            f"[MODE] Unexpected failure in '{mode.name}.{lifecycle}': "
+            f"[MODE] Unexpected failure in '{mode_name}.{lifecycle}': "
             f"{type(exc).__name__}: {exc}",
             flush=True,
         )
-        self._close_mode_once(mode, action="clean up")
+        self._close_mode_once(
+            mode,
+            action="clean up",
+            mode_name=mode_name,
+        )
 
     def _close_mode_once(
         self,
         mode: InteractionMode,
         *,
         action: str = "close",
+        mode_name: str = "<unknown>",
     ) -> None:
         with self._lock:
             mode_id = id(mode)
             if self._closed_modes.get(mode_id) is mode:
                 return
             self._closed_modes[mode_id] = mode
-        self._close_mode(mode, action=action)
+        self._close_mode(mode, action=action, mode_name=mode_name)
 
     @staticmethod
     def _close_mode(
         mode: InteractionMode,
         *,
         action: str = "close",
+        mode_name: str = "<unknown>",
     ) -> None:
         try:
             mode.close()
         except Exception as exc:
             print(
-                f"[MODE] Could not {action} '{mode.name}': {exc}",
+                f"[MODE] Could not {action} '{mode_name}': {exc}",
                 flush=True,
             )

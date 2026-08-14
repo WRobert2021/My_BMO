@@ -203,6 +203,41 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertEqual(result.failures[0].stage, "register")
         self.assertIn("hook lookup exploded", result.failures[0].error)
 
+    def test_invalid_prompt_metadata_is_isolated_during_registration(self) -> None:
+        invalid = types.ModuleType("invalid_metadata")
+        after = types.ModuleType("after")
+
+        class InvalidMetadataTool:
+            action = "invalid"
+            aliases = ()
+            schemas = "must not be a bare string"
+
+        invalid.register = lambda registry, settings: registry.register(
+            InvalidMetadataTool()
+        )
+        after.register = lambda registry, settings: registry.register(
+            ToolContract("after", lambda request: ToolResult.success("after"))
+        )
+        modules = {"invalid_metadata": invalid, "after": after}
+
+        with patch(
+            "bmo.features.loader._load_module",
+            side_effect=modules.__getitem__,
+        ):
+            result = load_feature_registry(
+                {
+                    "features": [
+                        {"module": name, "enabled": True, "settings": {}}
+                        for name in modules
+                    ]
+                }
+            )
+
+        self.assertEqual(result.registry.actions, {"after"})
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(result.failures[0].module, "invalid_metadata")
+        self.assertEqual(result.failures[0].stage, "register")
+
     def test_duplicate_registration_is_rolled_back_and_reported(self) -> None:
         first = types.ModuleType("first")
         duplicate = types.ModuleType("duplicate")

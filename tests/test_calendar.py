@@ -77,6 +77,30 @@ class CalendarStoreTests(unittest.TestCase):
                 )
             self.assertEqual(path.read_text(encoding="utf-8"), "not json")
 
+    def test_malformed_nested_calendar_fields_enter_read_only_mode(self) -> None:
+        base_event = {
+            "id": "event-1",
+            "name": "Unsafe",
+            "start_date": "2026-08-12",
+            "all_day": True,
+        }
+        malformed_fields = (
+            {"recurrence": {"frequency": "weekly", "weekdays": [[1]]}},
+            {"excluded_dates": {"not": "a list"}},
+        )
+        for fields in malformed_fields:
+            with (
+                self.subTest(fields=fields),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                path = Path(directory) / "events.json"
+                payload = {"version": 1, "events": [{**base_event, **fields}]}
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                store = CalendarStore(directory)
+
+                self.assertEqual(store.events(), ())
+                self.assertIn("events", store.read_only_error or "")
+
     def test_occurrence_override_excludes_series_date_and_adds_single_event(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CalendarStore(directory)

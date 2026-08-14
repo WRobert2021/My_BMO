@@ -64,6 +64,26 @@ class StubMode:
 
 
 class ModeRegistryTests(unittest.TestCase):
+    def test_mode_name_must_be_a_string(self) -> None:
+        mode = StubMode("valid", "start")
+        mode.name = None  # type: ignore[assignment]
+
+        with self.assertRaisesRegex(TypeError, "name must be a string"):
+            ModeRegistry((mode,))
+
+    def test_registered_mode_identity_does_not_depend_on_later_name_mutation(
+        self,
+    ) -> None:
+        mode = StubMode("stable", "start stable")
+        registry = ModeRegistry((mode,))
+        mode.name = None  # type: ignore[assignment]
+
+        registry.start(mode, "start stable")
+        registry.close()
+
+        self.assertEqual(mode.started_with, ["start stable"])
+        self.assertEqual(mode.close_count, 1)
+
     def test_input_policy_rejects_invalid_silence_timeouts(self) -> None:
         for invalid in (True, "3", float("nan"), float("inf"), 0):
             with self.subTest(value=invalid), self.assertRaises(
@@ -73,6 +93,14 @@ class ModeRegistryTests(unittest.TestCase):
                     InputPolicyKind.CONTINUOUS,
                     initial_silence_timeout=invalid,  # type: ignore[arg-type]
                 )
+
+        with self.assertRaisesRegex(TypeError, "kind"):
+            InputPolicy("continuous")  # type: ignore[arg-type]
+        with self.assertRaisesRegex(TypeError, "listening_status"):
+            InputPolicy(
+                InputPolicyKind.CONTINUOUS,
+                listening_status=None,  # type: ignore[arg-type]
+            )
 
     def test_constructor_failure_closes_already_registered_modes(self) -> None:
         first = StubMode("duplicate", "first")

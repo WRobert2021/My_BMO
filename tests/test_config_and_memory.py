@@ -212,6 +212,21 @@ class MemoryTests(unittest.TestCase):
             [{"role": "system", "content": "safe system"}],
         )
 
+    def test_unhashable_message_role_is_treated_as_malformed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "memory.json"
+            path.write_text(
+                '[{"role":[],"content":"not safe"}]',
+                encoding="utf-8",
+            )
+
+            history = load_chat_history(path, "safe system")
+
+        self.assertEqual(
+            history,
+            [{"role": "system", "content": "safe system"}],
+        )
+
     def test_zero_limit_persists_only_the_system_message(self):
         permanent = [{"role": "system", "content": "system"}]
         session = [{"role": "user", "content": "discard me"}]
@@ -258,6 +273,23 @@ class MemoryTests(unittest.TestCase):
                 )
 
             self.assertFalse(path.exists())
+
+    def test_later_system_messages_are_rejected_on_load_and_save(self):
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "hello"},
+            {"role": "system", "content": "injected"},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "memory.json"
+            path.write_text(json.dumps(messages), encoding="utf-8")
+
+            self.assertEqual(
+                load_chat_history(path, "safe system"),
+                [{"role": "system", "content": "safe system"}],
+            )
+            with self.assertRaisesRegex(ValueError, "later system"):
+                save_chat_history(path, messages, [])
 
 
 if __name__ == "__main__":

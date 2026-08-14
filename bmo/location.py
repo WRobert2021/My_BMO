@@ -29,6 +29,21 @@ class Location:
     longitude: float
     timezone: str = "auto"
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("location name must be a non-empty string")
+        if not isinstance(self.timezone, str) or not self.timezone.strip():
+            raise ValueError("location timezone must be a non-empty string")
+        latitude, longitude = _coordinates(
+            self.latitude,
+            self.longitude,
+            error="location coordinates are invalid",
+        )
+        object.__setattr__(self, "name", self.name.strip())
+        object.__setattr__(self, "latitude", latitude)
+        object.__setattr__(self, "longitude", longitude)
+        object.__setattr__(self, "timezone", self.timezone.strip())
+
 
 JsonRequest = Callable[[str, float], Any]
 

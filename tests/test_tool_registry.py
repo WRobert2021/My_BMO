@@ -31,6 +31,80 @@ from bmo.tools import ToolRouter, default_metadata_router
 
 
 class ToolRegistryTests(unittest.TestCase):
+    def test_prompt_metadata_is_validated_and_cached_at_registration(self) -> None:
+        class MutableTool:
+            action = "status"
+            aliases = ()
+            description = "Initial description"
+            schemas = ('{"action":"status"}',)
+            prompt_guidance = ("Use status.",)
+            prompt_examples = (("Status?", '{"action":"status"}'),)
+
+        tool = MutableTool()
+        registry = ToolRegistry((tool,))
+        original = registry.capabilities
+
+        tool.description = "Changed after registration"
+        tool.schemas = ("invalid mutation",)
+
+        self.assertEqual(registry.capabilities, original)
+        self.assertEqual(registry.actions, {"status"})
+
+    def test_invalid_action_alias_and_prompt_metadata_are_rejected(self) -> None:
+        class InvalidTool:
+            action = 42
+            aliases = ()
+
+        with self.assertRaisesRegex(TypeError, "action name must be a string"):
+            ToolRegistry((InvalidTool(),))
+
+        invalid_aliases = ToolContract("status", Mock())
+        object.__setattr__(invalid_aliases, "aliases", "status")
+        with self.assertRaisesRegex(TypeError, "aliases must be a sequence"):
+            ToolRegistry((invalid_aliases,))
+
+        invalid_metadata = ToolContract("status", Mock())
+        object.__setattr__(invalid_metadata, "schemas", "not-a-sequence")
+        with self.assertRaisesRegex(TypeError, "schemas must be a sequence"):
+            ToolRegistry((invalid_metadata,))
+
+        invalid_schema = ToolContract(
+            "status",
+            Mock(),
+            schemas=('{"action":"different"}',),
+        )
+        with self.assertRaisesRegex(ValueError, "registered action"):
+            ToolRegistry((invalid_schema,))
+
+    def test_direct_matcher_failures_do_not_block_healthy_features(self) -> None:
+        class BrokenMatcherTool:
+            action = "broken"
+            aliases = ()
+
+            @property
+            def match_direct_action(self):
+                raise RuntimeError("matcher lookup exploded")
+
+        wrong_action = ToolContract(
+            "wrong",
+            Mock(),
+            direct_matcher=lambda text: {"action": "healthy"},
+        )
+        healthy = ToolContract(
+            "healthy",
+            Mock(),
+            direct_matcher=lambda text: {"action": "healthy"},
+        )
+        registry = ToolRegistry((BrokenMatcherTool(), wrong_action, healthy))
+
+        output = StringIO()
+        with redirect_stdout(output):
+            result = registry.match_direct_action("match")
+
+        self.assertEqual(result, {"action": "healthy"})
+        self.assertIn("matcher lookup exploded", output.getvalue())
+        self.assertIn("another feature's action", output.getvalue())
+
     def test_constructor_failure_closes_already_registered_tools(self) -> None:
         class ResourceTool:
             action = "status"

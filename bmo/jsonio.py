@@ -47,24 +47,31 @@ _STRICT_JSON_DECODER = json.JSONDecoder(
     object_pairs_hook=reject_duplicate_keys,
     parse_constant=reject_json_constant,
 )
+_MAX_EMBEDDED_OBJECT_DEPTH = 64
 
 
 def load_json(handle: Any) -> Any:
     """Decode strict JSON from a text or binary file-like object."""
-    return json.load(
-        handle,
-        object_pairs_hook=reject_duplicate_keys,
-        parse_constant=reject_json_constant,
-    )
+    try:
+        return json.load(
+            handle,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_json_constant,
+        )
+    except RecursionError as exc:
+        raise ValueError("JSON nesting is too deep") from exc
 
 
 def loads_json(value: str | bytes | bytearray) -> Any:
     """Decode strict JSON from a string or bytes value."""
-    return json.loads(
-        value,
-        object_pairs_hook=reject_duplicate_keys,
-        parse_constant=reject_json_constant,
-    )
+    try:
+        return json.loads(
+            value,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_json_constant,
+        )
+    except RecursionError as exc:
+        raise ValueError("JSON nesting is too deep") from exc
 
 
 def first_json_object(value: str) -> dict[str, Any] | None:
@@ -96,6 +103,8 @@ def first_json_object(value: str) -> dict[str, Any] | None:
             in_string = True
         elif character == "{":
             depth += 1
+            if depth > _MAX_EMBEDDED_OBJECT_DEPTH:
+                return None
         elif character == "}":
             depth -= 1
         if depth != 0:
@@ -107,7 +116,7 @@ def first_json_object(value: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             start = None
             continue
-        except (DuplicateJSONKeyError, ValueError, TypeError):
+        except (DuplicateJSONKeyError, RecursionError, ValueError, TypeError):
             return None
         if isinstance(decoded, dict):
             return decoded

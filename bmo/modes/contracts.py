@@ -93,6 +93,8 @@ class InputPolicy:
     trigger_source: str = "MODE"
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, InputPolicyKind):
+            raise TypeError("Input policy kind must be an InputPolicyKind.")
         if (
             isinstance(self.initial_silence_timeout, bool)
             or not isinstance(self.initial_silence_timeout, (int, float))
@@ -106,6 +108,13 @@ class InputPolicy:
             raise ValueError("Initial silence timeout must be positive.")
         if not isinstance(self.trigger_source, str):
             raise TypeError("Input policy trigger source must be a string.")
+        for name in (
+            "listening_status",
+            "no_speech_status",
+            "empty_transcript_status",
+        ):
+            if not isinstance(getattr(self, name), str):
+                raise TypeError(f"Input policy {name} must be a string.")
         if not self.trigger_source.strip():
             raise ValueError("Input policy trigger source cannot be empty.")
 

@@ -45,11 +45,24 @@ class RecurrenceRule:
         frequency = str(self.frequency).strip().lower()
         if frequency not in VALID_FREQUENCIES:
             raise CalendarDataError(f"unsupported recurrence frequency: {frequency}")
-        weekdays = tuple(sorted(set(self.weekdays)))
-        if any(not isinstance(value, int) or not 0 <= value <= 6 for value in weekdays):
+        try:
+            raw_weekdays = tuple(self.weekdays)
+        except TypeError as exc:
+            raise CalendarDataError(
+                "recurrence weekdays must be a sequence"
+            ) from exc
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 0 <= value <= 6
+            for value in raw_weekdays
+        ):
             raise CalendarDataError("recurrence weekdays must be integers from 0 to 6")
+        weekdays = tuple(sorted(set(raw_weekdays)))
         if frequency != "weekly" and weekdays:
             raise CalendarDataError("recurrence weekdays are only valid for weekly events")
+        if self.end_date is not None and not isinstance(self.end_date, date):
+            raise CalendarDataError("recurrence end_date must be a date")
         if self.count is not None and (
             isinstance(self.count, bool) or not isinstance(self.count, int) or self.count < 1
         ):
@@ -76,9 +89,12 @@ class RecurrenceRule:
             return cls()
         if not isinstance(value, Mapping):
             raise CalendarDataError("event recurrence must be an object")
+        weekdays = value.get("weekdays", [])
+        if not isinstance(weekdays, list):
+            raise CalendarDataError("recurrence weekdays must be a list")
         return cls(
             frequency=str(value.get("frequency", "none")),
-            weekdays=tuple(value.get("weekdays") or ()),
+            weekdays=tuple(weekdays),
             end_date=_optional_date(value.get("end_date"), "recurrence end_date"),
             count=value.get("count"),
             monthly_overflow=str(value.get("monthly_overflow", "last_day")),
@@ -131,7 +147,15 @@ class CalendarEvent:
             int(color[1:], 16)
         except ValueError as exc:
             raise CalendarDataError("event color must use #RRGGBB") from exc
-        exclusions = tuple(sorted(set(self.excluded_dates)))
+        try:
+            raw_exclusions = tuple(self.excluded_dates)
+        except TypeError as exc:
+            raise CalendarDataError(
+                "excluded dates must be a sequence"
+            ) from exc
+        if any(not isinstance(value, date) for value in raw_exclusions):
+            raise CalendarDataError("excluded dates must contain dates")
+        exclusions = tuple(sorted(set(raw_exclusions)))
         parent = str(self.parent_event_id).strip() if self.parent_event_id else None
         overlay = str(self.overlay).strip() if self.overlay else None
         object.__setattr__(self, "event_id", event_id)
@@ -168,6 +192,9 @@ class CalendarEvent:
     def from_json(cls, value: object) -> CalendarEvent:
         if not isinstance(value, Mapping):
             raise CalendarDataError("each event must be an object")
+        excluded_dates = value.get("excluded_dates", [])
+        if not isinstance(excluded_dates, list):
+            raise CalendarDataError("excluded dates must be a list")
         return cls(
             event_id=_required_string(value.get("id"), "event id"),
             name=_required_string(value.get("name"), "event name"),
@@ -181,7 +208,7 @@ class CalendarEvent:
             recurrence=RecurrenceRule.from_json(value.get("recurrence")),
             excluded_dates=tuple(
                 _required_date(item, "excluded date")
-                for item in value.get("excluded_dates", ())
+                for item in excluded_dates
             ),
             parent_event_id=value.get("parent_event_id"),
             overlay=value.get("overlay"),
@@ -286,7 +313,7 @@ class CalendarStore:
                 identifiers = [event.event_id for event in events]
                 if len(identifiers) != len(set(identifiers)):
                     raise CalendarDataError("calendar event ids must be unique")
-            except (OSError, ValueError) as exc:
+            except (OSError, TypeError, ValueError) as exc:
                 errors.append(f"events: {exc}")
         if self.acknowledgements_path.exists():
             try:
@@ -302,7 +329,7 @@ class CalendarStore:
                 ):
                     raise CalendarDataError("acknowledged ids must be strings")
                 acknowledgements = set(raw_acknowledged)
-            except (OSError, ValueError) as exc:
+            except (OSError, TypeError, ValueError) as exc:
                 errors.append(f"acknowledgements: {exc}")
         self._events = events
         self._acknowledged = acknowledgements

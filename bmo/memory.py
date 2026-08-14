@@ -11,9 +11,12 @@ _MEMORY_ROLES = frozenset({"system", "user", "assistant"})
 
 
 def _valid_message(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    role = value.get("role")
     return (
-        isinstance(value, dict)
-        and value.get("role") in _MEMORY_ROLES
+        isinstance(role, str)
+        and role in _MEMORY_ROLES
         and isinstance(value.get("content"), str)
         and set(value).issubset({"role", "content"})
     )
@@ -29,6 +32,9 @@ def load_chat_history(path: Path, system_prompt: str) -> list[dict[str, str]]:
                 isinstance(data, list)
                 and data
                 and all(_valid_message(message) for message in data)
+                and not any(
+                    message["role"] == "system" for message in data[1:]
+                )
             ):
                 # Tool availability comes from the current application prompt,
                 # not a stale system message persisted by an earlier run.
@@ -68,6 +74,8 @@ def save_chat_history(
         raise ValueError("chat history contains an invalid message")
     if full[0]["role"] != "system":
         raise ValueError("chat history must begin with a system message")
+    if any(message["role"] == "system" for message in full[1:]):
+        raise ValueError("chat history cannot contain later system messages")
 
     conversation = full[1:]
     if max_conversation_messages == 0:

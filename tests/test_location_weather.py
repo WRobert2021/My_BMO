@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from bmo.location import (
+    Location,
     LocationError,
     LocationNotConfigured,
     LocationService,
@@ -72,6 +73,14 @@ class LocationServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(LocationError, "invalid coordinates"):
             LocationService(json_request=invalid_request).resolve("Nowhere")
+
+    def test_location_value_object_rejects_invalid_coordinates(self) -> None:
+        with self.assertRaisesRegex(LocationError, "coordinates are invalid"):
+            Location("Invalid", float("nan"), 10)
+        with self.assertRaisesRegex(ValueError, "name"):
+            Location("", 10, 10)
+        with self.assertRaisesRegex(ValueError, "timezone"):
+            Location("Valid", 10, 10, "")
 
     def test_configured_coordinates_do_not_make_network_request(self) -> None:
         def fail_request(url: str, timeout: float) -> dict:

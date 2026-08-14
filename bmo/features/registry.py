@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 import json
@@ -23,6 +23,7 @@ from bmo.features.contracts import (
     ToolResult,
     ToolResponse,
 )
+from bmo.jsonio import loads_json
 
 
 class DuplicateToolError(ValueError):
@@ -57,6 +58,7 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._aliases: dict[str, str] = {}
         self._menu_items: dict[str, FeatureMenuItem] = {}
+        self._capabilities: dict[str, ToolCapability] = {}
         self._runtime_callback = runtime_callback
         self._attention_callback = attention_callback
         self._closed = False
@@ -109,11 +111,7 @@ class ToolRegistry:
     @property
     def actions(self) -> set[str]:
         """Return canonical names exposed to voice and model routing."""
-        return {
-            action
-            for action, tool in self._tools.items()
-            if not self._is_menu_only(tool)
-        }
+        return set(self._capabilities)
 
     @property
     def aliases(self) -> dict[str, str]:
@@ -132,23 +130,7 @@ class ToolRegistry:
     @property
     def capabilities(self) -> tuple[ToolCapability, ...]:
         """Return prompt metadata in registration order."""
-        capabilities = []
-        for action, tool in self._tools.items():
-            if self._is_menu_only(tool):
-                continue
-            schemas = tuple(getattr(tool, "schemas", ())) or (
-                json.dumps({"action": action}, separators=(",", ":")),
-            )
-            capabilities.append(
-                ToolCapability(
-                    action=action,
-                    description=str(getattr(tool, "description", "")).strip(),
-                    schemas=schemas,
-                    guidance=tuple(getattr(tool, "prompt_guidance", ())),
-                    examples=tuple(getattr(tool, "prompt_examples", ())),
-                )
-            )
-        return tuple(capabilities)
+        return tuple(self._capabilities.values())
 
     def get(self, action: str) -> Tool | None:
         """Return a registered tool by canonical action name or alias."""
@@ -164,6 +146,7 @@ class ToolRegistry:
         tools_before = self._tools.copy()
         aliases_before = self._aliases.copy()
         menu_items_before = self._menu_items.copy()
+        capabilities_before = self._capabilities.copy()
         try:
             yield
         except Exception:
@@ -183,6 +166,7 @@ class ToolRegistry:
             self._tools = tools_before
             self._aliases = aliases_before
             self._menu_items = menu_items_before
+            self._capabilities = capabilities_before
             for tool_action, tool in reversed(rolled_back):
                 self._close_tool(
                     tool,
@@ -214,9 +198,18 @@ class ToolRegistry:
         if self._closed:
             raise RuntimeError("Cannot register tools after closing the registry.")
         action = self._normalize_identifier(tool.action, "action name")
+        raw_aliases = getattr(tool, "aliases", ())
+        if isinstance(raw_aliases, (str, bytes)):
+            raise TypeError(f"Tool '{action}' aliases must be a sequence.")
+        try:
+            raw_aliases = tuple(raw_aliases)
+        except TypeError as exc:
+            raise TypeError(
+                f"Tool '{action}' aliases must be a sequence."
+            ) from exc
         aliases = [
             self._normalize_identifier(alias, "alias")
-            for alias in tool.aliases
+            for alias in raw_aliases
         ]
         menu_item = getattr(tool, "menu_item", None)
         menu_only = getattr(tool, "menu_only", False)
@@ -278,10 +271,16 @@ class ToolRegistry:
                     f"Tool '{action}' with a menu item must define open_menu()."
                 )
 
+        capability = (
+            None if menu_only else self._build_capability(tool, action)
+        )
+
         self._tools[action] = tool
         self._aliases.update({alias: action for alias in aliases})
         if menu_item is not None:
             self._menu_items[action] = menu_item
+        if capability is not None:
+            self._capabilities[action] = capability
 
     def open_menu_item(self, name: str, context: FeatureMenuContext) -> None:
         """Open the registered feature view represented by a menu item."""
@@ -325,7 +324,7 @@ class ToolRegistry:
         normalized_request = self.normalize_request(request)
         action = str(normalized_request["action"])
         tool = self._tools.get(action)
-        if tool is None or self._is_menu_only(tool):
+        if tool is None or action not in self._capabilities:
             return None
 
         preparer = getattr(tool, "prepare_model_request", None)
@@ -356,7 +355,7 @@ class ToolRegistry:
             raise UnknownToolError(
                 f"No tool is registered for action '{action}'."
             ) from exc
-        if self._is_menu_only(tool):
+        if action not in self._capabilities:
             raise UnknownToolError(
                 f"Tool '{action}' is available only from the menu."
             )
@@ -373,15 +372,27 @@ class ToolRegistry:
 
     def match_direct_action(self, user_text: str) -> DirectAction | None:
         """Return the first direct phrase match from registered tools."""
-        for tool in self._tools.values():
-            if self._is_menu_only(tool):
+        for action, tool in self._tools.items():
+            if action not in self._capabilities:
                 continue
-            matcher = getattr(tool, "match_direct_action", None)
-            if not callable(matcher):
-                continue
-            action_data = matcher(user_text)
-            if action_data is not None:
-                return action_data
+            try:
+                matcher = getattr(tool, "match_direct_action", None)
+                if not callable(matcher):
+                    continue
+                action_data = matcher(user_text)
+                if action_data is None:
+                    continue
+                if not isinstance(action_data, Mapping):
+                    raise TypeError("matcher must return an action object")
+                if self.normalize_action(action_data) != action:
+                    raise ValueError("matcher returned another feature's action")
+                return dict(action_data)
+            except Exception as exc:
+                print(
+                    f"[FEATURE] Direct matcher '{action}' failed: "
+                    f"{type(exc).__name__}: {exc}",
+                    flush=True,
+                )
         return None
 
     @staticmethod
@@ -395,11 +406,93 @@ class ToolRegistry:
 
     @staticmethod
     def _normalize_identifier(identifier: object, label: str) -> str:
-        normalized = str(identifier).lower().strip()
+        if not isinstance(identifier, str):
+            raise TypeError(f"Tool {label} must be a string.")
+        normalized = identifier.lower().strip()
         if not normalized:
             raise ValueError(f"Tool {label} cannot be empty.")
         return normalized
 
+    @classmethod
+    def _build_capability(cls, tool: Tool, action: str) -> ToolCapability:
+        description = getattr(tool, "description", "")
+        if not isinstance(description, str):
+            raise TypeError(f"Tool '{action}' description must be a string.")
+        schemas = cls._string_sequence(
+            getattr(tool, "schemas", ()),
+            action=action,
+            label="schemas",
+        ) or (json.dumps({"action": action}, separators=(",", ":")),)
+        for schema in schemas:
+            try:
+                schema_value = loads_json(schema)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Tool '{action}' schema must be valid JSON."
+                ) from exc
+            if (
+                not isinstance(schema_value, Mapping)
+                or cls.resolve_action(schema_value, {}) != action
+            ):
+                raise ValueError(
+                    f"Tool '{action}' schema must use its registered action."
+                )
+        guidance = cls._string_sequence(
+            getattr(tool, "prompt_guidance", ()),
+            action=action,
+            label="prompt guidance",
+        )
+
+        raw_examples = getattr(tool, "prompt_examples", ())
+        if isinstance(raw_examples, (str, bytes)):
+            raise TypeError(
+                f"Tool '{action}' prompt examples must be a sequence."
+            )
+        try:
+            examples = tuple(raw_examples)
+        except TypeError as exc:
+            raise TypeError(
+                f"Tool '{action}' prompt examples must be a sequence."
+            ) from exc
+        normalized_examples: list[tuple[str, str]] = []
+        for example in examples:
+            if (
+                not isinstance(example, Sequence)
+                or isinstance(example, (str, bytes))
+                or len(example) != 2
+                or not all(isinstance(item, str) for item in example)
+            ):
+                raise TypeError(
+                    f"Tool '{action}' prompt examples must contain "
+                    "string pairs."
+                )
+            normalized_examples.append((example[0], example[1]))
+
+        return ToolCapability(
+            action=action,
+            description=description.strip(),
+            schemas=schemas,
+            guidance=guidance,
+            examples=tuple(normalized_examples),
+        )
+
     @staticmethod
-    def _is_menu_only(tool: Tool) -> bool:
-        return getattr(tool, "menu_only", False) is True
+    def _string_sequence(
+        value: object,
+        *,
+        action: str,
+        label: str,
+    ) -> tuple[str, ...]:
+        if isinstance(value, (str, bytes)):
+            raise TypeError(f"Tool '{action}' {label} must be a sequence.")
+        try:
+            items = tuple(value)  # type: ignore[arg-type]
+        except TypeError as exc:
+            raise TypeError(
+                f"Tool '{action}' {label} must be a sequence."
+            ) from exc
+        if not all(isinstance(item, str) for item in items):
+            raise TypeError(
+                f"Tool '{action}' {label} must contain only strings."
+            )
+        return items

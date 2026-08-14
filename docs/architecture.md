@@ -103,12 +103,15 @@ wording, defaults, and distinct hook signatures. `bmo.jsonio` owns only JSON
 syntax policy, first-object extraction from model text, and durable replacement
 mechanics, while each feature retains its schema validation, safe-path rules,
 read-only policy, and domain exceptions. Network responses, conversation
-history, Learning configuration, and Twenty Questions persistence all use that
-strict duplicate/non-finite-number policy at their trust boundaries; malformed
-data falls back or raises the owning domain error instead of entering runtime
-state. Embedded model objects are balanced before decoding, so an incomplete
-outer object cannot expose a nested action. Location owns finite latitude and
-longitude range validation for both configured and provider coordinates.
+history, Calendar records, Learning configuration, and Twenty Questions
+persistence all use that strict duplicate/non-finite-number policy at their
+trust boundaries; malformed data falls back, enters the owning read-only mode,
+or raises the owning domain error instead of entering runtime state. Embedded
+model objects are balanced before decoding, so an incomplete
+outer object cannot expose a nested action; excessive nesting is rejected at
+the same boundary. Location value objects own non-empty labels and finite
+latitude/longitude range validation for configured, provider, and injected
+coordinates. Conversation memory permits one leading system message only.
 `bmo.text` and `bmo.network` own single stable transformations used by otherwise
 independent features.
 
@@ -609,6 +612,13 @@ immediately. Registry construction applies the same cleanup guarantee if a
 later initial tool or mode is invalid, and closed registries reject further
 registration. Diagnostic reporter failures are isolated from extension loading
 so they cannot prevent later valid entries from starting.
+Tool action identifiers, aliases, schemas, prompt guidance, and examples are
+validated and normalized during the same transaction. The registry caches that
+immutable capability snapshot, so prompt construction does not repeatedly
+inspect live feature objects. A failing or cross-feature direct matcher is
+reported and skipped, allowing later independent matchers to run. Mode dispatch
+similarly uses the normalized registration key rather than rereading mutable
+mode names during start, failure cleanup, or shutdown.
 Disabled entries produce no failure because they are not validated or imported.
 Consequently, malformed or disabled extension entries cannot prevent valid
 built-in entries later in the same explicit list from registering. Supplying a
