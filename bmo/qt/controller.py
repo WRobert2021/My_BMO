@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
@@ -14,8 +13,8 @@ from bmo.face_config import (
     load_compact_face_config,
 )
 from bmo.gestures import GestureKind, HorizontalSwipeRecognizer
+from bmo.menu_catalog import MenuCatalog
 from bmo.menu_model import (
-    IconMenuItem,
     IconMenuPage,
     MenuBounds,
     MenuNavigation,
@@ -43,6 +42,7 @@ class QtFaceController(QObject):
 
     menuRequested = Signal()
     menuItemSelected = Signal(str)
+    menuSelectionRequested = Signal(object)
     pushToTalkRequested = Signal()
     interruptRequested = Signal()
     exitRequested = Signal()
@@ -57,7 +57,7 @@ class QtFaceController(QObject):
         parent: QObject | None = None,
         rng: random.Random | None = None,
         start_timer: bool = True,
-        menu_items: Iterable[IconMenuItem] = (),
+        menu_catalog: MenuCatalog | None = None,
     ) -> None:
         super().__init__(parent)
         self._config = config or load_compact_face_config()
@@ -74,6 +74,7 @@ class QtFaceController(QObject):
         self._menu_items_payload: list[dict[str, object]] = []
         self._menu_page_label = ""
         self._menu_selection = ""
+        self._menu_catalog = MenuCatalog()
         self._menu_pages: tuple[IconMenuPage, ...] = ()
         self._menu_navigator = MenuNavigator(1)
         self._frame_index = 0
@@ -81,7 +82,7 @@ class QtFaceController(QObject):
         self._overlay_source = QUrl()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.advanceFrame)
-        self.set_menu_items(menu_items)
+        self.set_menu_catalog(menu_catalog or MenuCatalog())
         self._show_current_frame()
         if start_timer:
             self._restart_timer()
@@ -229,12 +230,12 @@ class QtFaceController(QObject):
         elif gesture == GestureKind.TAP:
             self.toggleHud()
 
-    def set_menu_items(self, items: Iterable[IconMenuItem]) -> None:
-        """Replace ordered menu metadata and reset navigation to page one."""
-        supplied = tuple(items)
-        if not all(isinstance(item, IconMenuItem) for item in supplied):
-            raise TypeError("Qt menu items must be IconMenuItem instances.")
-        self._menu_pages = IconMenuPage.paginate(supplied)
+    def set_menu_catalog(self, catalog: MenuCatalog) -> None:
+        """Replace typed menu metadata and reset navigation to page one."""
+        if not isinstance(catalog, MenuCatalog):
+            raise TypeError("Qt menu catalog must be a MenuCatalog.")
+        self._menu_catalog = catalog
+        self._menu_pages = IconMenuPage.paginate(catalog.items)
         self._menu_navigator = MenuNavigator(max(1, len(self._menu_pages)))
         self._menu_selection = ""
         self.menuSelectionChanged.emit()
@@ -321,9 +322,11 @@ class QtFaceController(QObject):
         if action is None:
             return
         selected = next(item for item in page.items if item.name == action)
+        request = self._menu_catalog.request_for(action)
         self._menu_selection = selected.label
         self.menuSelectionChanged.emit()
         self.menuItemSelected.emit(action)
+        self.menuSelectionRequested.emit(request)
 
     @Slot()
     def requestPushToTalk(self) -> None:  # noqa: N802

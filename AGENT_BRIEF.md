@@ -60,6 +60,7 @@ agent.py
 | `bmo/face_config.py` | UI-toolkit-neutral face layout, animation-frame discovery, timing, and private configuration validation. |
 | `bmo/gestures.py` | UI-toolkit-neutral tap and horizontal-swipe recognition shared by Tk and Qt. |
 | `bmo/menu_model.py` | UI-toolkit-neutral menu items, 5x3 pagination, hit geometry, and swipe history shared by Tk and Qt. |
+| `bmo/menu_catalog.py` | Namespaced registry-to-menu composition and typed mode/feature selection requests shared by Tk and Qt. |
 | `bmo/text.py` | Shared spoken-command normalization. |
 | `bmo/network.py` | Shared bounded timeout parsing for online features. |
 | `bmo/location.py` | Location validation, home resolution, and Nominatim geocoding. |
@@ -168,6 +169,7 @@ Modes are longer interactions that temporarily own user input.
 | Extension framework | `tests/test_extension_architecture.py`, `tests/test_feature_loading.py`, `tests/test_mode_loading.py`, `tests/extension_modules/proof_feature.py`, `tests/extension_modules/proof_mode.py` |
 | Tool routing and presentation | `tests/test_tool_registry.py`, `tests/test_tool_routing.py`, `tests/test_tool_routing_characterization.py`, `tests/test_tool_presentation.py`, `tests/test_intent.py` |
 | Main interaction and menus | `tests/test_interaction_failure_recovery.py`, `tests/test_menu.py`, `tests/test_modes.py` |
+| Neutral menu catalog | `tests/test_menu_catalog.py` |
 | Core persistence/config | `tests/test_archive.py`, `tests/test_jsonio.py`, `tests/test_config_and_memory.py` |
 | Audio and speech | `tests/test_speech.py` |
 | Installation | `tests/test_setup_script.py` |
@@ -193,6 +195,7 @@ Modes are longer interactions that temporarily own user input.
 | `docs/AGENT_ARCHITECTURE.md` | Detailed module boundaries, runtime behavior, extension contracts, failure isolation, and shutdown ownership. |
 | `docs/AGENT_LEARNING.md` | Learning setup, scoring, persistence, teacher controls, and lesson extension. |
 | `docs/AGENT_LOCATION_WEATHER.md` | Location/Weather privacy, providers, configuration, supported requests, and licensing. |
+| `docs/GUI_MIGRATION.md` | Validated Qt/QML gates, remaining work, acceptance checks, and completion definition. |
 | `faces/` | Fullscreen face animation frames. |
 | `sounds/` | Greeting, acknowledgement, and thinking WAV effects. |
 | `graphics/` | Existing referenced menu/game artwork. |

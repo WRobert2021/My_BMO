@@ -17,8 +17,9 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
+from bmo.menu_catalog import MenuCatalog, MenuOwner  # noqa: E402
 from bmo.menu_model import IconMenuItem  # noqa: E402
-from bmo.qt.app import QML_PATH, preview_menu_items  # noqa: E402
+from bmo.qt.app import QML_PATH, preview_menu_catalog  # noqa: E402
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
 
@@ -87,12 +88,18 @@ class QtFaceControllerTests(unittest.TestCase):
             root = Path(directory)
             controller = self.make_controller(root)
             items = tuple(
-                IconMenuItem(f"item-{index}", f"Item {index}", root / f"{index}.png")
+                IconMenuItem(
+                    f"feature:item-{index}",
+                    f"Item {index}",
+                    root / f"{index}.png",
+                )
                 for index in range(17)
             )
             selected: list[str] = []
+            requests: list[object] = []
             controller.menuItemSelected.connect(selected.append)
-            controller.set_menu_items(items)
+            controller.menuSelectionRequested.connect(requests.append)
+            controller.set_menu_catalog(MenuCatalog(items))
             controller.show_menu()
 
             self.assertEqual(len(controller.menuItems), 15)
@@ -102,7 +109,9 @@ class QtFaceControllerTests(unittest.TestCase):
             controller.menuPressed(700, 300)
             controller.menuReleased(100, 300)
 
-            self.assertEqual(selected, ["item-0"])
+            self.assertEqual(selected, ["feature:item-0"])
+            self.assertEqual(requests[0].owner, MenuOwner.FEATURE)
+            self.assertEqual(requests[0].name, "item-0")
             self.assertEqual(controller.menuSelection, "Item 0")
             self.assertEqual(len(controller.menuItems), 2)
             self.assertEqual(controller.menuPageLabel, "2 / 2")
@@ -129,7 +138,8 @@ class QtFaceControllerTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 (
-                    "import sys; import bmo.menu_model, bmo.qt.controller; "
+                    "import sys; import bmo.menu_catalog, bmo.menu_model, "
+                    "bmo.qt.controller; "
                     "raise SystemExit('tkinter' in sys.modules)"
                 ),
             ],
@@ -151,7 +161,7 @@ class QtQmlShellTests(unittest.TestCase):
     def test_main_qml_loads_with_controller_context(self) -> None:
         controller = QtFaceController(
             start_timer=False,
-            menu_items=preview_menu_items(),
+            menu_catalog=preview_menu_catalog(),
         )
         engine = QQmlApplicationEngine()
         engine.rootContext().setContextProperty("bmoUi", controller)
@@ -161,11 +171,11 @@ class QtQmlShellTests(unittest.TestCase):
         self.assertTrue(engine.rootObjects())
         engine.deleteLater()
 
-    def test_preview_menu_uses_existing_project_icon_references(self) -> None:
-        items = preview_menu_items()
+    def test_preview_menu_uses_namespaced_project_icon_references(self) -> None:
+        items = preview_menu_catalog().items
 
-        self.assertEqual(items[0].name, "matching_game")
-        self.assertEqual(items[1].name, "twenty_questions")
+        self.assertEqual(items[0].name, "mode:matching_game")
+        self.assertEqual(items[1].name, "mode:twenty_questions")
         self.assertTrue(all(item.icon_path.parent.name == "icons" for item in items))
 
 

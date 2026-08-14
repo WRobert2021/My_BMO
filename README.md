@@ -135,7 +135,9 @@ Tap the face to show or hide the HUD. Swipe left to open the QML icon menu, tap
 an icon to confirm its selection at the bottom of the screen, and swipe right
 from the first page or tap the compact face to return. Use **Exit Preview** in
 the HUD to close the shell. Menu selections are diagnostic only; the preview
-does not start the microphone, models, tools, or modes yet.
+prints their typed mode/feature request but does not start the microphone,
+models, tools, or modes yet. See the [GUI migration roadmap](docs/GUI_MIGRATION.md)
+for completed gates and the remaining production conversion work.
 
 ### Development Tests
 

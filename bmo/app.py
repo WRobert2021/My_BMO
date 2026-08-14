@@ -51,6 +51,7 @@ from bmo.features.contracts import (
 )
 from bmo.intent import infer_tool_action
 from bmo.memory import load_chat_history, save_chat_history
+from bmo.menu_catalog import MenuCatalog, MenuOwner, MenuSelectionRequest
 from bmo.kiosk_access import KioskAccessPolicy, load_quiet_hours_config
 from bmo.modes import (
     InputPolicyKind,
@@ -65,7 +66,6 @@ from bmo.ui.compact_face import load_compact_face_config
 from bmo.ui import (
     GestureKind,
     HorizontalSwipeRecognizer,
-    IconMenuItem,
     IconMenuPage,
     MenuApp,
     QuietHoursOverlay,
@@ -495,31 +495,16 @@ class BotGUI:
         if self.exiting or self.menu_ui is not None or self._quiet_hours_locked():
             return
         self._refresh_runtime_attention_ui()
-        mode_items = tuple(self.mode_registry.menu_items)
-        feature_items = tuple(self.tool_router.registry.menu_items)
+        catalog = MenuCatalog.from_contributions(
+            modes=self.mode_registry.menu_items,
+            features=self.tool_router.registry.menu_items,
+        )
         self.menu_ui = MenuApp(
             self.master,
             on_close=self._handle_menu_close,
             face_provider=self._current_mode_face,
             on_select=self._select_menu_item,
-            pages=IconMenuPage.paginate(
-                tuple(
-                    IconMenuItem(
-                        f"mode:{item.name}",
-                        item.label,
-                        item.icon_path,
-                    )
-                    for item in mode_items
-                )
-                + tuple(
-                    IconMenuItem(
-                        f"feature:{item.name}",
-                        item.label,
-                        item.icon_path,
-                    )
-                    for item in feature_items
-                )
-            ),
+            pages=IconMenuPage.paginate(catalog.items),
         )
         self._refresh_runtime_attention_ui()
 
@@ -529,14 +514,10 @@ class BotGUI:
 
     def _select_menu_item(self, selection: str) -> None:
         """Route a namespaced menu selection to its owning extension registry."""
-        kind, separator, name = str(selection).partition(":")
-        if not separator or not name:
-            raise LookupError(f"Invalid menu selection '{selection}'.")
-        if kind == "mode":
-            self._queue_menu_mode(name)
+        request = MenuSelectionRequest.parse(selection)
+        if request.owner == MenuOwner.MODE:
+            self._queue_menu_mode(request.name)
             return
-        if kind != "feature":
-            raise LookupError(f"Unknown menu selection kind '{kind}'.")
 
         menu_ui = self.menu_ui
         if menu_ui is None:
@@ -550,7 +531,7 @@ class BotGUI:
         announcer = _FeatureMenuAnnouncer(self)
 
         self.tool_router.registry.open_menu_item(
-            name,
+            request.name,
             FeatureMenuContext(
                 master=self.master,
                 on_close=finish_selection,

@@ -79,6 +79,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.gestures` — UI-toolkit-neutral tap and horizontal-swipe recognition.
 - `bmo.menu_model` — UI-toolkit-neutral menu item validation, 5x3 pagination,
   hit geometry, and ordered swipe history shared by Tk and Qt.
+- `bmo.menu_catalog` — ordered registry-to-menu composition and validated,
+  namespaced mode/feature selection requests shared by Tk and Qt.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -136,9 +138,11 @@ latitude/longitude range validation for configured, provider, and injected
 coordinates. Conversation memory permits one leading system message only.
 `bmo.text` and `bmo.network` own single stable transformations used by otherwise
 independent features. Face configuration and gesture recognition live in
-`bmo.face_config`, `bmo.gestures`, and `bmo.menu_model` so importing the Qt
-presentation path does not initialize the Tk package or create parallel
-implementations.
+`bmo.face_config`, `bmo.gestures`, `bmo.menu_model`, and `bmo.menu_catalog` so
+importing the Qt presentation path does not initialize the Tk package or create
+parallel implementations. Registry contributions become namespaced catalog
+items once; views return a typed owner/name request rather than parsing or
+executing extension-specific behavior themselves.
 
 Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.
@@ -187,6 +191,8 @@ constructing audio, models, features, or modes. The shell supplies disposable
 built-in preview metadata; selections are diagnostic events and do not execute
 features or modes. Keeping that launcher isolated makes the display/event-loop
 boundary testable on the Pi before runtime ownership moves away from `BotGUI`.
+The ordered production Tk menu now also uses `MenuCatalog`, proving that the
+same typed selection boundary can receive real runtime registry contributions.
 
 ## Display navigation
 
@@ -215,6 +221,9 @@ retraced in reverse order; a right swipe from the first page closes the menu.
 The item records, 15-item pagination, padded cell geometry, hit testing, and
 navigation state live in `bmo.menu_model`; Tk draws that model on Canvas while
 QML exposes the same page as a QVariant list of icon URLs and bounds.
+`MenuCatalog` adds the owning `mode:` or `feature:` namespace and converts a
+visible selection into `MenuSelectionRequest`; only the runtime coordinator may
+execute that request.
 Enabled modes and feature tools may optionally contribute typed menu metadata.
 Their registries expose those contributions in configuration order, and
 `BotGUI` maps them to generic five-column, three-row icon-grid pages without
