@@ -23,6 +23,7 @@ from bmo.features.contracts import (
     ToolResult,
     ToolResponse,
 )
+from bmo.extensions import RegistrationLedger
 from bmo.jsonio import loads_json
 
 
@@ -61,13 +62,20 @@ class ToolRegistry:
         self._capabilities: dict[str, ToolCapability] = {}
         self._runtime_callback = runtime_callback
         self._attention_callback = attention_callback
+        self._registration_ledger = RegistrationLedger[Tool]()
         self._closed = False
-        try:
-            for tool in tools:
+        for tool in tools:
+            try:
                 self.register(tool)
-        except Exception:
-            self.close()
-            raise
+            except Exception:
+                if not any(owned is tool for owned in self._tools.values()):
+                    self._close_tool(
+                        tool,
+                        action="reject",
+                        tool_action="<unregistered>",
+                    )
+                self.close()
+                raise
 
     def notify_runtime(self, notification: RuntimeNotification) -> None:
         """Present an asynchronous feature notification through the runtime."""
@@ -147,33 +155,30 @@ class ToolRegistry:
         aliases_before = self._aliases.copy()
         menu_items_before = self._menu_items.copy()
         capabilities_before = self._capabilities.copy()
-        try:
-            yield
-        except Exception:
-            existing_tool_ids = {id(tool) for tool in tools_before.values()}
-            rolled_back: list[tuple[str, Tool]] = []
-            rolled_back_ids: set[int] = set()
-            for action, tool in self._tools.items():
-                tool_id = id(tool)
-                if (
-                    action in tools_before
-                    or tool_id in existing_tool_ids
-                    or tool_id in rolled_back_ids
-                ):
-                    continue
-                rolled_back.append((action, tool))
-                rolled_back_ids.add(tool_id)
-            self._tools = tools_before
-            self._aliases = aliases_before
-            self._menu_items = menu_items_before
-            self._capabilities = capabilities_before
-            for tool_action, tool in reversed(rolled_back):
-                self._close_tool(
-                    tool,
-                    action="roll back",
-                    tool_action=tool_action,
-                )
-            raise
+        with self._registration_ledger.transaction() as attempts:
+            try:
+                yield
+            except Exception:
+                existing_tool_ids = {
+                    id(tool) for tool in tools_before.values()
+                }
+                closed_ids: set[int] = set()
+                self._tools = tools_before
+                self._aliases = aliases_before
+                self._menu_items = menu_items_before
+                self._capabilities = capabilities_before
+                for attempt in reversed(attempts):
+                    tool = attempt.candidate
+                    tool_id = id(tool)
+                    if tool_id in existing_tool_ids or tool_id in closed_ids:
+                        continue
+                    closed_ids.add(tool_id)
+                    self._close_tool(
+                        tool,
+                        action="roll back",
+                        tool_action=attempt.identifier,
+                    )
+                raise
 
     @staticmethod
     def _close_tool(
@@ -197,7 +202,10 @@ class ToolRegistry:
         """Register one tool, rejecting all ambiguous identifiers."""
         if self._closed:
             raise RuntimeError("Cannot register tools after closing the registry.")
+        attempt = self._registration_ledger.record(tool)
         action = self._normalize_identifier(tool.action, "action name")
+        if attempt is not None:
+            attempt.identifier = action
         raw_aliases = getattr(tool, "aliases", ())
         if isinstance(raw_aliases, (str, bytes)):
             raise TypeError(f"Tool '{action}' aliases must be a sequence.")
@@ -424,19 +432,7 @@ class ToolRegistry:
             label="schemas",
         ) or (json.dumps({"action": action}, separators=(",", ":")),)
         for schema in schemas:
-            try:
-                schema_value = loads_json(schema)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"Tool '{action}' schema must be valid JSON."
-                ) from exc
-            if (
-                not isinstance(schema_value, Mapping)
-                or cls.resolve_action(schema_value, {}) != action
-            ):
-                raise ValueError(
-                    f"Tool '{action}' schema must use its registered action."
-                )
+            cls._validate_action_json(schema, action=action, label="schema")
         guidance = cls._string_sequence(
             getattr(tool, "prompt_guidance", ()),
             action=action,
@@ -466,7 +462,17 @@ class ToolRegistry:
                     f"Tool '{action}' prompt examples must contain "
                     "string pairs."
                 )
-            normalized_examples.append((example[0], example[1]))
+            user_text, response = example
+            if not user_text.strip():
+                raise ValueError(
+                    f"Tool '{action}' prompt example text cannot be empty."
+                )
+            cls._validate_action_json(
+                response,
+                action=action,
+                label="prompt example response",
+            )
+            normalized_examples.append((user_text, response))
 
         return ToolCapability(
             action=action,
@@ -496,3 +502,25 @@ class ToolRegistry:
                 f"Tool '{action}' {label} must contain only strings."
             )
         return items
+
+    @classmethod
+    def _validate_action_json(
+        cls,
+        value: str,
+        *,
+        action: str,
+        label: str,
+    ) -> None:
+        try:
+            decoded = loads_json(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Tool '{action}' {label} must be valid JSON."
+            ) from exc
+        if (
+            not isinstance(decoded, Mapping)
+            or cls.resolve_action(decoded, {}) != action
+        ):
+            raise ValueError(
+                f"Tool '{action}' {label} must use its registered action."
+            )

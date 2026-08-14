@@ -8,13 +8,58 @@ two extension systems depend on one another.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from types import ModuleType
-from typing import Any, TypeVar
+from typing import Any, Generic, TypeVar
 
 
 FailureT = TypeVar("FailureT")
+ExtensionT = TypeVar("ExtensionT")
+
+
+@dataclass
+class RegistrationAttempt(Generic[ExtensionT]):
+    """One candidate owned by the active registration transaction."""
+
+    identifier: str
+    candidate: ExtensionT
+
+
+class RegistrationLedger(Generic[ExtensionT]):
+    """Track attempted extension ownership across nested transactions."""
+
+    def __init__(self) -> None:
+        self._transactions: list[list[RegistrationAttempt[ExtensionT]]] = []
+
+    def record(
+        self,
+        candidate: ExtensionT,
+    ) -> RegistrationAttempt[ExtensionT] | None:
+        """Record a candidate when registration is transactional."""
+        if not self._transactions:
+            return None
+        attempt = RegistrationAttempt("<unregistered>", candidate)
+        self._transactions[-1].append(attempt)
+        return attempt
+
+    @contextmanager
+    def transaction(
+        self,
+    ) -> Iterator[list[RegistrationAttempt[ExtensionT]]]:
+        """Open a scope and transfer successful nested ownership upward."""
+        attempts: list[RegistrationAttempt[ExtensionT]] = []
+        self._transactions.append(attempts)
+        try:
+            yield attempts
+        except Exception:
+            raise
+        else:
+            if len(self._transactions) > 1:
+                self._transactions[-2].extend(attempts)
+        finally:
+            self._transactions.pop()
 
 
 def default_extension_entries(modules: Sequence[str]) -> list[dict[str, Any]]:

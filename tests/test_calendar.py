@@ -31,6 +31,69 @@ from bmo.ui.scrolling import VerticalScrollController
 
 
 class CalendarStoreTests(unittest.TestCase):
+    def test_calendar_value_objects_reject_runtime_type_confusion(self) -> None:
+        with self.assertRaisesRegex(CalendarDataError, "end_date"):
+            RecurrenceRule(end_date=datetime(2026, 8, 12))
+        with self.assertRaisesRegex(CalendarDataError, "start_date"):
+            CalendarEvent(
+                "event",
+                "Invalid",
+                datetime(2026, 8, 12),
+                all_day=True,
+            )
+        with self.assertRaisesRegex(CalendarDataError, "start_time"):
+            CalendarEvent(
+                "event",
+                "Invalid",
+                date(2026, 8, 12),
+                start_time="10:00",  # type: ignore[arg-type]
+            )
+        with self.assertRaisesRegex(CalendarDataError, "recurrence"):
+            CalendarEvent(
+                "event",
+                "Invalid",
+                date(2026, 8, 12),
+                all_day=True,
+                recurrence={},  # type: ignore[arg-type]
+            )
+
+    def test_store_rejects_invalid_write_values_with_domain_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CalendarStore(directory)
+
+            with self.assertRaisesRegex(CalendarDataError, "CalendarEvent"):
+                store.replace_events([object()])  # type: ignore[list-item]
+            with self.assertRaisesRegex(CalendarDataError, "iterable"):
+                store.replace_events(None)  # type: ignore[arg-type]
+            with self.assertRaisesRegex(CalendarDataError, "acknowledgement id"):
+                store.acknowledge(42)  # type: ignore[arg-type]
+
+            store.acknowledge(" occurrence-id ")
+            self.assertTrue(store.is_acknowledged("occurrence-id"))
+
+    def test_calendar_operations_reject_datetime_as_a_calendar_date(self) -> None:
+        event = CalendarEvent(
+            "event",
+            "Event",
+            date(2026, 8, 12),
+            all_day=True,
+        )
+
+        with self.assertRaisesRegex(CalendarDataError, "range start"):
+            occurrence_dates(
+                event,
+                datetime(2026, 8, 12),
+                date(2026, 8, 12),
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            store = CalendarStore(directory)
+            store.add(event)
+            with self.assertRaisesRegex(CalendarDataError, "occurrence date"):
+                store.exclude_occurrence(
+                    "event",
+                    datetime(2026, 8, 12),
+                )
+
     def test_round_trip_keeps_event_fields_and_acknowledges_one_occurrence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = CalendarStore(directory)
@@ -139,6 +202,59 @@ class CalendarStoreTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(override.parent_event_id, "weekly")
+
+    def test_weekly_count_stays_bounded_across_long_date_ranges(self) -> None:
+        event = CalendarEvent(
+            "old-weekly",
+            "Old weekly event",
+            date(1900, 1, 1),
+            all_day=True,
+            recurrence=RecurrenceRule(
+                frequency="weekly",
+                weekdays=(0,),
+                count=2,
+            ),
+        )
+
+        self.assertEqual(
+            occurrence_dates(event, date(2026, 1, 1), date(2026, 12, 31)),
+            (),
+        )
+
+    def test_sparse_recurrence_counts_stay_bounded_across_centuries(self) -> None:
+        monthly = CalendarEvent(
+            "old-monthly",
+            "Old monthly event",
+            date(1900, 1, 31),
+            all_day=True,
+            recurrence=RecurrenceRule(
+                frequency="monthly",
+                count=2,
+                monthly_overflow="skip",
+            ),
+        )
+        yearly = CalendarEvent(
+            "old-yearly",
+            "Old yearly event",
+            date(1904, 2, 29),
+            all_day=True,
+            recurrence=RecurrenceRule(
+                frequency="yearly",
+                count=2,
+                monthly_overflow="skip",
+            ),
+        )
+
+        for event in (monthly, yearly):
+            with self.subTest(frequency=event.recurrence.frequency):
+                self.assertEqual(
+                    occurrence_dates(
+                        event,
+                        date(2400, 1, 1),
+                        date(2400, 12, 31),
+                    ),
+                    (),
+                )
 
 
 class CalendarConfigTests(unittest.TestCase):

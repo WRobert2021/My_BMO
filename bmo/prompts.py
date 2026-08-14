@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from bmo.features.registry import ToolRegistry
+from bmo.features.registry import ToolCapability, ToolRegistry
 
 
 BASE_SYSTEM_PROMPT = """You are a helpful robot assistant running on a Raspberry Pi.
@@ -16,9 +16,11 @@ ROUTER_PROMPT_HEADER = """Classify the user's intent for a robot assistant.
 Return exactly one JSON object and no explanation."""
 
 
-def _capability_lines(registry: ToolRegistry) -> list[str]:
+def _capability_lines(
+    capabilities: tuple[ToolCapability, ...],
+) -> list[str]:
     lines = []
-    for capability in registry.capabilities:
+    for capability in capabilities:
         description = (
             f" - {capability.description}" if capability.description else ""
         )
@@ -37,7 +39,12 @@ def build_capability_prompt(registry: ToolRegistry) -> str:
             "- Reply with normal text."
         )
 
-    lines = ["CAPABILITIES:", *_capability_lines(registry), "", "INSTRUCTIONS:"]
+    lines = [
+        "CAPABILITIES:",
+        *_capability_lines(capabilities),
+        "",
+        "INSTRUCTIONS:",
+    ]
     lines.append(
         "- If the user asks for an enabled physical or live-information "
         "action, output its JSON object."
@@ -62,8 +69,9 @@ def build_capability_prompt(registry: ToolRegistry) -> str:
 
 def build_routing_prompt(registry: ToolRegistry) -> str:
     """Build the classifier prompt from the currently enabled registry."""
+    capabilities = registry.capabilities
     lines = [ROUTER_PROMPT_HEADER, "", "Available actions:"]
-    for capability in registry.capabilities:
+    for capability in capabilities:
         for schema in capability.schemas:
             description = (
                 f" - {capability.description}"
@@ -75,7 +83,7 @@ def build_routing_prompt(registry: ToolRegistry) -> str:
 
     guidance = [
         item
-        for capability in registry.capabilities
+        for capability in capabilities
         for item in capability.guidance
     ]
     if guidance:

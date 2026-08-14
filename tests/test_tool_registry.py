@@ -76,6 +76,14 @@ class ToolRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "registered action"):
             ToolRegistry((invalid_schema,))
 
+        invalid_example = ToolContract(
+            "status",
+            Mock(),
+            prompt_examples=(("Status?", '{"action":"different"}'),),
+        )
+        with self.assertRaisesRegex(ValueError, "prompt example response"):
+            ToolRegistry((invalid_example,))
+
     def test_direct_matcher_failures_do_not_block_healthy_features(self) -> None:
         class BrokenMatcherTool:
             action = "broken"
@@ -107,23 +115,25 @@ class ToolRegistryTests(unittest.TestCase):
 
     def test_constructor_failure_closes_already_registered_tools(self) -> None:
         class ResourceTool:
-            action = "status"
             aliases = ()
 
-            def __init__(self) -> None:
+            def __init__(self, action: str) -> None:
+                self.action = action
                 self.close = Mock()
 
-        resource = ResourceTool()
+        resource = ResourceTool("status")
+        rejected = ResourceTool("status")
 
         with self.assertRaisesRegex(DuplicateToolError, "Duplicate tool"):
             ToolRegistry(
                 (
                     resource,
-                    ToolContract("status", Mock()),
+                    rejected,
                 )
             )
 
         resource.close.assert_called_once_with()
+        rejected.close.assert_called_once_with()
 
     def test_feature_menu_metadata_and_launch_stay_registry_driven(self) -> None:
         class MenuTool:

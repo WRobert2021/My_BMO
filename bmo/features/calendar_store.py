@@ -31,6 +31,12 @@ class CalendarDataError(ValueError):
     """Raised when calendar data is unsafe to load or persist."""
 
 
+def _require_date(value: object, label: str) -> date:
+    if type(value) is not date:
+        raise CalendarDataError(f"{label} must be a date")
+    return value
+
+
 @dataclass(frozen=True)
 class RecurrenceRule:
     """A bounded recurrence rule owned by one calendar event."""
@@ -61,8 +67,8 @@ class RecurrenceRule:
         weekdays = tuple(sorted(set(raw_weekdays)))
         if frequency != "weekly" and weekdays:
             raise CalendarDataError("recurrence weekdays are only valid for weekly events")
-        if self.end_date is not None and not isinstance(self.end_date, date):
-            raise CalendarDataError("recurrence end_date must be a date")
+        if self.end_date is not None:
+            _require_date(self.end_date, "recurrence end_date")
         if self.count is not None and (
             isinstance(self.count, bool) or not isinstance(self.count, int) or self.count < 1
         ):
@@ -131,8 +137,13 @@ class CalendarEvent:
             raise CalendarDataError("event name cannot be empty")
         if not category:
             raise CalendarDataError("event category cannot be empty")
+        _require_date(self.start_date, "event start_date")
         if not isinstance(self.all_day, bool):
             raise CalendarDataError("event all_day must be a boolean")
+        if self.start_time is not None and type(self.start_time) is not time:
+            raise CalendarDataError("event start_time must be a time")
+        if self.end_time is not None and type(self.end_time) is not time:
+            raise CalendarDataError("event end_time must be a time")
         if self.all_day and (self.start_time is not None or self.end_time is not None):
             raise CalendarDataError("all-day events cannot include times")
         if not self.all_day and self.start_time is None:
@@ -153,8 +164,12 @@ class CalendarEvent:
             raise CalendarDataError(
                 "excluded dates must be a sequence"
             ) from exc
-        if any(not isinstance(value, date) for value in raw_exclusions):
-            raise CalendarDataError("excluded dates must contain dates")
+        for value in raw_exclusions:
+            _require_date(value, "excluded dates")
+        if not isinstance(self.recurrence, RecurrenceRule):
+            raise CalendarDataError("event recurrence must be a RecurrenceRule")
+        if not isinstance(self.read_only, bool):
+            raise CalendarDataError("event read_only must be a boolean")
         exclusions = tuple(sorted(set(raw_exclusions)))
         parent = str(self.parent_event_id).strip() if self.parent_event_id else None
         overlay = str(self.overlay).strip() if self.overlay else None
@@ -221,6 +236,11 @@ class CalendarOccurrence:
 
     event: CalendarEvent
     occurrence_date: date
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.event, CalendarEvent):
+            raise CalendarDataError("occurrence event must be a CalendarEvent")
+        _require_date(self.occurrence_date, "occurrence date")
 
     @property
     def occurrence_id(self) -> str:
@@ -346,7 +366,14 @@ class CalendarStore:
             raise CalendarDataError(
                 "calendar data is read-only until its malformed file is repaired"
             )
-        supplied = tuple(events)
+        try:
+            supplied = tuple(events)
+        except TypeError as exc:
+            raise CalendarDataError(
+                "calendar events must be an iterable of CalendarEvent values"
+            ) from exc
+        if not all(isinstance(event, CalendarEvent) for event in supplied):
+            raise CalendarDataError("calendar events must be CalendarEvent values")
         identifiers = [event.event_id for event in supplied]
         if len(identifiers) != len(set(identifiers)):
             raise CalendarDataError("calendar event ids must be unique")
@@ -386,6 +413,7 @@ class CalendarStore:
         return True
 
     def exclude_occurrence(self, event_id: str, occurrence_date: date) -> CalendarEvent:
+        _require_date(occurrence_date, "occurrence date")
         event = next((item for item in self.events() if item.event_id == event_id), None)
         if event is None:
             raise KeyError(event_id)
@@ -401,6 +429,7 @@ class CalendarStore:
         occurrence_date: date,
         replacement: CalendarEvent,
     ) -> CalendarEvent:
+        _require_date(occurrence_date, "occurrence date")
         events = list(self.events())
         source_index = next(
             (index for index, item in enumerate(events) if item.event_id == event_id),
@@ -434,6 +463,11 @@ class CalendarStore:
             raise CalendarDataError(
                 "calendar data is read-only until its malformed file is repaired"
             )
+        if not isinstance(occurrence_id, str) or not occurrence_id.strip():
+            raise CalendarDataError(
+                "acknowledgement id must be a non-empty string"
+            )
+        occurrence_id = occurrence_id.strip()
         updated = set(self._acknowledged)
         updated.add(occurrence_id)
         _atomic_write_json(
@@ -452,6 +486,10 @@ def occurrence_dates(
     end: date,
 ) -> tuple[date, ...]:
     """Expand one event inclusively without iterating beyond the query range."""
+    if not isinstance(event, CalendarEvent):
+        raise CalendarDataError("event must be a CalendarEvent")
+    _require_date(start, "range start")
+    _require_date(end, "range end")
     if end < start:
         return ()
     rule = event.recurrence
@@ -525,33 +563,80 @@ def _occurrence_ordinal(event: CalendarEvent, candidate: date) -> int:
     rule = event.recurrence
     if rule.frequency == "weekly":
         weekdays = rule.weekdays or (event.start_date.weekday(),)
-        cursor = event.start_date
-        count = 0
-        while cursor <= candidate:
-            if cursor.weekday() in weekdays:
-                count += 1
-            cursor += timedelta(days=1)
+        elapsed_days = (candidate - event.start_date).days
+        full_weeks, remaining_days = divmod(elapsed_days, 7)
+        count = full_weeks * len(weekdays)
+        start_weekday = event.start_date.weekday()
+        count += sum(
+            (start_weekday + offset) % 7 in weekdays
+            for offset in range(remaining_days + 1)
+        )
         return count
     if rule.frequency == "monthly":
-        count = 0
-        cursor = event.start_date.replace(day=1)
-        while cursor <= candidate.replace(day=1):
-            last_day = month_calendar.monthrange(cursor.year, cursor.month)[1]
-            if event.start_date.day <= last_day or rule.monthly_overflow == "last_day":
-                count += 1
-            cursor = _add_month(cursor)
-        return count
+        month_count = (
+            (candidate.year - event.start_date.year) * 12
+            + candidate.month
+            - event.start_date.month
+            + 1
+        )
+        day = event.start_date.day
+        if rule.monthly_overflow == "last_day" or day <= 28:
+            return month_count
+        if day == 29:
+            first_year, last_year = _month_year_span(
+                event.start_date,
+                candidate,
+                month_calendar.FEBRUARY,
+            )
+            february_count = max(0, last_year - first_year + 1)
+            leap_count = _count_leap_years(first_year, last_year)
+            return month_count - (february_count - leap_count)
+        invalid_months = (
+            (month_calendar.FEBRUARY,)
+            if day == 30
+            else (
+                month_calendar.FEBRUARY,
+                month_calendar.APRIL,
+                month_calendar.JUNE,
+                month_calendar.SEPTEMBER,
+                month_calendar.NOVEMBER,
+            )
+        )
+        return month_count - sum(
+            _count_month_in_span(event.start_date, candidate, month)
+            for month in invalid_months
+        )
     if rule.frequency == "yearly":
-        count = 0
-        for year in range(event.start_date.year, candidate.year + 1):
-            try:
-                date(year, event.start_date.month, event.start_date.day)
-            except ValueError:
-                if rule.monthly_overflow == "skip":
-                    continue
-            count += 1
-        return count
+        if (
+            rule.monthly_overflow == "skip"
+            and event.start_date.month == month_calendar.FEBRUARY
+            and event.start_date.day == 29
+        ):
+            return _count_leap_years(event.start_date.year, candidate.year)
+        return candidate.year - event.start_date.year + 1
     return 1
+
+
+def _month_year_span(
+    start: date,
+    end: date,
+    month: int,
+) -> tuple[int, int]:
+    return (
+        start.year + (start.month > month),
+        end.year - (end.month < month),
+    )
+
+
+def _count_month_in_span(start: date, end: date, month: int) -> int:
+    first_year, last_year = _month_year_span(start, end, month)
+    return max(0, last_year - first_year + 1)
+
+
+def _count_leap_years(first_year: int, last_year: int) -> int:
+    if last_year < first_year:
+        return 0
+    return month_calendar.leapdays(first_year, last_year + 1)
 
 
 def expand_events(

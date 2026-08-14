@@ -8,8 +8,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — stable compatibility router over the enabled feature registry.
-- `bmo.extensions` — neutral configuration/import/rollback algorithm shared by
-  the feature and mode loader wrappers.
+- `bmo.extensions` — neutral configuration/import/rollback algorithm and nested
+  registration ownership ledger shared by feature and mode registries.
 - `bmo.jsonio` — strict duplicate-safe JSON decoding and crash-safe atomic JSON
   and JSONL replacement.
 - `bmo.text` — neutral spoken-command normalization.
@@ -97,7 +97,7 @@ The application keeps `agent.py` as the stable startup command while implementat
 
 Shared code is kept deliberately narrow instead of accumulating in a generic
 utility module. `bmo.extensions` owns only the common list validation, import,
-registration transaction, failure isolation, and settings-overlay sequence;
+registration ownership ledger, failure isolation, and settings-overlay sequence;
 feature and mode loaders retain their typed registries, result records, failure
 wording, defaults, and distinct hook signatures. `bmo.jsonio` owns only JSON
 syntax policy, first-object extraction from model text, and durable replacement
@@ -378,6 +378,10 @@ added. Chromium runs only while the weather view is open.
 Calendar persistence, recurrence, color selection, and quiet-hours enforcement
 use only Python's standard library and existing Tk/Pillow packages. The system
 local date and time are authoritative; there is no feature-level timezone.
+Calendar value objects reject `datetime` values where an exact `date` or `time`
+is required and reject non-domain values before persistence. Recurrence count
+ordinals use bounded calendar arithmetic for weekly, monthly, and yearly rules,
+so querying a count-limited event does not walk from a decades-old start date.
 Private event data lives under `data/calendar`, optional calendar overlay art
 lives under `faces/calendar`, and calendar/quiet-hours settings live in
 `config/calendar.json` and `config/quiet_hours.json`. These paths are local and
@@ -462,7 +466,9 @@ contract in `bmo.features.contracts`:
 - `action` is the unique canonical identifier; `aliases` contains unique
   alternate identifiers. The registry normalizes both to stripped lowercase.
 - `description`, `schemas`, `prompt_guidance`, and `prompt_examples` describe
-  the capability to the routing and system prompts.
+  the capability to the routing and system prompts. Each schema and example
+  response must be a JSON object resolving to the tool's canonical action;
+  example user text cannot be empty.
 - `execute(request)` returns a `ToolResult`, never a bare string. Its kind
   records the semantic outcome: content, an expected empty/error result, chat
   fallback, invalid action, a typed attachment, or a generic follow-up.
@@ -608,17 +614,22 @@ missing-hook, and hook exceptions are reported and skipped while later entries
 continue. Registration is transactional: if a hook partially registers and
 then fails on an exception or duplicate name, its additions are rolled back
 without disturbing earlier modules. Rolled-back tools and modes are closed
-immediately. Registry construction applies the same cleanup guarantee if a
-later initial tool or mode is invalid, and closed registries reject further
-registration. Diagnostic reporter failures are isolated from extension loading
-so they cannot prevent later valid entries from starting.
+immediately in reverse attempt order, including the rejected candidate that
+raised before it entered the registry. Nested registration transactions merge
+successful inner ownership into their parent so a later outer rollback still
+closes every candidate exactly once. Registry construction applies the same
+cleanup guarantee if a later initial tool or mode is invalid, and closed
+registries reject further registration. Diagnostic reporter failures are
+isolated from extension loading so they cannot prevent later valid entries from
+starting.
 Tool action identifiers, aliases, schemas, prompt guidance, and examples are
 validated and normalized during the same transaction. The registry caches that
-immutable capability snapshot, so prompt construction does not repeatedly
-inspect live feature objects. A failing or cross-feature direct matcher is
-reported and skipped, allowing later independent matchers to run. Mode dispatch
-similarly uses the normalized registration key rather than rereading mutable
-mode names during start, failure cleanup, or shutdown.
+immutable capability snapshot, and each prompt build reads one registry
+snapshot rather than repeatedly inspecting live feature objects. A failing or
+cross-feature direct matcher is reported and skipped, allowing later independent
+matchers to run. Mode dispatch similarly uses the normalized registration key
+rather than rereading mutable mode names during start, failure cleanup, or
+shutdown.
 Disabled entries produce no failure because they are not validated or imported.
 Consequently, malformed or disabled extension entries cannot prevent valid
 built-in entries later in the same explicit list from registering. Supplying a

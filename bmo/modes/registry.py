@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 import threading
 
+from bmo.extensions import RegistrationLedger
 from bmo.modes.contracts import InputPolicy, InteractionMode, ModeMenuItem
 
 
@@ -22,21 +23,31 @@ class ModeRegistry:
         self._active_mode: InteractionMode | None = None
         self._quarantined_modes: dict[int, InteractionMode] = {}
         self._closed_modes: dict[int, InteractionMode] = {}
+        self._registration_ledger = RegistrationLedger[InteractionMode]()
         self._closed = False
         self._lock = threading.RLock()
-        try:
-            for mode in modes:
+        for mode in modes:
+            try:
                 self.register(mode)
-        except Exception:
-            self.close()
-            raise
+            except Exception:
+                if not any(owned is mode for owned in self._modes.values()):
+                    self._close_mode(
+                        mode,
+                        action="reject",
+                        mode_name="<unregistered>",
+                    )
+                self.close()
+                raise
 
     def register(self, mode: InteractionMode) -> None:
         """Register a mode under its unique normalized name."""
+        attempt = self._registration_ledger.record(mode)
         raw_name = mode.name
         if not isinstance(raw_name, str):
             raise TypeError("Mode name must be a string.")
         name = raw_name.strip().lower()
+        if attempt is not None:
+            attempt.identifier = name
         if not name:
             raise ValueError("Mode name cannot be empty.")
         with self._lock:
@@ -92,24 +103,29 @@ class ModeRegistry:
                 )
             modes_before = self._modes.copy()
             menu_items_before = self._menu_items.copy()
-        try:
-            yield
-        except Exception:
-            with self._lock:
-                rolled_back = tuple(
-                    (name, mode)
-                    for name, mode in self._modes.items()
-                    if name not in modes_before
-                )
-                self._modes = modes_before
-                self._menu_items = menu_items_before
-            for mode_name, mode in reversed(rolled_back):
-                self._close_mode(
-                    mode,
-                    action="roll back",
-                    mode_name=mode_name,
-                )
-            raise
+        with self._registration_ledger.transaction() as attempts:
+            try:
+                yield
+            except Exception:
+                with self._lock:
+                    self._modes = modes_before
+                    self._menu_items = menu_items_before
+                existing_mode_ids = {
+                    id(mode) for mode in modes_before.values()
+                }
+                closed_ids: set[int] = set()
+                for attempt in reversed(attempts):
+                    mode = attempt.candidate
+                    mode_id = id(mode)
+                    if mode_id in existing_mode_ids or mode_id in closed_ids:
+                        continue
+                    closed_ids.add(mode_id)
+                    self._close_mode(
+                        mode,
+                        action="roll back",
+                        mode_name=attempt.identifier,
+                    )
+                raise
 
     def match_start_request(self, user_text: str) -> InteractionMode | None:
         """Return the first mode matching a start request when none is active."""

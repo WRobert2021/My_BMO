@@ -353,6 +353,7 @@ class ModeLoadingTests(unittest.TestCase):
         self.assertEqual(result.failures[0].stage, "register")
         self.assertIn("Duplicate mode name 'alpha'", result.failures[0].error)
         self.assertEqual(partial.close_count, 1)
+        self.assertEqual(duplicate_alpha.close_count, 1)
 
     def test_context_and_merged_settings_reach_registration_hook(self) -> None:
         context = make_context()

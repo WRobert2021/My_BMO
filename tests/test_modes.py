@@ -110,6 +110,23 @@ class ModeRegistryTests(unittest.TestCase):
             ModeRegistry((first, duplicate))
 
         self.assertEqual(first.close_count, 1)
+        self.assertEqual(duplicate.close_count, 1)
+
+    def test_nested_mode_registration_rolls_back_outer_resources(self) -> None:
+        outer = StubMode("outer", "start outer")
+        inner = StubMode("inner", "start inner")
+        registry = ModeRegistry()
+
+        with self.assertRaisesRegex(RuntimeError, "outer failed"):
+            with registry.registration():
+                registry.register(outer)
+                with registry.registration():
+                    registry.register(inner)
+                raise RuntimeError("outer failed")
+
+        self.assertEqual(registry.names, ())
+        self.assertEqual(outer.close_count, 1)
+        self.assertEqual(inner.close_count, 1)
 
     def assert_failure_isolated(
         self,

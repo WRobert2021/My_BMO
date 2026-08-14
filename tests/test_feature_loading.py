@@ -10,7 +10,11 @@ from unittest.mock import Mock, patch
 
 from bmo.features import ToolContract, ToolRegistry, ToolResult
 from bmo.features.loader import load_feature_registry
-from bmo.prompts import build_routing_prompt, build_system_prompt
+from bmo.prompts import (
+    build_capability_prompt,
+    build_routing_prompt,
+    build_system_prompt,
+)
 from bmo.tools import ToolRouter
 
 
@@ -253,6 +257,7 @@ class FeatureLoadingTests(unittest.TestCase):
             aliases=("later_alias",),
             close_events=close_events,
         )
+        rejected = ResourceTool("alpha", close_events=close_events)
 
         def register_first(registry, settings):
             del settings
@@ -268,12 +273,7 @@ class FeatureLoadingTests(unittest.TestCase):
             del settings
             registry.register(partial)
             registry.register(later_partial)
-            registry.register(
-                ToolContract(
-                    "alpha",
-                    lambda request: ToolResult.success("duplicate"),
-                )
-            )
+            registry.register(rejected)
 
         def register_after(registry, settings):
             del settings
@@ -314,9 +314,13 @@ class FeatureLoadingTests(unittest.TestCase):
             result.registry.aliases,
             {"alpha_alias": "alpha", "beta_alias": "beta"},
         )
-        self.assertEqual(close_events, ["later_partial", "partial"])
+        self.assertEqual(
+            close_events,
+            ["alpha", "later_partial", "partial"],
+        )
         self.assertEqual(partial.close_count, 1)
         self.assertEqual(later_partial.close_count, 1)
+        self.assertEqual(rejected.close_count, 1)
         self.assertEqual(len(result.failures), 1)
         self.assertEqual(result.failures[0].stage, "register")
         self.assertEqual(result.modules, ("first", "after"))
@@ -357,6 +361,22 @@ class FeatureLoadingTests(unittest.TestCase):
 
         self.assertEqual(existing.close_count, 1)
         self.assertEqual(partial.close_count, 1)
+
+    def test_nested_tool_registration_rolls_back_outer_resources(self) -> None:
+        outer = ResourceTool("outer")
+        inner = ResourceTool("inner")
+        registry = ToolRegistry()
+
+        with self.assertRaisesRegex(RuntimeError, "outer failed"):
+            with registry.registration():
+                registry.register(outer)
+                with registry.registration():
+                    registry.register(inner)
+                raise RuntimeError("outer failed")
+
+        self.assertEqual(registry.actions, set())
+        self.assertEqual(outer.close_count, 1)
+        self.assertEqual(inner.close_count, 1)
 
     def test_settings_are_passed_to_the_module_registration_hook(self) -> None:
         module = types.ModuleType("configured")
@@ -461,6 +481,25 @@ class FeatureLoadingTests(unittest.TestCase):
 
 
 class RegistryPromptTests(unittest.TestCase):
+    def test_prompt_builders_read_one_capability_snapshot(self) -> None:
+        source = ToolRegistry(
+            (ToolContract("status", lambda request: ToolResult.success("ok")),)
+        )
+
+        class CountingRegistry:
+            reads = 0
+
+            @property
+            def capabilities(self):
+                self.reads += 1
+                return source.capabilities
+
+        for builder in (build_capability_prompt, build_routing_prompt):
+            registry = CountingRegistry()
+            with self.subTest(builder=builder.__name__):
+                builder(registry)  # type: ignore[arg-type]
+                self.assertEqual(registry.reads, 1)
+
     def test_prompts_include_only_enabled_registry_capabilities(self) -> None:
         router = ToolRouter(
             {
