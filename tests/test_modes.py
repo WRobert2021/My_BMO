@@ -17,6 +17,7 @@ from bmo.modes import (
     InputPolicyKind,
     ModeMenuItem,
     ModeRegistry,
+    ModeRuntimeContext,
 )
 from bmo.modes.games import MatchingGameMode, TwentyQuestionsMode
 from bmo.state import BotStates
@@ -61,6 +62,51 @@ class StubMode:
         self.close_count += 1
         self.closed = True
         self.active = False
+
+
+class ModeRuntimeContextTests(unittest.TestCase):
+    @staticmethod
+    def make_context(**overrides) -> ModeRuntimeContext:
+        values = {
+            "master": Mock(),
+            "text_model": "test-model",
+            "chat": Mock(),
+            "speak_response": Mock(),
+            "remember_turn": Mock(),
+            "wait_for_tts": Mock(),
+            "set_state": Mock(),
+            "announce": Mock(),
+            "face_provider": Mock(return_value=None),
+        }
+        values.update(overrides)
+        return ModeRuntimeContext(**values)
+
+    def test_explicit_dispatcher_owns_immediate_ui_scheduling(self) -> None:
+        callbacks = []
+        context = self.make_context(dispatch_ui=callbacks.append)
+        callback = Mock()
+
+        context.call_soon(callback)
+
+        self.assertEqual(callbacks, [callback])
+        callback.assert_not_called()
+        callbacks[0]()
+        callback.assert_called_once_with()
+        context.master.after.assert_not_called()
+
+    def test_legacy_master_is_a_temporary_dispatch_fallback(self) -> None:
+        context = self.make_context()
+        callback = Mock()
+
+        context.call_soon(callback)
+
+        context.master.after.assert_called_once_with(0, callback)
+
+    def test_dispatch_rejects_non_callable_work(self) -> None:
+        context = self.make_context(dispatch_ui=Mock())
+
+        with self.assertRaisesRegex(TypeError, "callback"):
+            context.call_soon(None)  # type: ignore[arg-type]
 
 
 class ModeRegistryTests(unittest.TestCase):

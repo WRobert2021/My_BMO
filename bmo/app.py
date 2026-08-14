@@ -36,6 +36,7 @@ from bmo.config import (
     WAKE_WORD_THRESHOLD,
     load_config,
 )
+from bmo.conversation import LoggedModelClient, ToolResultPresenter
 from bmo.features.contracts import (
     FeatureMenuContext,
     RuntimeAttention,
@@ -45,8 +46,6 @@ from bmo.features.contracts import (
     ToolAttachmentKind,
     ToolContext,
     ToolEvent,
-    ToolFollowUpKind,
-    ToolPresentationKind,
     ToolResult,
     ToolStatusUpdate,
 )
@@ -186,6 +185,10 @@ class BotGUI:
             enabled=bool(self.config.get("interaction_logging", True)),
         )
         self.current_interaction: InteractionArchive | None = None
+        self.model_client = LoggedModelClient(
+            ollama.chat,
+            lambda: self.current_interaction,
+        )
 
         input_device = resolve_input_device(self.config)
         describe_input_device(input_device)
@@ -227,6 +230,7 @@ class BotGUI:
         self.permanent_memory = load_chat_history(MEMORY_FILE, self.system_prompt)
         self.session_memory: list[dict[str, str]] = []
         self.thinking_sound_active = threading.Event()
+        self.tool_result_presenter = self._build_tool_result_presenter()
 
         self.last_ptt_time = 0.0
         self.ptt_event = threading.Event()
@@ -253,6 +257,7 @@ class BotGUI:
                 set_state=self.set_state,
                 announce=self.enqueue_speech,
                 face_provider=self._current_mode_face,
+                dispatch_ui=self._dispatch_ui,
             ),
             shared_settings={
                 key: value
@@ -332,6 +337,10 @@ class BotGUI:
             unlock=self._unlock_quiet_hours,
         )
         self._refresh_runtime_attention_ui()
+
+    def _dispatch_ui(self, callback: Callable[[], None]) -> None:
+        """Queue immediate work on the active presentation event thread."""
+        self.master.after(0, callback)
 
     def safe_exit(self) -> None:
         if self.exiting:
@@ -559,7 +568,7 @@ class BotGUI:
         """Wake the interaction worker for a feature-requested vision turn."""
         if self.exiting:
             try:
-                self.master.after(0, on_complete)
+                self._dispatch_ui(on_complete)
             except tk.TclError:
                 pass
             return
@@ -615,7 +624,7 @@ class BotGUI:
             self._finish_interaction("completed")
         finally:
             try:
-                self.master.after(0, on_complete)
+                self._dispatch_ui(on_complete)
             except tk.TclError:
                 pass
         return True
@@ -825,7 +834,7 @@ class BotGUI:
             else:
                 raise TypeError("Unknown runtime attention event.")
         try:
-            self.master.after(0, self._refresh_runtime_attention_ui)
+            self._dispatch_ui(self._refresh_runtime_attention_ui)
         except tk.TclError:
             pass
 
@@ -933,7 +942,7 @@ class BotGUI:
             else:
                 self.overlay_label.place_forget()
 
-        self.master.after(0, update)
+        self._dispatch_ui(update)
 
     def append_to_text(self, text: str, newline: bool = True) -> None:
         if self.exiting:
@@ -947,7 +956,7 @@ class BotGUI:
             self.response_text.see(tk.END)
             self.response_text.config(state=tk.DISABLED)
 
-        self.master.after(0, update)
+        self._dispatch_ui(update)
 
     def _handle_runtime_notification(
         self,
@@ -990,7 +999,7 @@ class BotGUI:
             self.response_text.see(tk.END)
             self.response_text.config(state=tk.DISABLED)
 
-        self.master.after(0, update)
+        self._dispatch_ui(update)
 
     def safe_main_execution(self) -> None:
         try:
@@ -1217,77 +1226,7 @@ class BotGUI:
 
     def _logged_chat(self, **kwargs: Any) -> Any:
         """Call Ollama while retaining observable requests and responses."""
-        interaction = self.current_interaction
-        started = time.monotonic()
-        if interaction:
-            interaction.append_json(
-                "output",
-                "model_calls.jsonl",
-                {"phase": "request", "request": kwargs},
-            )
-        try:
-            response = ollama.chat(**kwargs)
-        except Exception as exc:
-            if interaction:
-                interaction.append_json(
-                    "output",
-                    "model_calls.jsonl",
-                    {
-                        "phase": "error",
-                        "error": str(exc),
-                        "duration_seconds": time.monotonic() - started,
-                    },
-                )
-            raise
-
-        if not kwargs.get("stream"):
-            if interaction:
-                interaction.append_json(
-                    "output",
-                    "model_calls.jsonl",
-                    {
-                        "phase": "response",
-                        "response": response,
-                        "duration_seconds": time.monotonic() - started,
-                    },
-                )
-            return response
-
-        def logged_stream():
-            content_parts: list[str] = []
-            try:
-                for chunk in response:
-                    try:
-                        content_parts.append(str(chunk["message"]["content"]))
-                    except (KeyError, TypeError):
-                        pass
-                    yield chunk
-            except Exception as exc:
-                if interaction:
-                    interaction.append_json(
-                        "output",
-                        "model_calls.jsonl",
-                        {
-                            "phase": "stream_error",
-                            "error": str(exc),
-                            "partial_content": "".join(content_parts),
-                            "duration_seconds": time.monotonic() - started,
-                        },
-                    )
-                raise
-            else:
-                if interaction:
-                    interaction.append_json(
-                        "output",
-                        "model_calls.jsonl",
-                        {
-                            "phase": "response",
-                            "response": {"content": "".join(content_parts)},
-                            "duration_seconds": time.monotonic() - started,
-                        },
-                    )
-
-        return logged_stream()
+        return self.model_client(**kwargs)
 
     def _execute_tool(self, action_data: dict[str, Any]) -> ToolResult:
         action_name = self.tool_router.normalize_action(action_data)
@@ -1548,51 +1487,39 @@ class BotGUI:
         direct: bool,
     ) -> None:
         """Present one typed tool result, regardless of how it was routed."""
-        if tool_result.follow_up is not None:
-            follow_up = tool_result.follow_up
-            if follow_up.kind is ToolFollowUpKind.VISION:
-                self.chat_and_respond(
-                    user_text,
-                    image_path=follow_up.attachment.path,
-                )
-            return
-
-        attachment_image_path = next(
-            (
-                attachment.path
-                for attachment in tool_result.attachments
-                if attachment.kind is ToolAttachmentKind.IMAGE
-            ),
-            None,
+        presenter = getattr(self, "tool_result_presenter", None)
+        if presenter is None:
+            # Narrow tests and compatibility callers sometimes construct the
+            # coordinator with __new__ instead of running application startup.
+            presenter = self._build_tool_result_presenter()
+        presenter.present(
+            user_text,
+            tool_result,
+            image_path=image_path,
+            model_to_use=model_to_use,
+            direct=direct,
         )
-        presentation_image_path = attachment_image_path or image_path
-        presentation = tool_result.presentation.for_route(direct=direct)
-        if presentation.kind is ToolPresentationKind.DIRECT:
-            response_text = presentation.user_text or tool_result.content
-        else:
-            result_text = tool_result.content
-            if not result_text:
-                return
-            self.set_state(BotStates.THINKING, "Reading...")
-            self.thinking_sound_active.set()
-            final_response = self._logged_chat(
-                model=model_to_use,
-                messages=presentation.summary_messages(
-                    content=result_text,
-                    user_text=user_text,
-                ),
-                stream=False,
-                options=OLLAMA_OPTIONS,
-            )
-            response_text = final_response["message"]["content"]
-            if presentation.strip_response:
-                response_text = response_text.strip()
 
-        if not response_text:
-            return
+    def _build_tool_result_presenter(self) -> ToolResultPresenter:
+        """Build the UI-neutral typed-result presentation collaborator."""
+        def set_thinking_active(active: bool) -> None:
+            if active:
+                self.thinking_sound_active.set()
+            else:
+                self.thinking_sound_active.clear()
 
-        self._speak_complete_response(response_text, presentation_image_path)
-        self._remember_turn(user_text, response_text)
+        def request_vision_follow_up(user_text: str, path: str) -> None:
+            self.chat_and_respond(user_text, image_path=path)
+
+        return ToolResultPresenter(
+            model_chat=self._logged_chat,
+            model_options=OLLAMA_OPTIONS,
+            set_state=self.set_state,
+            set_thinking_active=set_thinking_active,
+            speak_complete_response=self._speak_complete_response,
+            remember_turn=self._remember_turn,
+            request_vision_follow_up=request_vision_follow_up,
+        )
 
     def _speak_complete_response(
         self,
@@ -1707,7 +1634,7 @@ class BotGUI:
                     and not queued_speech.cancelled.is_set()
                     and not self.exiting
                 ):
-                    self.master.after(0, queued_speech.on_complete)
+                    self._dispatch_ui(queued_speech.on_complete)
             else:
                 time.sleep(0.05)
         self.tts_active.clear()

@@ -5,6 +5,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 ## Module boundaries
 
 - `bmo.app` — Tkinter UI and top-level interaction workflow.
+- `bmo.conversation` — UI-neutral model-call logging and typed tool-result
+  presentation, including summary prompts and generic vision follow-ups.
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — stable compatibility router over the enabled feature registry.
@@ -571,7 +573,10 @@ Each entry supports:
 
 An enabled mode module exposes `register(registry, context, settings)`. The
 context must be `ModeRuntimeContext`; it deliberately exposes approved services
-rather than the entire GUI coordinator. Registration order controls the first
+rather than the entire GUI coordinator. Its `call_soon()` boundary queues work
+on the active presentation thread without requiring a mode to call Tk directly;
+the temporary `master` field remains only for constructing the legacy views.
+Registration order controls the first
 matching start request. The built-in modules construct the existing adapters.
 Twenty Questions owns a lazily loaded immutable base JSONL catalog, an
 integer-bitset adaptive partition index, cached canonical name/question lookup
@@ -787,7 +792,13 @@ selection.
 
 ## Next extraction
 
-The current `BotGUI` still combines presentation and conversation orchestration. The next safe step is to move widget/animation behavior into `bmo.ui` and move Ollama streaming/tool-response handling into `bmo.conversation`, after this extraction has been verified on both macOS and Raspberry Pi.
+`bmo.conversation` now owns observable model-call logging and typed tool-result
+presentation, and immediate cross-thread UI work passes through one dispatcher
+boundary. `BotGUI` still owns ordinary streamed-chat orchestration as well as
+Tk widgets and animation. The next safe step is to move the remaining streamed
+conversation workflow behind the same neutral boundary, then implement a
+PySide6/QML presenter while retaining Tk as a temporary fallback during parity
+testing.
 
 ## Shutdown ownership
 

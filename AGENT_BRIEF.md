@@ -43,7 +43,8 @@ agent.py
 
 | File | Role |
 | --- | --- |
-| `bmo/app.py` | Main composition root and interaction coordinator: Tk state, menus, workers, model calls, tool/mode routing, speech queue, attentions, recovery, and shutdown. |
+| `bmo/app.py` | Main composition root and interaction coordinator: Tk state, menus, workers, tool/mode routing, speech queue, attentions, recovery, and shutdown. |
+| `bmo/conversation.py` | UI-neutral model-call logging and typed tool-result presentation used by the application coordinator. |
 | `bmo/config.py` | Global defaults, shared paths, Ollama options, and split settings/extension configuration loading. |
 | `bmo/extensions.py` | Shared configuration-driven import, registration transaction, rollback, and failure-isolation mechanism for features and modes. |
 | `bmo/tools.py` | Compatibility facade over the enabled `ToolRegistry`, including resource-free metadata access. |

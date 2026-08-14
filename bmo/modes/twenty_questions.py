@@ -64,6 +64,7 @@ class TwentyQuestionsMode:
         app_factory: TwentyQuestionsAppFactory = TwentyQuestionsApp,
         face_provider: Callable[[], Any] | None = None,
         thing_history: TwentyQuestionsHistory | None = None,
+        dispatch_ui: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         self.game = game
         self.master = master
@@ -79,6 +80,11 @@ class TwentyQuestionsMode:
         self.app_factory = app_factory
         self.face_provider = face_provider
         self.thing_history = thing_history or TwentyQuestionsHistory(path=None)
+        self.dispatch_ui = dispatch_ui or (
+            (lambda callback: self.master.after(0, callback))
+            if self.master is not None
+            else None
+        )
         self.ui: TwentyQuestionsApp | None = None
         self._active = threading.Event()
         self._menu_launched = False
@@ -195,7 +201,8 @@ class TwentyQuestionsMode:
         self.ui = None
         if ui is not None and self.master is not None:
             try:
-                self.master.after(0, ui.close)
+                assert self.dispatch_ui is not None
+                self.dispatch_ui(ui.close)
             except Exception as exc:
                 print(f"[20 QUESTIONS] Could not close touch UI: {exc}", flush=True)
 
@@ -231,7 +238,8 @@ class TwentyQuestionsMode:
                 ready.set()
 
         try:
-            self.master.after(0, open_and_signal)
+            assert self.dispatch_ui is not None
+            self.dispatch_ui(open_and_signal)
         except Exception as exc:
             print(f"[20 QUESTIONS] Could not open touch UI: {exc}", flush=True)
             self.game.close()
@@ -336,7 +344,8 @@ class TwentyQuestionsMode:
         if ui is None or self.master is None:
             return
         try:
-            self.master.after(0, lambda: ui.refresh(status))
+            assert self.dispatch_ui is not None
+            self.dispatch_ui(lambda: ui.refresh(status))
         except Exception:
             pass
 
@@ -428,6 +437,7 @@ def register(
             set_state=context.set_state,
             face_provider=context.face_provider,
             thing_history=TwentyQuestionsHistory(history_path),
+            dispatch_ui=context.call_soon,
             answer_wait_seconds=settings.get(
                 "answer_wait_seconds",
                 settings.get("game_answer_wait_seconds", 12),

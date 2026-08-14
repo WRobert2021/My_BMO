@@ -11,3 +11,6 @@ openwakeword==0.6.0; platform_system != "Linux" or python_version < "3.12"
 ollama
 ddgs>=9.14,<10
 Pillow
+# Qt Quick/QML runtime. The 6.11.1 ARM64 wheel was verified on the primary
+# Raspberry Pi 5 target with Python 3.13.5, Debian 13, and glibc 2.41.
+PySide6-Essentials==6.11.1

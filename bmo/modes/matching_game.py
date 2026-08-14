@@ -46,6 +46,7 @@ class MatchingGameMode:
         set_state: SetState,
         announce: Callable[[str], None],
         face_provider: Callable[[], Image.Image | None],
+        dispatch_ui: Callable[[Callable[[], None]], None] | None = None,
         app_factory: MatchingAppFactory = MatchingGameApp,
         menu_item: ModeMenuItem | None = MATCHING_GAME_MENU_ITEM,
     ) -> None:
@@ -56,6 +57,9 @@ class MatchingGameMode:
         self.set_state = set_state
         self.announce = announce
         self.face_provider = face_provider
+        self.dispatch_ui = dispatch_ui or (
+            lambda callback: self.master.after(0, callback)
+        )
         self.app_factory = app_factory
         self.menu_item = menu_item
         self._active = threading.Event()
@@ -73,7 +77,7 @@ class MatchingGameMode:
         self.remember_turn(user_text, response)
         self.wait_for_tts()
         self.set_state(BotStates.IDLE, "Your turn.")
-        self.master.after(0, self._open_game)
+        self.dispatch_ui(self._open_game)
 
     def handle_input(self, user_text: str) -> None:
         del user_text
@@ -90,7 +94,7 @@ class MatchingGameMode:
         if ui is None:
             return
         try:
-            self.master.after(0, ui.close)
+            self.dispatch_ui(ui.close)
         except Exception as exc:
             print(f"[MATCHING GAME] Could not close: {exc}", flush=True)
 
@@ -144,6 +148,7 @@ def register(
             set_state=context.set_state,
             announce=context.announce,
             face_provider=context.face_provider,
+            dispatch_ui=context.call_soon,
             menu_item=MATCHING_GAME_MENU_ITEM if show_in_menu else None,
         )
     )

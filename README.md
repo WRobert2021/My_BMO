@@ -104,8 +104,9 @@ chmod +x setup.sh
 system libraries and Chromium, creates local folders, builds Whisper.cpp,
 downloads the
 `base.en` speech model and Piper voices, creates the Python environment, pulls
-the Ollama models, and installs the default wake-word model. It is safe to run
-again and reuses valid existing downloads.*
+the Ollama models, installs the default wake-word model, and installs the
+PySide6 Essentials Qt Quick/QML runtime used by the in-progress interface
+migration. It is safe to run again and reuses valid existing downloads.*
 
 ### 4. Configure the Wake Word
 The setup script downloads a default wake word ("Hey Jarvis"). To use your own:
@@ -444,6 +445,9 @@ This project is dual-licensed:
 
 * **Software / Code:** All source code is licensed under the [MIT License](LICENSE).
 * **Hardware / 3D Models:** The `.obj`, `.stl`, and other 3D modeling files associated with the physical case are licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+* **Qt for Python dependency:** PySide6 is distributed separately under
+  LGPL-3.0-only, GPL-2.0-only, GPL-3.0-only, or a commercial Qt license; it is
+  not relicensed by this project's MIT license.
 
 ## ⚖️ Legal Disclaimer
 Disclaimer: Fan Project

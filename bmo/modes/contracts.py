@@ -16,6 +16,7 @@ SetState = Callable[[str, str], None]
 SpeakResponse = Callable[[str, str | None], None]
 RememberTurn = Callable[[str, str], None]
 Chat = Callable[..., Any]
+DispatchUi = Callable[[Callable[[], None]], None]
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class ModeRuntimeContext:
     set_state: SetState
     announce: Callable[[str], None]
     face_provider: Callable[[], Image.Image | None]
+    dispatch_ui: DispatchUi | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.text_model, str) or not self.text_model.strip():
@@ -71,6 +73,17 @@ class ModeRuntimeContext:
         ):
             if not callable(getattr(self, name)):
                 raise TypeError(f"Mode runtime context {name} must be callable.")
+        if self.dispatch_ui is not None and not callable(self.dispatch_ui):
+            raise TypeError("Mode runtime context dispatch_ui must be callable.")
+
+    def call_soon(self, callback: Callable[[], None]) -> None:
+        """Queue immediate mode work on the active presentation thread."""
+        if not callable(callback):
+            raise TypeError("Mode UI callback must be callable.")
+        if self.dispatch_ui is not None:
+            self.dispatch_ui(callback)
+            return
+        self.master.after(0, callback)
 
 
 class InputPolicyKind(str, Enum):

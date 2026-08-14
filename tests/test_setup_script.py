@@ -137,11 +137,22 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn("requests>=2,<3", requirements)
         self.assertIn("tqdm>=4,<5", requirements)
         self.assertIn("scikit-learn>=1,<2", requirements)
+        self.assertIn("PySide6-Essentials==6.11.1", requirements)
         self.assertIn(
             'openwakeword==0.6.0; platform_system != "Linux" or '
             'python_version < "3.12"',
             requirements,
         )
+        for module in (
+            "QtCore",
+            "QtGui",
+            "QtQml",
+            "QtQuick",
+            "QtQuickControls2",
+        ):
+            self.assertIn(module, script)
+        self.assertIn('PySide6.__version__ != "6.11.1"', script)
+        self.assertIn('QtCore.qVersion() != "6.11.1"', script)
 
     def test_setup_and_launcher_use_the_documented_virtual_environment(self) -> None:
         setup = SETUP_SCRIPT.read_text(encoding="utf-8")

@@ -317,6 +317,7 @@ verify_installation() {
 import tkinter
 
 import PIL
+import PySide6
 import ddgs
 import numpy
 import ollama
@@ -324,6 +325,11 @@ import onnxruntime
 import openwakeword
 import scipy
 import sounddevice
+
+from PySide6 import QtCore, QtGui, QtQml, QtQuick, QtQuickControls2
+
+if PySide6.__version__ != "6.11.1" or QtCore.qVersion() != "6.11.1":
+    raise RuntimeError("PySide6 and Qt 6.11.1 are required")
 PY
 
     if command -v rpicam-still >/dev/null 2>&1; then

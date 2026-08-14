@@ -111,7 +111,7 @@ class TypedBotGUI(BotGUI):
         if self.exiting or user_text is None:
             return False
         if user_text.lower() == "/quit":
-            self.master.after(0, self.safe_exit)
+            self._dispatch_ui(self.safe_exit)
             return False
         if not user_text:
             return True
