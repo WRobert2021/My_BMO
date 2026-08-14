@@ -59,6 +59,7 @@ agent.py
 | `bmo/state.py` | Shared application and face-state names. |
 | `bmo/face_config.py` | UI-toolkit-neutral face layout, animation-frame discovery, timing, and private configuration validation. |
 | `bmo/gestures.py` | UI-toolkit-neutral tap and horizontal-swipe recognition shared by Tk and Qt. |
+| `bmo/menu_model.py` | UI-toolkit-neutral menu items, 5x3 pagination, hit geometry, and swipe history shared by Tk and Qt. |
 | `bmo/text.py` | Shared spoken-command normalization. |
 | `bmo/network.py` | Shared bounded timeout parsing for online features. |
 | `bmo/location.py` | Location validation, home resolution, and Nominatim geocoding. |
@@ -136,7 +137,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/gestures.py` | Compatibility exports for the neutral gesture recognizers. |
 | `bmo/ui/scrolling.py` | Bounded vertical drag state independent of Tk. |
 | `bmo/ui/compact_face.py` | Shared 108x65 face configuration, image normalization, rendering, and overlay stack lifecycle. |
-| `bmo/ui/menu.py` | Generic swipe menu, icon-grid pagination, navigation, and compact face. |
+| `bmo/ui/menu.py` | Tk rendering and lifecycle for the shared swipe-menu model and compact face. |
 | `bmo/ui/timer.py` | Active-timer list, countdown refresh, touch deletion, scrolling, and duration editor. |
 | `bmo/ui/calendar.py` | Day/month/year views, event editor, recurrence controls, event scrolling, and narration actions. |
 | `bmo/ui/quiet_hours.py` | Fullscreen sleeping cover and four-digit touch keypad. |
@@ -144,7 +145,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/learning.py` | Learner sessions, generic activity rendering, teacher controls, plan/profile management, reports, and scoped speech. |
 | `bmo/ui/weather.py` | Forecast-to-view state, asynchronous carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
 | `bmo/ui/weather_web/index.html` | Weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
-| `bmo/qt/controller.py` | Qt properties/signals for real face frames, animation state, overlay, HUD text, and kiosk gestures. |
+| `bmo/qt/controller.py` | Qt properties/signals for face frames, overlay, HUD, shared menu pages, selections, and kiosk gestures. |
 | `bmo/qt/app.py` | Qt Quick engine ownership and migration-shell startup. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 QML face, touch surface, overlay, diagnostic HUD, and kiosk shortcuts. |
 

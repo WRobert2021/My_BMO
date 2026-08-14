@@ -131,10 +131,11 @@ HUD:
 QT_QPA_PLATFORM=wayland python qt_agent.py
 ```
 
-Tap the face to show or hide the HUD. Swipe left and then tap to display the
-`Menu request received` diagnostic. Use **Exit Preview** in the HUD to close the
-shell. The preview intentionally does not start the microphone, models, tools,
-or modes yet.
+Tap the face to show or hide the HUD. Swipe left to open the QML icon menu, tap
+an icon to confirm its selection at the bottom of the screen, and swipe right
+from the first page or tap the compact face to return. Use **Exit Preview** in
+the HUD to close the shell. Menu selections are diagnostic only; the preview
+does not start the microphone, models, tools, or modes yet.
 
 ### Development Tests
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Iterable
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
@@ -13,7 +14,17 @@ from bmo.face_config import (
     load_compact_face_config,
 )
 from bmo.gestures import GestureKind, HorizontalSwipeRecognizer
+from bmo.menu_model import (
+    IconMenuItem,
+    IconMenuPage,
+    MenuBounds,
+    MenuNavigation,
+    MenuNavigator,
+)
 from bmo.state import BotStates
+
+
+MENU_BOUNDS = MenuBounds(18, 76, 782, 448)
 
 
 class QtFaceController(QObject):
@@ -25,8 +36,13 @@ class QtFaceController(QObject):
     statusChanged = Signal()
     responseTextChanged = Signal()
     hudVisibleChanged = Signal()
+    menuVisibleChanged = Signal()
+    menuItemsChanged = Signal()
+    menuPageLabelChanged = Signal()
+    menuSelectionChanged = Signal()
 
     menuRequested = Signal()
+    menuItemSelected = Signal(str)
     pushToTalkRequested = Signal()
     interruptRequested = Signal()
     exitRequested = Signal()
@@ -41,22 +57,31 @@ class QtFaceController(QObject):
         parent: QObject | None = None,
         rng: random.Random | None = None,
         start_timer: bool = True,
+        menu_items: Iterable[IconMenuItem] = (),
     ) -> None:
         super().__init__(parent)
         self._config = config or load_compact_face_config()
         self._project_root = Path(project_root)
         self._rng = rng or random.Random()
         self._gesture = HorizontalSwipeRecognizer()
+        self._menu_gesture = HorizontalSwipeRecognizer()
         self._frames = self._discover_frames()
         self._state = str(initial_state).strip().lower() or BotStates.IDLE
         self._status = str(initial_status)
         self._response_text = ""
         self._hud_visible = False
+        self._menu_visible = False
+        self._menu_items_payload: list[dict[str, object]] = []
+        self._menu_page_label = ""
+        self._menu_selection = ""
+        self._menu_pages: tuple[IconMenuPage, ...] = ()
+        self._menu_navigator = MenuNavigator(1)
         self._frame_index = 0
         self._frame_source = QUrl()
         self._overlay_source = QUrl()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.advanceFrame)
+        self.set_menu_items(menu_items)
         self._show_current_frame()
         if start_timer:
             self._restart_timer()
@@ -117,6 +142,22 @@ class QtFaceController(QObject):
     @Property(bool, notify=hudVisibleChanged)
     def hudVisible(self) -> bool:  # noqa: N802 - QML naming convention
         return self._hud_visible
+
+    @Property(bool, notify=menuVisibleChanged)
+    def menuVisible(self) -> bool:  # noqa: N802 - QML naming convention
+        return self._menu_visible
+
+    @Property("QVariantList", notify=menuItemsChanged)
+    def menuItems(self) -> list[dict[str, object]]:  # noqa: N802
+        return self._menu_items_payload
+
+    @Property(str, notify=menuPageLabelChanged)
+    def menuPageLabel(self) -> str:  # noqa: N802
+        return self._menu_page_label
+
+    @Property(str, notify=menuSelectionChanged)
+    def menuSelection(self) -> str:  # noqa: N802
+        return self._menu_selection
 
     @Slot()
     def advanceFrame(self) -> None:  # noqa: N802 - QML naming convention
@@ -183,9 +224,106 @@ class QtFaceController(QObject):
     def faceReleased(self, x: float, y: float) -> None:  # noqa: N802
         gesture = self._gesture.release(int(x), int(y))
         if gesture == GestureKind.SWIPE_LEFT:
+            self.show_menu()
             self.menuRequested.emit()
         elif gesture == GestureKind.TAP:
             self.toggleHud()
+
+    def set_menu_items(self, items: Iterable[IconMenuItem]) -> None:
+        """Replace ordered menu metadata and reset navigation to page one."""
+        supplied = tuple(items)
+        if not all(isinstance(item, IconMenuItem) for item in supplied):
+            raise TypeError("Qt menu items must be IconMenuItem instances.")
+        self._menu_pages = IconMenuPage.paginate(supplied)
+        self._menu_navigator = MenuNavigator(max(1, len(self._menu_pages)))
+        self._menu_selection = ""
+        self.menuSelectionChanged.emit()
+        self._refresh_menu_page()
+
+    def _refresh_menu_page(self) -> None:
+        page_count = len(self._menu_pages)
+        if not page_count:
+            payload: list[dict[str, object]] = []
+            label = ""
+        else:
+            page = self._menu_pages[self._menu_navigator.page_index]
+            payload = []
+            for index, item in enumerate(page.items):
+                left, top, right, bottom = page.tile_bounds(index, MENU_BOUNDS)
+                payload.append(
+                    {
+                        "name": item.name,
+                        "label": item.label,
+                        "iconSource": QUrl.fromLocalFile(
+                            str(item.icon_path.resolve())
+                        ),
+                        "x": left,
+                        "y": top,
+                        "width": right - left,
+                        "height": bottom - top,
+                    }
+                )
+            label = (
+                f"{self._menu_navigator.page_index + 1} / {page_count}"
+                if page_count > 1
+                else ""
+            )
+        self._menu_items_payload = payload
+        self._menu_page_label = label
+        self.menuItemsChanged.emit()
+        self.menuPageLabelChanged.emit()
+
+    def show_menu(self) -> None:
+        """Show page one of the QML menu."""
+        self._menu_navigator = MenuNavigator(max(1, len(self._menu_pages)))
+        self._refresh_menu_page()
+        if not self._menu_visible:
+            self._menu_visible = True
+            self._hud_visible = False
+            self.menuVisibleChanged.emit()
+            self.hudVisibleChanged.emit()
+
+    def hide_menu(self) -> None:
+        """Return from the menu to the fullscreen face."""
+        if self._menu_visible:
+            self._menu_visible = False
+            self.menuVisibleChanged.emit()
+
+    @Slot(float, float)
+    def menuPressed(self, x: float, y: float) -> None:  # noqa: N802
+        self._menu_gesture.press(int(x), int(y))
+
+    @Slot(float, float)
+    def menuReleased(self, x: float, y: float) -> None:  # noqa: N802
+        point = (int(x), int(y))
+        gesture = self._menu_gesture.release(*point)
+        if gesture == GestureKind.SWIPE_LEFT:
+            if self._menu_navigator.swipe_left() == MenuNavigation.PAGE:
+                self._refresh_menu_page()
+            return
+        if gesture == GestureKind.SWIPE_RIGHT:
+            navigation = self._menu_navigator.swipe_right()
+            if navigation == MenuNavigation.FACE:
+                self.hide_menu()
+            elif navigation == MenuNavigation.PAGE:
+                self._refresh_menu_page()
+            return
+        if gesture != GestureKind.TAP:
+            return
+        left, top, right, bottom = self._config.bounds
+        if left <= point[0] <= right and top <= point[1] <= bottom:
+            self.hide_menu()
+            return
+        if not self._menu_pages:
+            return
+        page = self._menu_pages[self._menu_navigator.page_index]
+        action = page.action_at(point, MENU_BOUNDS)
+        if action is None:
+            return
+        selected = next(item for item in page.items if item.name == action)
+        self._menu_selection = selected.label
+        self.menuSelectionChanged.emit()
+        self.menuItemSelected.emit(action)
 
     @Slot()
     def requestPushToTalk(self) -> None:  # noqa: N802

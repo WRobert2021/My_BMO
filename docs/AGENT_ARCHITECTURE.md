@@ -77,6 +77,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.face_config` — UI-toolkit-neutral face layout, validated frame sources,
   timing, and private configuration loading shared by Tk, Qt, and web views.
 - `bmo.gestures` — UI-toolkit-neutral tap and horizontal-swipe recognition.
+- `bmo.menu_model` — UI-toolkit-neutral menu item validation, 5x3 pagination,
+  hit geometry, and ordered swipe history shared by Tk and Qt.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -84,7 +86,7 @@ The application keeps `agent.py` as the stable startup command while implementat
   canonical 108×65 top-right layout, distortion-free normalization, and the
   stack-aware Tk lifecycle shared by menus, features, and modes.
 - `bmo.ui.scrolling` — bounded vertical finger scrolling shared by touch views.
-- `bmo.ui.menu` — ordered menu-page navigation and the touch menu overlay.
+- `bmo.ui.menu` — Tk drawing and lifecycle for the shared touch-menu model.
 - `bmo.ui.timer` — live countdown rendering, touch deletion, and vertical
   drag-scrolling for the menu-launched timer view.
 - `bmo.ui.calendar` — current-day-first day/month/year navigation, bounded
@@ -99,7 +101,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
   secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
 - `bmo.qt.controller` — Qt properties, signals, real face-frame animation,
-  camera overlay state, HUD text, and gesture translation without importing Tk.
+  camera overlay state, HUD text, shared menu pages, selection events, and
+  gesture translation without importing Tk.
 - `bmo.qt.app` — isolated Qt Quick engine and controller lifetime ownership; it
   intentionally starts no assistant services until the coordinator boundary is
   ready to replace Tk.
@@ -133,8 +136,9 @@ latitude/longitude range validation for configured, provider, and injected
 coordinates. Conversation memory permits one leading system message only.
 `bmo.text` and `bmo.network` own single stable transformations used by otherwise
 independent features. Face configuration and gesture recognition live in
-`bmo.face_config` and `bmo.gestures` so importing the Qt presentation path does
-not initialize the Tk package or create parallel implementations.
+`bmo.face_config`, `bmo.gestures`, and `bmo.menu_model` so importing the Qt
+presentation path does not initialize the Tk package or create parallel
+implementations.
 
 Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.
@@ -178,9 +182,11 @@ of executable feature resources.
 The production flow above remains on Tk during the migration. `qt_agent.py`
 currently exercises only the real Qt/QML presentation shell: it loads the
 configured face frames, animation timings, touch gestures, status, response
-text, and camera-overlay path without constructing audio, models, features, or
-modes. Keeping that launcher isolated makes the display/event-loop boundary
-testable on the Pi before runtime ownership moves away from `BotGUI`.
+text, camera-overlay path, and the shared icon-menu geometry without
+constructing audio, models, features, or modes. The shell supplies disposable
+built-in preview metadata; selections are diagnostic events and do not execute
+features or modes. Keeping that launcher isolated makes the display/event-loop
+boundary testable on the Pi before runtime ownership moves away from `BotGUI`.
 
 ## Display navigation
 
@@ -206,6 +212,9 @@ Menu pages satisfy the small `bmo.ui.menu.MenuPage` rendering contract and are
 supplied to `MenuApp` in display order. Left swipes advance through that tuple.
 Right swipes decrement the current page index, so every visited page is
 retraced in reverse order; a right swipe from the first page closes the menu.
+The item records, 15-item pagination, padded cell geometry, hit testing, and
+navigation state live in `bmo.menu_model`; Tk draws that model on Canvas while
+QML exposes the same page as a QVariant list of icon URLs and bounds.
 Enabled modes and feature tools may optionally contribute typed menu metadata.
 Their registries expose those contributions in configuration order, and
 `BotGUI` maps them to generic five-column, three-row icon-grid pages without

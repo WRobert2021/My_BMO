@@ -17,7 +17,8 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
-from bmo.qt.app import QML_PATH  # noqa: E402
+from bmo.menu_model import IconMenuItem  # noqa: E402
+from bmo.qt.app import QML_PATH, preview_menu_items  # noqa: E402
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
 
@@ -77,8 +78,41 @@ class QtFaceControllerTests(unittest.TestCase):
             controller.facePressed(700, 200)
             controller.faceReleased(100, 200)
 
-        self.assertTrue(controller.hudVisible)
+        self.assertFalse(controller.hudVisible)
+        self.assertTrue(controller.menuVisible)
         self.assertEqual(menu_requests, [True])
+
+    def test_menu_pages_select_items_and_swipe_back_to_face(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            controller = self.make_controller(root)
+            items = tuple(
+                IconMenuItem(f"item-{index}", f"Item {index}", root / f"{index}.png")
+                for index in range(17)
+            )
+            selected: list[str] = []
+            controller.menuItemSelected.connect(selected.append)
+            controller.set_menu_items(items)
+            controller.show_menu()
+
+            self.assertEqual(len(controller.menuItems), 15)
+            self.assertEqual(controller.menuPageLabel, "1 / 2")
+            controller.menuPressed(50, 100)
+            controller.menuReleased(50, 100)
+            controller.menuPressed(700, 300)
+            controller.menuReleased(100, 300)
+
+            self.assertEqual(selected, ["item-0"])
+            self.assertEqual(controller.menuSelection, "Item 0")
+            self.assertEqual(len(controller.menuItems), 2)
+            self.assertEqual(controller.menuPageLabel, "2 / 2")
+
+            controller.menuPressed(100, 300)
+            controller.menuReleased(700, 300)
+            controller.menuPressed(100, 300)
+            controller.menuReleased(700, 300)
+
+        self.assertFalse(controller.menuVisible)
 
     def test_unknown_state_uses_idle_frames_without_losing_state_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -95,7 +129,7 @@ class QtFaceControllerTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 (
-                    "import sys; import bmo.qt.controller; "
+                    "import sys; import bmo.menu_model, bmo.qt.controller; "
                     "raise SystemExit('tkinter' in sys.modules)"
                 ),
             ],
@@ -115,7 +149,10 @@ class QtQmlShellTests(unittest.TestCase):
         cls.app = QGuiApplication.instance() or QGuiApplication(["pytest-qml-shell"])
 
     def test_main_qml_loads_with_controller_context(self) -> None:
-        controller = QtFaceController(start_timer=False)
+        controller = QtFaceController(
+            start_timer=False,
+            menu_items=preview_menu_items(),
+        )
         engine = QQmlApplicationEngine()
         engine.rootContext().setContextProperty("bmoUi", controller)
 
@@ -123,6 +160,13 @@ class QtQmlShellTests(unittest.TestCase):
 
         self.assertTrue(engine.rootObjects())
         engine.deleteLater()
+
+    def test_preview_menu_uses_existing_project_icon_references(self) -> None:
+        items = preview_menu_items()
+
+        self.assertEqual(items[0].name, "matching_game")
+        self.assertEqual(items[1].name, "twenty_questions")
+        self.assertTrue(all(item.icon_path.parent.name == "icons" for item in items))
 
 
 if __name__ == "__main__":
