@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import importlib
 from types import ModuleType
 from typing import Any
 
+from bmo.extensions import load_configured_extensions
 from bmo.features.contracts import RuntimeAttentionCallback, RuntimeCallback
 from bmo.features.registry import ToolRegistry
 
@@ -49,29 +50,6 @@ class FeatureLoadResult:
     modules: tuple[str, ...]
 
 
-def _default_entries() -> list[dict[str, Any]]:
-    return [
-        {"module": module, "enabled": True, "settings": {}}
-        for module in DEFAULT_FEATURE_MODULES
-    ]
-
-
-def _report_failure(
-    failures: list[FeatureLoadFailure],
-    module: str,
-    stage: str,
-    exc: object,
-    reporter: Callable[[str], None],
-) -> None:
-    failure = FeatureLoadFailure(
-        module,
-        stage,
-        f"{type(exc).__name__}: {exc}",
-    )
-    failures.append(failure)
-    reporter(str(failure))
-
-
 def _load_module(module_name: str) -> ModuleType:
     return importlib.import_module(module_name)
 
@@ -83,6 +61,7 @@ def load_feature_registry(
     shared_settings: Mapping[str, Any] | None = None,
     runtime_callback: RuntimeCallback | None = None,
     attention_callback: RuntimeAttentionCallback | None = None,
+    metadata_only: bool = False,
 ) -> FeatureLoadResult:
     """Import and register enabled feature modules without failing startup."""
     emit = reporter or (lambda message: print(message, flush=True))
@@ -90,101 +69,23 @@ def load_feature_registry(
         runtime_callback=runtime_callback,
         attention_callback=attention_callback,
     )
-    failures: list[FeatureLoadFailure] = []
-    loaded_modules: list[str] = []
-
-    raw_entries = config.get("features", _default_entries())
-    if not isinstance(raw_entries, Sequence) or isinstance(
-        raw_entries, (str, bytes)
-    ):
-        _report_failure(
-            failures,
-            "<features>",
-            "configure",
-            TypeError("features must be a list"),
-            emit,
-        )
-        return FeatureLoadResult(registry, tuple(failures), ())
-
-    common_settings = dict(shared_settings or {})
-    for index, raw_entry in enumerate(raw_entries):
-        label = f"<features[{index}]>"
-        if not isinstance(raw_entry, Mapping):
-            _report_failure(
-                failures,
-                label,
-                "configure",
-                TypeError("feature entry must be an object"),
-                emit,
-            )
-            continue
-
-        # Disabled entries are intentionally ignored before validating or
-        # importing their module names or settings.
-        enabled = raw_entry.get("enabled", True)
-        if not isinstance(enabled, bool):
-            _report_failure(
-                failures,
-                label,
-                "configure",
-                TypeError("enabled must be true or false"),
-                emit,
-            )
-            continue
-        if not enabled:
-            continue
-
-        module_name = raw_entry.get("module")
-        if not isinstance(module_name, str) or not module_name.strip():
-            _report_failure(
-                failures,
-                label,
-                "configure",
-                ValueError("module must be a non-empty string"),
-                emit,
-            )
-            continue
-        module_name = module_name.strip()
-
-        raw_settings = raw_entry.get("settings", {})
-        if not isinstance(raw_settings, Mapping):
-            _report_failure(
-                failures,
-                module_name,
-                "configure",
-                TypeError("settings must be an object"),
-                emit,
-            )
-            continue
-        settings = {**common_settings, **raw_settings}
-
-        try:
-            module = _load_module(module_name)
-        except Exception as exc:
-            _report_failure(failures, module_name, "import", exc, emit)
-            continue
-
-        register = getattr(module, "register", None)
-        if not callable(register):
-            _report_failure(
-                failures,
-                module_name,
-                "register",
-                AttributeError("module has no callable register(registry, settings)"),
-                emit,
-            )
-            continue
-
-        try:
-            with registry.registration():
-                register(registry, settings)
-        except Exception as exc:
-            _report_failure(failures, module_name, "register", exc, emit)
-            continue
-        loaded_modules.append(module_name)
+    failures, loaded_modules = load_configured_extensions(
+        config,
+        config_key="features",
+        entry_name="feature",
+        defaults=DEFAULT_FEATURE_MODULES,
+        shared_settings=shared_settings,
+        import_module=_load_module,
+        registration=registry.registration,
+        invoke_register=lambda register, settings: register(registry, settings),
+        register_signature="register(registry, settings)",
+        register_names=("register_metadata", "register") if metadata_only else ("register",),
+        make_failure=FeatureLoadFailure,
+        reporter=emit,
+    )
 
     return FeatureLoadResult(
         registry,
-        tuple(failures),
-        tuple(loaded_modules),
+        failures,
+        loaded_modules,
     )

@@ -14,8 +14,29 @@ import json
 import os
 from pathlib import Path
 import re
-import tempfile
 from typing import Any
+
+from bmo.jsonio import (
+    atomic_write_json,
+    atomic_write_json_lines,
+    duplicate_key_hook,
+)
+from bmo.text import normalize_spoken_command
+from bmo.twenty_questions_contracts import (
+    LearningPersistenceError,
+    TwentyQuestionsDataError,
+)
+from bmo.twenty_questions_text import (
+    DATASET_ANSWERS,
+    DISPLAY_ANSWERS,
+    LEARNED_ANSWERS,
+    PLAYER_ANSWERS,
+    canonical_object_name,
+    clean_display_name,
+    normalize_answer,
+    normalize_dataset_answer,
+    normalize_player_answer,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -27,16 +48,6 @@ HISTORY_PATH = PROJECT_ROOT / "data" / "20_questions" / "history.json"
 DATA_PATH = BASE_DATA_PATH
 LEARNED_PATH = LEARNED_DATA_PATH
 
-PLAYER_ANSWERS = ("yes", "no", "sometimes", "unknown")
-DATASET_ANSWERS = frozenset({"yes", "no", "sometimes", "often"})
-LEARNED_ANSWERS = frozenset((*DATASET_ANSWERS, "unknown"))
-DISPLAY_ANSWERS = {
-    "yes": "Yes",
-    "no": "No",
-    "sometimes": "Sometimes",
-    "often": "Often",
-    "unknown": "Unknown",
-}
 INTRODUCTION = (
     "Think of something and I’ll try to guess it. Answer yes, no, "
     "sometimes, or I don’t know."
@@ -47,38 +58,6 @@ LLM_GUESS_REQUEST = "__TWENTY_QUESTIONS_LLM_GUESS_REQUEST__"
 BONUS_INTRODUCTION = (
     "You win! You made it through 20 questions. Let's play a bonus round."
 )
-
-
-class TwentyQuestionsDataError(ValueError):
-    """A base or learned catalog failed validation."""
-
-
-class LearningPersistenceError(OSError):
-    """The learned overlay could not be atomically persisted."""
-
-
-def canonical_object_name(name: str) -> str:
-    """Normalize an object name for case-insensitive overlay matching."""
-    return " ".join(str(name).strip().split()).casefold()
-
-
-def clean_display_name(name: str) -> str:
-    """Collapse whitespace while retaining the speaker's display spelling."""
-    return " ".join(str(name).strip().split())
-
-
-def normalize_dataset_answer(value: object, *, learned: bool = False) -> str:
-    """Normalize one dataset value and reject labels outside its contract."""
-    if not isinstance(value, str):
-        raise TwentyQuestionsDataError("answer values must be strings")
-    normalized = " ".join(value.strip().casefold().split())
-    allowed = LEARNED_ANSWERS if learned else DATASET_ANSWERS
-    if normalized not in allowed:
-        allowed_text = ", ".join(sorted(allowed))
-        raise TwentyQuestionsDataError(
-            f"answer label must be one of {allowed_text}"
-        )
-    return normalized
 
 
 @dataclass(frozen=True)
@@ -185,43 +164,24 @@ class TwentyQuestionsHistory:
     def save(self) -> None:
         if self.path is None:
             return
-        temp_name: str | None = None
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.path.parent,
-                prefix=f".{self.path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temp_name = handle.name
-                handle.write(
-                    json.dumps({"things": self.things}, indent=2) + "\n"
-                )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, self.path)
-            temp_name = None
+            atomic_write_json(
+                self.path,
+                {"things": self.things},
+                indent=2,
+                ensure_ascii=True,
+                replace=os.replace,
+            )
         except OSError as exc:
             print(f"[20 QUESTIONS] Could not save thing history: {exc}", flush=True)
-        finally:
-            if temp_name is not None:
-                try:
-                    Path(temp_name).unlink()
-                except OSError:
-                    pass
 
 
 def _json_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     """Reject duplicate JSON keys instead of silently losing a value."""
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise TwentyQuestionsDataError("duplicate JSON key")
-        result[key] = value
-    return result
+    return duplicate_key_hook(
+        TwentyQuestionsDataError,
+        "duplicate JSON key",
+    )(pairs)
 
 
 class TwentyQuestionsDatasetLoader:
@@ -575,40 +535,22 @@ class TwentyQuestionsDatasetLoader:
         rows: Mapping[str, DatasetRow],
         question_keys: tuple[str, ...],
     ) -> None:
-        self.learned_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_name: str | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.learned_path.parent,
-                prefix=f".{self.learned_path.name}.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temp_name = handle.name
-                for row in rows.values():
-                    payload = {OBJECT_NAME_KEY: row.name}
-                    payload.update(
-                        {
-                            key: DISPLAY_ANSWERS[row.answers[index]]
-                            for index, key in enumerate(question_keys)
-                        }
-                    )
-                    handle.write(
-                        json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-                        + "\n"
-                    )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, self.learned_path)
-            temp_name = None
-        finally:
-            if temp_name is not None:
-                try:
-                    Path(temp_name).unlink()
-                except OSError:
-                    pass
+        payloads = []
+        for row in rows.values():
+            payload = {OBJECT_NAME_KEY: row.name}
+            payload.update(
+                {
+                    key: DISPLAY_ANSWERS[row.answers[index]]
+                    for index, key in enumerate(question_keys)
+                }
+            )
+            payloads.append(payload)
+        atomic_write_json_lines(
+            self.learned_path,
+            payloads,
+            ensure_ascii=False,
+            replace=os.replace,
+        )
 
     def _diagnose(self, message: str) -> None:
         self.diagnostics.append(message)
@@ -679,36 +621,6 @@ class CandidateIndex:
         return self.masks
 
 
-def normalize_player_answer(text: object) -> str | None:
-    """Normalize natural speech to a player answer or quit command."""
-    if not isinstance(text, str):
-        return None
-    normalized = text.casefold().replace("’", "'")
-    normalized = re.sub(r"^[\s\-\u2013\u2014*•]+", "", normalized)
-    normalized = re.sub(r"^(?:oh|well|um|uh|okay|ok)[,.\s]+", "", normalized)
-    normalized = re.sub(r"^[^\w']+|[^\w']+$", "", normalized)
-    normalized = " ".join(normalized.split())
-    aliases = {
-        "yes": {"yes", "yep", "yeah", "correct", "it is", "sure"},
-        "no": {"no", "nope", "nah", "incorrect", "it isn't", "it is not", "it isnt"},
-        "sometimes": {
-            "sometimes", "maybe", "probably", "possibly", "often", "usually",
-            "sort of", "kind of", "it depends",
-        },
-        "unknown": {
-            "i don't know", "i dont know", "don't know", "dont know", "not sure",
-            "unsure", "unknown",
-        },
-        "quit": {"stop", "quit", "cancel", "end game"},
-    }
-    for answer, words in aliases.items():
-        if normalized in words:
-            return answer
-    return None
-
-
-# Short compatibility alias for tests and integrations.
-normalize_answer = normalize_player_answer
 
 
 @dataclass(frozen=True)
@@ -836,7 +748,7 @@ class TwentyQuestionsGame:
 
     @staticmethod
     def is_start_request(text: str) -> bool:
-        normalized = " ".join(str(text).casefold().strip().rstrip("?.!").split())
+        normalized = normalize_spoken_command(text)
         return bool(
             normalized in {"20 questions", "twenty questions"}
             or re.search(

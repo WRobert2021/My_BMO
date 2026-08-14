@@ -131,8 +131,9 @@ class SetupScriptTests(unittest.TestCase):
         )
 
         self.assertIn(
-            'pip install --no-deps --upgrade "openwakeword==0.6.0"', script
+            'pip install --no-deps "openwakeword==0.6.0"', script
         )
+        self.assertNotIn("--force-reinstall", script)
         self.assertIn("requests>=2,<3", requirements)
         self.assertIn("tqdm>=4,<5", requirements)
         self.assertIn("scikit-learn>=1,<2", requirements)
@@ -141,6 +142,15 @@ class SetupScriptTests(unittest.TestCase):
             'python_version < "3.12"',
             requirements,
         )
+
+    def test_setup_and_launcher_use_the_documented_virtual_environment(self) -> None:
+        setup = SETUP_SCRIPT.read_text(encoding="utf-8")
+        launcher = (REPOSITORY_ROOT / "start_agent.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('VENV_DIR="$BASE_DIR/.venv"', setup)
+        self.assertIn('exec "$BASE_DIR/.venv/bin/python" agent.py', launcher)
 
     def test_ollama_model_matches_runtime_and_example_defaults(self) -> None:
         script = SETUP_SCRIPT.read_text(encoding="utf-8")

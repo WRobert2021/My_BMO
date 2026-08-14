@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from bmo.jsonio import load_json
 
 CONFIG_DIRECTORY = Path("config")
 SETTINGS_CONFIG_FILE = CONFIG_DIRECTORY / "settings.json"
@@ -64,7 +65,7 @@ def _load_config_file(path: Path) -> dict[str, Any]:
         return {}
 
     with path.open("r", encoding="utf-8") as handle:
-        values = json.load(handle)
+        values = load_json(handle)
     if not isinstance(values, dict):
         raise ValueError("configuration root must be a JSON object")
     return values
@@ -126,7 +127,7 @@ def load_config(
             values = _load_config_file(path)
             validate(values)
             config.update(values)
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             print(
                 f"Config Error in {path}: {exc}. Using defaults for that file.",
                 flush=True,

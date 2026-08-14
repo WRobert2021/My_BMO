@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import select
@@ -17,6 +16,7 @@ import sounddevice as sd
 from openwakeword.model import Model
 
 from bmo.audio import choose_input_samplerate
+from bmo.jsonio import loads_json
 
 
 class WhisperTranscriber:
@@ -306,8 +306,8 @@ def extract_json_from_text(text: str) -> dict[str, Any] | None:
     try:
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
-            value = json.loads(match.group(0))
+            value = loads_json(match.group(0))
             return value if isinstance(value, dict) else None
-    except (json.JSONDecodeError, TypeError):
+    except (ValueError, TypeError):
         pass
     return None

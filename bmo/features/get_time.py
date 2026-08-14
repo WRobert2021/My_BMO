@@ -10,7 +10,7 @@ from bmo.features.contracts import (
     DirectAction,
     ToolRequest,
     ToolResult,
-    normalize_direct_text,
+    match_exact_direct_action,
 )
 
 
@@ -47,9 +47,11 @@ class GetTimeTool:
 
     @classmethod
     def match_direct_action(cls, user_text: str) -> DirectAction | None:
-        if normalize_direct_text(user_text) in cls.direct_phrases:
-            return {"action": cls.action}
-        return None
+        return match_exact_direct_action(
+            user_text,
+            action=cls.action,
+            phrases=cls.direct_phrases,
+        )
 
 
 def register(registry: Any, settings: Mapping[str, Any]) -> None:

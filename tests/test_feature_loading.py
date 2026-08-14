@@ -292,6 +292,61 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertEqual(received, [{"answer": 42}])
         self.assertEqual(result.registry.actions, {"configured"})
 
+    def test_metadata_hook_is_preferred_and_regular_hook_is_the_fallback(
+        self,
+    ) -> None:
+        specialized = types.ModuleType("specialized")
+        fallback = types.ModuleType("fallback")
+        calls: list[str] = []
+
+        def register_specialized(registry, settings):
+            del registry, settings
+            calls.append("runtime")
+
+        def register_metadata(registry, settings):
+            del settings
+            calls.append("metadata")
+            registry.register(
+                ToolContract(
+                    "specialized",
+                    lambda request: ToolResult.success("ok"),
+                )
+            )
+
+        def register_fallback(registry, settings):
+            del settings
+            calls.append("fallback")
+            registry.register(
+                ToolContract(
+                    "fallback",
+                    lambda request: ToolResult.success("ok"),
+                )
+            )
+
+        specialized.register = register_specialized
+        specialized.register_metadata = register_metadata
+        fallback.register = register_fallback
+        modules = {"specialized": specialized, "fallback": fallback}
+        with patch(
+            "bmo.features.loader._load_module",
+            side_effect=modules.__getitem__,
+        ):
+            result = load_feature_registry(
+                {
+                    "features": [
+                        {"module": name, "settings": {}}
+                        for name in modules
+                    ]
+                },
+                metadata_only=True,
+            )
+
+        self.assertEqual(calls, ["metadata", "fallback"])
+        self.assertEqual(
+            result.registry.actions,
+            {"specialized", "fallback"},
+        )
+
 
 class RegistryPromptTests(unittest.TestCase):
     def test_prompts_include_only_enabled_registry_capabilities(self) -> None:

@@ -542,3 +542,17 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
             menu_item=CALENDAR_MENU_ITEM if config.show_in_menu else None,
         )
     )
+
+
+def register_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Register Calendar routing metadata without starting its date worker."""
+    config = load_calendar_config(settings)
+    registry.register(
+        CalendarTool(
+            config,
+            notify_attention=registry.notify_attention,
+            dismiss_attention=registry.dismiss_attention,
+            menu_item=CALENDAR_MENU_ITEM if config.show_in_menu else None,
+            start_worker=False,
+        )
+    )

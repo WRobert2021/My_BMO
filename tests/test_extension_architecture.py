@@ -447,6 +447,29 @@ class CoreCouplingAuditTests(unittest.TestCase):
             default_router.registry.aliases,
         )
 
+    def test_legacy_metadata_access_does_not_leave_feature_workers_running(
+        self,
+    ) -> None:
+        script = """
+import threading
+from bmo.tools import ToolRouter
+
+before = {thread.name for thread in threading.enumerate()}
+assert "get_calendar" in ToolRouter.VALID_TOOLS
+after = {thread.name for thread in threading.enumerate()}
+assert "bmo-calendar-midnight" not in after
+assert after == before
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

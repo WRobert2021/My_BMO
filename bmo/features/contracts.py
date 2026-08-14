@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, TypeAlias
 
+from bmo.text import normalize_spoken_command
+
 
 ToolRequest: TypeAlias = Mapping[str, Any]
 DirectAction: TypeAlias = dict[str, str]
@@ -746,7 +748,19 @@ ToolHandler: TypeAlias = Callable[[ToolRequest], ToolResponse]
 
 def normalize_direct_text(user_text: str) -> str:
     """Normalize spoken text for deterministic direct-action matching."""
-    return " ".join(user_text.lower().strip().rstrip("?.!").split())
+    return normalize_spoken_command(user_text)
+
+
+def match_exact_direct_action(
+    user_text: str,
+    *,
+    action: str,
+    phrases: frozenset[str],
+) -> DirectAction | None:
+    """Return a direct action when normalized speech exactly matches a phrase."""
+    if normalize_direct_text(user_text) in phrases:
+        return {"action": action}
+    return None
 
 
 class Tool(Protocol):

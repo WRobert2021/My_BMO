@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 from typing import Any, Mapping
 
 from bmo.features.calendar_store import DEFAULT_CATEGORIES
+from bmo.jsonio import load_json
 
 
 DEFAULT_CALENDAR_CONFIG_PATH = Path("config/calendar.json")
@@ -106,11 +106,11 @@ def load_calendar_config(
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as handle:
-                loaded = json.load(handle)
+                loaded = load_json(handle)
             if not isinstance(loaded, Mapping):
                 raise ValueError("calendar configuration root must be an object")
             file_values = loaded
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             reporter(f"[CALENDAR] Could not load {path}: {exc}. Using defaults.")
     owned_keys = {
         "data_directory",

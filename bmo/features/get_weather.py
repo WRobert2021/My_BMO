@@ -28,6 +28,7 @@ from bmo.location import (
     LocationNotConfigured,
     LocationService,
 )
+from bmo.network import online_timeout_seconds
 from bmo.ui.weather import WeatherApp, WeatherPageData
 from bmo.weather import WeatherError, WeatherService
 
@@ -268,18 +269,6 @@ class GetWeatherTool:
         return None
 
 
-def _online_timeout(settings: Mapping[str, Any]) -> float:
-    try:
-        timeout = float(settings.get("online_timeout_seconds", 6))
-    except (TypeError, ValueError):
-        print(
-            "[CONFIG] online_timeout_seconds must be numeric; using 6.",
-            flush=True,
-        )
-        timeout = 6.0
-    return min(max(timeout, 1.0), 30.0)
-
-
 def _weather_config_path(settings: Mapping[str, Any]) -> Path | None:
     value = settings.get("weather_config_path")
     if value is None:
@@ -302,7 +291,7 @@ def _weather_config_path(settings: Mapping[str, Any]) -> Path | None:
 
 def register(registry: Any, settings: Mapping[str, Any]) -> None:
     """Register voice and menu weather behavior with owned dependencies."""
-    timeout = _online_timeout(settings)
+    timeout = online_timeout_seconds(settings)
     feature_config = load_weather_config(
         _weather_config_path(settings),
         legacy_location=settings.get("location"),

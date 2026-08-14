@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from bmo.jsonio import atomic_write_json
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
@@ -123,13 +125,12 @@ class InteractionArchive:
             self._write_manifest_unlocked()
 
     def _write_manifest_unlocked(self) -> None:
-        destination = self.path / "manifest.json"
-        temporary = self.path / "manifest.json.tmp"
-        temporary.write_text(
-            json.dumps(self._manifest, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
+        atomic_write_json(
+            self.path / "manifest.json",
+            self._manifest,
+            indent=2,
+            ensure_ascii=False,
         )
-        temporary.replace(destination)
 
 
 class InteractionArchiveManager:

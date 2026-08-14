@@ -12,7 +12,11 @@ from bmo.features.contracts import (
     ToolContext,
     ToolResult,
 )
-from bmo.features.loader import FeatureLoadFailure, load_feature_registry
+from bmo.features.loader import (
+    DEFAULT_FEATURE_MODULES,
+    FeatureLoadFailure,
+    load_feature_registry,
+)
 from bmo.features.registry import ToolRegistry
 
 
@@ -47,17 +51,32 @@ class ToolRouter:
         *,
         runtime_callback: RuntimeCallback | None = None,
         attention_callback: RuntimeAttentionCallback | None = None,
+        metadata_only: bool = False,
     ) -> None:
         effective_config = load_config() if config is None else config
+        if metadata_only and "features" not in effective_config:
+            effective_config = {
+                **effective_config,
+                "features": [
+                    {"module": module, "enabled": True, "settings": {}}
+                    for module in DEFAULT_FEATURE_MODULES
+                    if module not in {
+                        "bmo.features.album",
+                        "bmo.features.learning",
+                    }
+                ],
+            }
+        shared_settings = {
+            key: value
+            for key, value in effective_config.items()
+            if key != "features"
+        }
         result = load_feature_registry(
             effective_config,
-            shared_settings={
-                key: value
-                for key, value in effective_config.items()
-                if key != "features"
-            },
+            shared_settings=shared_settings,
             runtime_callback=runtime_callback,
             attention_callback=attention_callback,
+            metadata_only=metadata_only,
         )
         self.registry = result.registry
         self.feature_failures: tuple[FeatureLoadFailure, ...] = result.failures
@@ -186,8 +205,16 @@ class ToolRouter:
 
 
 def _get_default_router() -> ToolRouter:
-    """Lazily create a default router for legacy class-method-style calls."""
+    """Lazily create resource-free metadata for legacy class-style calls."""
     global _default_router
     if _default_router is None:
-        _default_router = ToolRouter({})
+        _default_router = ToolRouter({}, metadata_only=True)
+        # Metadata, matchers, aliases, and request normalizers remain usable
+        # after cleanup; execution is intentionally not supported here.
+        _default_router.close()
     return _default_router
+
+
+def default_metadata_router() -> ToolRouter:
+    """Return the closed, resource-free default routing metadata facade."""
+    return _get_default_router()

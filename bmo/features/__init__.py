@@ -40,6 +40,7 @@ from bmo.features.contracts import (
     ToolResultKind,
     ToolResponse,
     ToolStatusUpdate,
+    match_exact_direct_action,
     normalize_direct_text,
 )
 from bmo.features.loader import (
@@ -136,6 +137,7 @@ __all__ = [
     "UnknownToolError",
     "clean_weather_location",
     "format_duration",
+    "match_exact_direct_action",
     "normalize_direct_text",
     "load_feature_registry",
     "parse_duration",

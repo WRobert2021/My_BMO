@@ -27,7 +27,7 @@ BMO_VOICE_RELEASE="v1.0-voice"
 BMO_VOICE="$BASE_DIR/voices/bmo.onnx"
 BMO_VOICE_CONFIG="$BMO_VOICE.json"
 
-VENV_DIR="$BASE_DIR/venv"
+VENV_DIR="$BASE_DIR/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"
 WAKE_WORD_MODEL="$BASE_DIR/wakeword.onnx"
 
@@ -232,13 +232,11 @@ setup_python_environment() {
         python3 -m venv "$VENV_DIR"
     fi
 
-    "$VENV_PYTHON" -m pip install --upgrade pip
-    "$VENV_PYTHON" -m pip install --force-reinstall --no-cache-dir sounddevice
     "$VENV_PYTHON" -m pip install -r "$BASE_DIR/requirements.txt"
     # OpenWakeWord declares a Linux TFLite dependency that has no Python 3.13
     # wheel. BMO uses ONNX exclusively, so install the compatible API without
     # that unused dependency after pip has installed the remaining packages.
-    "$VENV_PYTHON" -m pip install --no-deps --upgrade "openwakeword==0.6.0"
+    "$VENV_PYTHON" -m pip install --no-deps "openwakeword==0.6.0"
 }
 
 setup_ollama_models() {
@@ -368,7 +366,7 @@ main() {
     verify_installation
 
     echo -e "${GREEN}✨ Setup complete.${NC}"
-    echo "Run: source venv/bin/activate && python agent.py"
+    echo "Run: source .venv/bin/activate && python agent.py"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

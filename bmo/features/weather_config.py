@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from bmo.jsonio import load_json
 
 
 DEFAULT_WEATHER_CONFIG_PATH = Path("config/weather.json")
@@ -212,14 +213,14 @@ def load_weather_config(
     config_path = Path(path)
     try:
         with config_path.open("r", encoding="utf-8") as handle:
-            raw = json.load(handle)
+            raw = load_json(handle)
     except FileNotFoundError:
         return _fallback_config(
             legacy_location=legacy_location,
             legacy_units=legacy_units,
             source_path=config_path,
         )
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         return _fallback_config(
             legacy_location=legacy_location,
             legacy_units=legacy_units,

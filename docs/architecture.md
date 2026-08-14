@@ -8,6 +8,13 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
 - `bmo.speech` — OpenWakeWord detection, Whisper transcription, and action-JSON extraction.
 - `bmo.tools` — stable compatibility router over the enabled feature registry.
+- `bmo.extensions` — neutral configuration/import/rollback algorithm shared by
+  the feature and mode loader wrappers.
+- `bmo.jsonio` — strict duplicate-safe JSON decoding and crash-safe atomic JSON
+  and JSONL replacement.
+- `bmo.text` — neutral spoken-command normalization.
+- `bmo.network` — bounded online timeout configuration shared by live-data
+  features.
 - `bmo.features` — typed contracts, lazy loading, and registry-backed dispatch.
 - `bmo.features.loader` — standard-library module loading from `features` config.
 - `bmo.features.get_time` — current-time action, alias, and direct phrases.
@@ -32,6 +39,12 @@ The application keeps `agent.py` as the stable startup command while implementat
   math, vocabulary, and general-readiness lesson catalog.
 - `bmo.features.learning.store` — versioned profiles, plans, attempts, and
   atomic progress persistence contained under the learning data root.
+- `bmo.features.learning.codec` — strict version-one private persistence schema;
+  UI/model JSON remains owned by the model classes.
+- `bmo.features.learning.analytics` — pure mastery, grade, and plan-progress
+  calculations independent of generation and persistence.
+- `bmo.features.learning.errors` — typed persistence failures shared by the
+  store and codec without a circular dependency.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
 - `bmo.features.calendar` — read-only calendar voice routing, touch-view
@@ -48,6 +61,10 @@ The application keeps `agent.py` as the stable startup command while implementat
   adapter over the indexed dataset engine in `bmo.twenty_questions`.
 - `bmo.twenty_questions_ui` — embedded touch canvas for menu-launched Twenty
   Questions games.
+- `bmo.twenty_questions_text` — object-name, dataset-answer, and player-answer
+  normalization independent of the dataset and game engine.
+- `bmo.twenty_questions_contracts` — dataset and persistence errors shared by
+  the Twenty Questions layers.
 - `bmo.modes.games` — compatibility imports for the two built-in adapters.
 - `bmo.memory` — conversation-history loading and atomic persistence.
 - `bmo.archive` — append-only, per-interaction artifacts and event metadata.
@@ -75,6 +92,32 @@ The application keeps `agent.py` as the stable startup command while implementat
   touch exercises, teacher-plan controls, and progress presentation.
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
   secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
+
+## Neutral shared ownership
+
+Shared code is kept deliberately narrow instead of accumulating in a generic
+utility module. `bmo.extensions` owns only the common list validation, import,
+registration transaction, failure isolation, and settings-overlay sequence;
+feature and mode loaders retain their typed registries, result records, failure
+wording, defaults, and distinct hook signatures. `bmo.jsonio` owns only JSON
+syntax policy and durable replacement mechanics, while each feature retains its
+schema validation, safe-path rules, read-only policy, and domain exceptions.
+`bmo.text` and `bmo.network` own single stable transformations used by otherwise
+independent features.
+
+Learning has two intentional JSON boundaries. Model `to_json()` methods are the
+public UI/transport representation, including the teacher-facing plan `name`.
+`bmo.features.learning.codec` is the sole private on-disk schema and uses the
+persisted plan field `title`; the store no longer reimplements those records.
+Pure progress calculations live in `learning.analytics`, so generation,
+persistence, and reporting can evolve independently. Twenty Questions keeps
+its stable `bmo.twenty_questions` facade while text normalization and shared
+errors live in dependency-light supporting modules.
+
+Compatibility metadata such as `ToolRouter.VALID_TOOLS` is built in metadata
+mode, closes every constructed tool immediately, and never starts Calendar's
+midnight worker. Prompt construction also closes any registry it creates.
+Runtime routers remain the only owners of executable feature resources.
 
 ## Runtime flow
 
@@ -394,6 +437,12 @@ default list. Each entry supports:
   values override shared top-level configuration before the module hook runs.
 
 Every enabled module must expose a callable `register(registry, settings)`.
+It may additionally expose `register_metadata(registry, settings)` when normal
+registration starts a worker or acquires another runtime resource. Metadata-only
+prompt and compatibility loading prefers that hook and otherwise falls back to
+ordinary registration followed by immediate cleanup. The metadata hook must
+register the same actions, aliases, prompt fields, matchers, and request
+normalizers, but must not start workers or acquire runtime-only resources.
 That hook registers one or more objects satisfying the structural `Tool`
 contract in `bmo.features.contracts`:
 

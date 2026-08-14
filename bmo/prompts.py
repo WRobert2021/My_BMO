@@ -95,14 +95,20 @@ def build_system_prompt(
     registry: ToolRegistry | None = None,
 ) -> str:
     """Build the effective prompt and always append enabled capabilities."""
+    owned_router = None
     if registry is None:
-        from bmo.features.loader import load_feature_registry
+        from bmo.tools import ToolRouter
 
-        registry = load_feature_registry(config).registry
+        owned_router = ToolRouter(dict(config), metadata_only=True)
+        registry = owned_router.registry
 
-    prompt = str(config.get("system_prompt") or BASE_SYSTEM_PROMPT).strip()
-    prompt = f"{prompt}\n\n{build_capability_prompt(registry)}"
-    extras = str(config.get("system_prompt_extras") or "").strip()
-    if extras:
-        prompt = f"{prompt}\n\n{extras}"
-    return prompt
+    try:
+        prompt = str(config.get("system_prompt") or BASE_SYSTEM_PROMPT).strip()
+        prompt = f"{prompt}\n\n{build_capability_prompt(registry)}"
+        extras = str(config.get("system_prompt_extras") or "").strip()
+        if extras:
+            prompt = f"{prompt}\n\n{extras}"
+        return prompt
+    finally:
+        if owned_router is not None:
+            owned_router.close()

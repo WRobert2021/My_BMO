@@ -45,7 +45,12 @@ from bmo.ui.compact_face import (
     load_compact_face_config,
     normalize_face_image,
 )
-from bmo.weather import WEATHER_DESCRIPTIONS, HourlyWeather, WeatherSnapshot
+from bmo.weather import (
+    WEATHER_DESCRIPTIONS,
+    HourlyWeather,
+    WeatherSnapshot,
+    temperature_as_fahrenheit,
+)
 
 
 WINDOW_WIDTH = 800
@@ -173,10 +178,6 @@ AnnouncementCompletion: TypeAlias = Callable[[], None]
 Announcer: TypeAlias = Callable[[str, AnnouncementCompletion | None], bool]
 
 
-def _fahrenheit(value: float, imperial: bool) -> float:
-    return value if imperial else value * 9 / 5 + 32
-
-
 def _visual_condition(data: WeatherPageData) -> str:
     """Layer measured modifiers over the WMO condition without inventing alerts."""
     snapshot = data.snapshot
@@ -223,8 +224,14 @@ def _visual_condition(data: WeatherPageData) -> str:
         )
         if gust_mph >= 35:
             return "wind"
-    temperature_f = _fahrenheit(snapshot.temperature, snapshot.imperial)
-    feels_f = _fahrenheit(snapshot.apparent_temperature, snapshot.imperial)
+    temperature_f = temperature_as_fahrenheit(
+        snapshot.temperature,
+        snapshot.imperial,
+    )
+    feels_f = temperature_as_fahrenheit(
+        snapshot.apparent_temperature,
+        snapshot.imperial,
+    )
     if max(temperature_f, feels_f) >= 100:
         return "hot"
     if min(temperature_f, feels_f) <= 25:

@@ -13,10 +13,32 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import tempfile
 from typing import Any, TypeVar
 from uuid import uuid4
 
+from bmo.jsonio import atomic_write_json
+
+from .codec import (
+    _required_mapping,
+    _strict_keys,
+    _validate_utc_timestamp,
+    attempt_from_json as _attempt_from_json,
+    object_without_duplicate_keys as _object_without_duplicate_keys,
+    plan_from_json as _plan_from_json,
+    plan_to_json as _plan_to_json,
+    profile_from_json as _profile_from_json,
+    profile_to_json as _profile_to_json,
+    reject_json_constant as _reject_json_constant,
+    session_from_json as _session_from_json,
+    session_to_json as _session_to_json,
+)
+from .errors import (
+    LearningConfirmationRequired,
+    LearningCorruptDataError,
+    LearningPersistenceError,
+    LearningReadOnlyError,
+    LearningStoreError,
+)
 from .models import (
     AttemptRecord,
     LearnerProfile,
@@ -34,26 +56,6 @@ MAX_SESSION_HISTORY = 100
 MAX_PROFILE_SKILL_SUMMARIES = 100
 
 
-class LearningStoreError(RuntimeError):
-    """Base class for expected local Learning persistence failures."""
-
-
-class LearningCorruptDataError(LearningStoreError):
-    """Raised when an existing document cannot safely be interpreted."""
-
-
-class LearningReadOnlyError(LearningStoreError):
-    """Raised when a mutation would overwrite unreadable local data."""
-
-
-class LearningPersistenceError(LearningStoreError):
-    """Raised when a validated mutation cannot be committed durably."""
-
-
-class LearningConfirmationRequired(LearningStoreError):
-    """Raised when a destructive operation lacks explicit confirmation."""
-
-
 def utc_now_iso() -> str:
     """Return a compact, timezone-explicit ISO 8601 timestamp in UTC."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
@@ -69,256 +71,6 @@ def _as_utc_iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
         "+00:00", "Z"
     )
-
-
-def _validate_utc_timestamp(value: object, label: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise LearningCorruptDataError(f"{label} is not an ISO 8601 UTC timestamp")
-    candidate = value.strip()
-    try:
-        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise LearningCorruptDataError(
-            f"{label} is not an ISO 8601 UTC timestamp"
-        ) from exc
-    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
-        raise LearningCorruptDataError(f"{label} must include the UTC offset")
-    return candidate
-
-
-def _required_mapping(value: object, label: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise LearningCorruptDataError(f"{label} must be an object")
-    return value
-
-
-def _object_without_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, item in pairs:
-        if key in value:
-            raise LearningCorruptDataError("JSON objects cannot repeat field names")
-        value[key] = item
-    return value
-
-
-def _reject_json_constant(value: str) -> None:
-    raise LearningCorruptDataError(f"non-finite JSON number {value} is unsupported")
-
-
-def _strict_keys(
-    value: Mapping[str, Any],
-    *,
-    required: set[str],
-    optional: set[str] | None = None,
-    label: str,
-) -> None:
-    optional = optional or set()
-    missing = required.difference(value)
-    unknown = set(value).difference(required | optional)
-    if missing:
-        raise LearningCorruptDataError(f"{label} is missing required fields")
-    if unknown:
-        raise LearningCorruptDataError(f"{label} contains unknown fields")
-
-
-def _strict_integer(
-    value: object,
-    label: str,
-    *,
-    minimum: int = 0,
-    maximum: int | None = None,
-) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise LearningCorruptDataError(f"{label} must be an integer")
-    if value < minimum or (maximum is not None and value > maximum):
-        raise LearningCorruptDataError(f"{label} is outside its safe range")
-    return value
-
-
-def _profile_to_json(profile: LearnerProfile) -> dict[str, Any]:
-    return {
-        "id": profile.profile_id,
-        "display_name": profile.display_name,
-        "archived": profile.archived,
-        "created_at": profile.created_at,
-        "updated_at": profile.updated_at,
-    }
-
-
-def _profile_from_json(value: object) -> LearnerProfile:
-    record = _required_mapping(value, "profile")
-    _strict_keys(
-        record,
-        required={"id", "display_name", "archived", "created_at", "updated_at"},
-        label="profile",
-    )
-    _validate_utc_timestamp(record["created_at"], "profile created_at")
-    _validate_utc_timestamp(record["updated_at"], "profile updated_at")
-    return LearnerProfile(
-        profile_id=record["id"],
-        display_name=record["display_name"],
-        archived=record["archived"],
-        created_at=record["created_at"],
-        updated_at=record["updated_at"],
-    )
-
-
-def _plan_to_json(plan: LearningPlan) -> dict[str, Any]:
-    return {
-        "id": plan.plan_id,
-        "profile_id": plan.profile_id,
-        "title": plan.title,
-        "lesson_ids": list(plan.lesson_ids),
-        "enabled": plan.enabled,
-        "archived": plan.archived,
-        "repetitions": plan.repetitions,
-        "questions_per_session": plan.questions_per_session,
-        "mastery_gate": plan.mastery_gate,
-        "created_at": plan.created_at,
-        "updated_at": plan.updated_at,
-    }
-
-
-def _plan_from_json(value: object) -> LearningPlan:
-    record = _required_mapping(value, "plan")
-    _strict_keys(
-        record,
-        required={
-            "id",
-            "profile_id",
-            "title",
-            "lesson_ids",
-            "enabled",
-            "archived",
-            "repetitions",
-            "questions_per_session",
-            "mastery_gate",
-            "created_at",
-            "updated_at",
-        },
-        label="plan",
-    )
-    _validate_utc_timestamp(record["created_at"], "plan created_at")
-    _validate_utc_timestamp(record["updated_at"], "plan updated_at")
-    _strict_integer(record["repetitions"], "plan repetitions", minimum=1, maximum=10)
-    _strict_integer(
-        record["questions_per_session"],
-        "plan questions_per_session",
-        minimum=1,
-        maximum=20,
-    )
-    return LearningPlan(
-        plan_id=record["id"],
-        profile_id=record["profile_id"],
-        title=record["title"],
-        lesson_ids=tuple(record["lesson_ids"]),
-        enabled=record["enabled"],
-        archived=record["archived"],
-        repetitions=record["repetitions"],
-        questions_per_session=record["questions_per_session"],
-        mastery_gate=record["mastery_gate"],
-        created_at=record["created_at"],
-        updated_at=record["updated_at"],
-    )
-
-
-def _session_to_json(session: LearningSession) -> dict[str, Any]:
-    return {
-        "id": session.session_id,
-        "profile_id": session.profile_id,
-        "plan_id": session.plan_id,
-        "questions": [question.to_json() for question in session.questions],
-        "question_index": session.question_index,
-        "current_attempt": session.current_attempt,
-        "scaffolded": session.scaffolded,
-        "attempts": [attempt.to_json() for attempt in session.attempts],
-        "started_at": session.started_at,
-        "updated_at": session.updated_at,
-        "replay_count": session.replay_count,
-    }
-
-
-def _session_from_json(value: object) -> LearningSession:
-    # Importing Question here avoids making the persistence surface duplicate
-    # the curriculum model's question validation.
-    from .models import Question
-
-    record = _required_mapping(value, "session")
-    _strict_keys(
-        record,
-        required={
-            "id",
-            "profile_id",
-            "plan_id",
-            "questions",
-            "question_index",
-            "current_attempt",
-            "scaffolded",
-            "attempts",
-            "started_at",
-            "updated_at",
-            "replay_count",
-        },
-        label="session",
-    )
-    _validate_utc_timestamp(record["started_at"], "session started_at")
-    _validate_utc_timestamp(record["updated_at"], "session updated_at")
-    if not isinstance(record["questions"], list) or not isinstance(
-        record["attempts"], list
-    ):
-        raise LearningCorruptDataError("session questions and attempts must be lists")
-    _strict_integer(
-        record["question_index"],
-        "session question_index",
-        maximum=len(record["questions"]),
-    )
-    _strict_integer(record["current_attempt"], "session current_attempt")
-    _strict_integer(record["replay_count"], "session replay_count")
-    return LearningSession(
-        session_id=record["id"],
-        profile_id=record["profile_id"],
-        plan_id=record["plan_id"],
-        questions=tuple(Question.from_json(item) for item in record["questions"]),
-        question_index=record["question_index"],
-        current_attempt=record["current_attempt"],
-        scaffolded=record["scaffolded"],
-        attempts=tuple(_attempt_from_json(item) for item in record["attempts"]),
-        started_at=record["started_at"],
-        updated_at=record["updated_at"],
-        replay_count=record["replay_count"],
-    )
-
-
-def _attempt_from_json(value: object) -> AttemptRecord:
-    record = _required_mapping(value, "attempt")
-    expected = {
-        "id",
-        "session_id",
-        "profile_id",
-        "plan_id",
-        "lesson_id",
-        "skills",
-        "question_id",
-        "correct_answers",
-        "response",
-        "correct",
-        "attempt_number",
-        "scaffolded",
-        "hint_used",
-        "revealed",
-        "elapsed_seconds",
-        "timestamp",
-        "generation_version",
-    }
-    _strict_keys(record, required=expected, label="attempt")
-    _validate_utc_timestamp(record["timestamp"], "attempt timestamp")
-    _strict_integer(record["attempt_number"], "attempt number", minimum=1)
-    _strict_integer(
-        record["generation_version"],
-        "attempt generation_version",
-        minimum=1,
-    )
-    return AttemptRecord.from_json(record)
 
 
 T = TypeVar("T")
@@ -628,53 +380,21 @@ class LearningStore:
 
     def _atomic_write(self, path: Path, value: Mapping[str, Any]) -> None:
         self._ensure_writable()
-        temporary: Path | None = None
-        descriptor: int | None = None
         root_existed = self.data_directory.exists()
         try:
             self.data_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             self._safe_path(path)
-            descriptor, temporary_name = tempfile.mkstemp(
-                prefix=f".{path.name}.",
-                suffix=".tmp",
-                dir=self.data_directory,
+            atomic_write_json(
+                path,
+                value,
+                indent=2,
+                ensure_ascii=False,
+                allow_nan=False,
+                directory_mode=0o700,
+                fsync_directory=True,
+                replace=os.replace,
             )
-            temporary = Path(temporary_name)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                descriptor = None
-                json.dump(
-                    value,
-                    handle,
-                    ensure_ascii=False,
-                    indent=2,
-                    allow_nan=False,
-                )
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            temporary = None
-            try:
-                directory_fd = os.open(self.data_directory, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
-            except OSError:
-                # The file itself is already flushed and replaced. Some
-                # platforms/filesystems do not permit directory fsync.
-                pass
         except (OSError, TypeError, ValueError, LearningStoreError) as exc:
-            if descriptor is not None:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
-            if temporary is not None:
-                try:
-                    temporary.unlink()
-                except OSError:
-                    pass
             if not root_existed:
                 try:
                     self.data_directory.rmdir()

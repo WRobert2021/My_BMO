@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from bmo.jsonio import atomic_write_json, load_json
 
 
 def load_chat_history(path: Path, system_prompt: str) -> list[dict[str, str]]:
@@ -11,7 +12,7 @@ def load_chat_history(path: Path, system_prompt: str) -> list[dict[str, str]]:
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as handle:
-                data = json.load(handle)
+                data = load_json(handle)
             if isinstance(data, list) and data:
                 # Tool availability comes from the current application prompt,
                 # not a stale system message persisted by an earlier run.
@@ -26,7 +27,7 @@ def load_chat_history(path: Path, system_prompt: str) -> list[dict[str, str]]:
                         {"role": "system", "content": system_prompt},
                     )
                 return data
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             pass
     return [{"role": "system", "content": system_prompt}]
 
@@ -47,7 +48,4 @@ def save_chat_history(
         conversation = conversation[-max_conversation_messages:]
 
     payload = [full[0]] + conversation
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    with temp_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=4)
-    temp_path.replace(path)
+    atomic_write_json(path, payload, indent=4, ensure_ascii=True)

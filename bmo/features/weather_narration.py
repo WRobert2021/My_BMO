@@ -5,7 +5,12 @@ from __future__ import annotations
 from enum import Enum
 
 from bmo.features.weather_alerts import WeatherAlert
-from bmo.weather import HourlyWeather, WEATHER_DESCRIPTIONS, WeatherSnapshot
+from bmo.weather import (
+    HourlyWeather,
+    WEATHER_DESCRIPTIONS,
+    WeatherSnapshot,
+    temperature_as_fahrenheit,
+)
 
 
 class WeatherCondition(str, Enum):
@@ -106,16 +111,15 @@ def season_for(
     }[northern]
 
 
-def _fahrenheit(value: float, imperial: bool) -> float:
-    return value if imperial else value * 9 / 5 + 32
-
-
 def _degrees(value: float, snapshot: WeatherSnapshot) -> str:
     return f"{round(value)} degrees {snapshot.degree_unit}"
 
 
 def narrate_temperature(snapshot: WeatherSnapshot) -> str:
-    temperature = _fahrenheit(snapshot.temperature, snapshot.imperial)
+    temperature = temperature_as_fahrenheit(
+        snapshot.temperature,
+        snapshot.imperial,
+    )
     spoken = _degrees(snapshot.temperature, snapshot)
     if temperature <= 32:
         advice = "Brrr! Bundle up with a coat, hat, and gloves, and watch for ice."
@@ -157,8 +161,8 @@ def narrate_high_low(snapshot: WeatherSnapshot) -> str:
     high = round(snapshot.high)
     low = round(snapshot.low)
     unit = snapshot.degree_unit
-    high_f = _fahrenheit(snapshot.high, snapshot.imperial)
-    low_f = _fahrenheit(snapshot.low, snapshot.imperial)
+    high_f = temperature_as_fahrenheit(snapshot.high, snapshot.imperial)
+    low_f = temperature_as_fahrenheit(snapshot.low, snapshot.imperial)
     if high_f >= 90 and low_f >= 70:
         ending = "It will stay warm, even later today."
     elif high_f - low_f >= 20:

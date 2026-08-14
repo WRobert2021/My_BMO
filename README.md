@@ -3,7 +3,7 @@
 
 [![Watch the Demo](https://img.youtube.com/vi/l5ggH-YhuAw/maxresdefault.jpg)](https://youtu.be/l5ggH-YhuAw)
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue) ![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi-red) ![License](https://img.shields.io/badge/License-MIT-green)
+![Python](https://img.shields.io/badge/Python-3.13.5-blue) ![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi-red) ![License](https://img.shields.io/badge/License-MIT-green)
 
 This project turns a Raspberry Pi into a fully functional, conversational AI agent. Unlike cloud-based assistants, this agent runs **100% locally** on your device. It listens for a wake word, processes speech, "thinks" using a local Large Language Model (LLM), and speaks back with a low-latency neural voice—all while displaying reactive face animations.
 
@@ -52,7 +52,7 @@ be-more-agent/
 │   └── compact_face.json      # Local shared face layout/animation settings
 ├── data/calendar/             # Local events and acknowledgments (ignored)
 ├── data/learning/             # Local learners, plans, and progress (ignored)
-├── chat_memory.json           # Conversation history
+├── memory.json                # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
 ├── whisper.cpp/               # Speech-to-Text engine
@@ -115,7 +115,7 @@ The setup script downloads a default wake word ("Hey Jarvis"). To use your own:
 
 ### 5. Run the Agent
 ```bash
-source venv/bin/activate
+source .venv/bin/activate
 python agent.py
 ```
 

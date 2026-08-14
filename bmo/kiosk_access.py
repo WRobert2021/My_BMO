@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
+
+from bmo.jsonio import load_json
 
 
 DEFAULT_QUIET_HOURS_CONFIG_PATH = Path("config/quiet_hours.json")
@@ -93,11 +94,11 @@ def load_quiet_hours_config(
         return QuietHoursConfig()
     try:
         with config_path.open("r", encoding="utf-8") as handle:
-            values = json.load(handle)
+            values = load_json(handle)
         if not isinstance(values, Mapping):
             raise ValueError("quiet-hours configuration root must be an object")
         return _parse_config(values)
-    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+    except (OSError, TypeError, ValueError) as exc:
         reporter(f"[QUIET HOURS] Could not load {config_path}: {exc}. Disabled.")
         return QuietHoursConfig()
 

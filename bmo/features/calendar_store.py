@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date, time, timedelta
 import calendar as month_calendar
-import json
 import os
 from pathlib import Path
-import tempfile
 from typing import Any, Iterable, Mapping
 from uuid import uuid4
+
+from bmo.jsonio import atomic_write_json, load_json
 
 
 SCHEMA_VERSION = 1
@@ -238,31 +238,18 @@ def _format_time(value: time | None) -> str | None:
 
 
 def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
+    atomic_write_json(
+        path,
+        value,
+        indent=2,
+        ensure_ascii=False,
+        replace=os.replace,
     )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, indent=2, ensure_ascii=False)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
-        raise
 
 
 def _read_json(path: Path) -> object:
     with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+        return load_json(handle)
 
 
 class CalendarStore:
@@ -299,7 +286,7 @@ class CalendarStore:
                 identifiers = [event.event_id for event in events]
                 if len(identifiers) != len(set(identifiers)):
                     raise CalendarDataError("calendar event ids must be unique")
-            except (OSError, json.JSONDecodeError, CalendarDataError) as exc:
+            except (OSError, ValueError) as exc:
                 errors.append(f"events: {exc}")
         if self.acknowledgements_path.exists():
             try:
@@ -315,7 +302,7 @@ class CalendarStore:
                 ):
                     raise CalendarDataError("acknowledged ids must be strings")
                 acknowledgements = set(raw_acknowledged)
-            except (OSError, json.JSONDecodeError, CalendarDataError) as exc:
+            except (OSError, ValueError) as exc:
                 errors.append(f"acknowledgements: {exc}")
         self._events = events
         self._acknowledged = acknowledgements

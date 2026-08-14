@@ -8,7 +8,7 @@ from typing import Any, Callable
 from bmo.config import OLLAMA_OPTIONS
 from bmo.prompts import build_routing_prompt
 from bmo.speech import extract_json_from_text
-from bmo.tools import ToolRouter
+from bmo.tools import ToolRouter, default_metadata_router
 
 
 ChatRequest = Callable[..., dict[str, Any]]
@@ -25,9 +25,7 @@ def infer_tool_action(
     tool_router: ToolRouter | None = None,
 ) -> dict[str, Any] | None:
     """Ask the local model to classify an utterance without conversation bias."""
-    # An explicit empty mapping selects registry-owned defaults without reading
-    # private local configuration or duplicating a feature's settings here.
-    effective_router = tool_router or ToolRouter({})
+    effective_router = tool_router or default_metadata_router()
     routing_prompt = build_routing_prompt(effective_router.registry)
     response = chat_request(
         model=model,

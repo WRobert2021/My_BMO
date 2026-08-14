@@ -41,6 +41,11 @@ WEATHER_DESCRIPTIONS = {
 }
 
 
+def temperature_as_fahrenheit(value: float, imperial: bool) -> float:
+    """Normalize a configured weather temperature to Fahrenheit."""
+    return value if imperial else value * 9 / 5 + 32
+
+
 class WeatherError(RuntimeError):
     """Raised when weather data is unavailable or malformed."""
 
