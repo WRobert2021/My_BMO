@@ -469,6 +469,22 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
 
         gui.mode_registry.start_menu_item.assert_called_once_with("matching_game")
 
+    def test_idle_menu_wake_is_cleared_without_a_queued_action(self) -> None:
+        gui = BotGUI.__new__(BotGUI)
+        gui.mode_registry = Mock()
+        feature_registry = Mock()
+        feature_registry.menu_items = ()
+        gui.extension_runtime = RuntimeExtensionCoordinator(
+            gui.mode_registry,
+            feature_registry,
+            launch_feature=gui._open_feature_menu,
+        )
+        gui.extension_runtime.wake_event.set()
+
+        self.assertFalse(gui._start_pending_menu_action())
+
+        self.assertFalse(gui.extension_runtime.wake_event.is_set())
+
 
 class FeatureMenuAnnouncementTests(unittest.TestCase):
     def make_gui(self) -> BotGUI:

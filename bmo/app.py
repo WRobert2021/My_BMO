@@ -59,6 +59,11 @@ from bmo.modes import (
 )
 from bmo.prompts import build_system_prompt
 from bmo.runtime_extensions import RuntimeExtensionCoordinator
+from bmo.runtime_loop import (
+    RuntimeTurnCoordinator,
+    RuntimeTurnKind,
+    RuntimeWorkerLoop,
+)
 from bmo.runtime_menu import RuntimeMenuCoordinator
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
@@ -271,6 +276,7 @@ class BotGUI:
         )
         self.runtime_menu = self.extension_runtime.menu
         self.menu_action_event = self.extension_runtime.wake_event
+        self.runtime_turns = self._build_runtime_turn_coordinator()
         atexit.register(self.safe_exit)
 
         self._build_gui()
@@ -623,10 +629,12 @@ class BotGUI:
 
     def _start_pending_menu_action(self) -> bool:
         """Start the next generic feature or mode request from the touch menu."""
-        return (
-            self._start_pending_menu_vision()
-            or self._start_pending_menu_mode()
-        )
+        if self._start_pending_menu_vision() or self._start_pending_menu_mode():
+            return True
+        runtime = getattr(self, "extension_runtime", None)
+        if runtime is not None:
+            runtime.clear_wake_if_idle()
+        return False
 
     def handle_ptt_toggle(self, event: tk.Event | None = None) -> None:
         del event
@@ -985,69 +993,81 @@ class BotGUI:
         self._dispatch_ui(update)
 
     def safe_main_execution(self) -> None:
-        try:
-            self.warm_up_logic()
-            self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
-            self.tts_thread.start()
-        except Exception as exc:
-            if not self.exiting:
-                traceback.print_exception(type(exc), exc, exc.__traceback__)
-                self.set_state(BotStates.ERROR, f"Fatal Error: {str(exc)[:40]}")
-            return
+        self._run_runtime_worker(self._run_voice_interaction)
 
-        while not self.exiting:
-            try:
-                if not self._run_voice_interaction():
-                    return
-            except Exception as exc:
-                if self.exiting or self.shutdown_event.is_set():
-                    self.thinking_sound_active.clear()
-                    self._finish_interaction("error", str(exc))
-                    return
-                self._recover_interaction_failure(exc)
+    def _run_runtime_worker(
+        self,
+        run_iteration: Callable[[], bool],
+        *,
+        after_initialize: Callable[[], None] | None = None,
+    ) -> None:
+        """Run one launcher adapter through the neutral resilient worker."""
+
+        def initialize() -> None:
+            self.warm_up_logic()
+            self.tts_thread = threading.Thread(
+                target=self._tts_worker,
+                name="bmo-tts",
+                daemon=True,
+            )
+            self.tts_thread.start()
+            if after_initialize is not None:
+                after_initialize()
+
+        RuntimeWorkerLoop(
+            initialize=initialize,
+            run_iteration=run_iteration,
+            recover_failure=self._recover_interaction_failure,
+            handle_startup_failure=self._handle_worker_startup_failure,
+            handle_shutdown_failure=self._handle_worker_shutdown_failure,
+            is_exiting=lambda: self.exiting,
+            shutdown_event=self.shutdown_event,
+        ).run()
+
+    def _handle_worker_startup_failure(self, exc: Exception) -> None:
+        """Expose a startup failure without entering turn-level recovery."""
+        if self.exiting:
+            return
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
+        self.set_state(BotStates.ERROR, f"Fatal Error: {str(exc)[:40]}")
+
+    def _handle_worker_shutdown_failure(self, exc: Exception) -> None:
+        """Finish an interrupted archive when shutdown races active work."""
+        self.thinking_sound_active.clear()
+        self._finish_interaction("error", str(exc))
+
+    def _build_runtime_turn_coordinator(self) -> RuntimeTurnCoordinator:
+        """Bind the neutral voice-turn owner to current runtime adapters."""
+        return RuntimeTurnCoordinator(
+            shutdown_event=self.shutdown_event,
+            interrupted_event=self.interrupted,
+            is_exiting=lambda: self.exiting,
+            quiet_hours_locked=self._quiet_hours_locked,
+            start_pending_action=self._start_pending_menu_action,
+            input_policy=self.mode_registry.input_policy,
+            wait_for_wake_trigger=self.detect_wake_word_or_ptt,
+            set_state=self.set_state,
+        )
+
+    def _runtime_turn_coordinator(self) -> RuntimeTurnCoordinator:
+        """Return the voice-turn owner, constructing old test fixtures lazily."""
+        coordinator = getattr(self, "runtime_turns", None)
+        if coordinator is None:
+            coordinator = self._build_runtime_turn_coordinator()
+            self.runtime_turns = coordinator
+        return coordinator
 
     def _run_voice_interaction(self) -> bool:
         """Run one voice-loop iteration, returning false when it should stop."""
-        while self._quiet_hours_locked() and not self.exiting:
-            self.shutdown_event.wait(0.1)
-        if self.exiting:
-            return False
-        if self._start_pending_menu_action():
+        turn = self._runtime_turn_coordinator().next_turn()
+        if turn.kind is RuntimeTurnKind.HANDLED:
             return True
-        input_policy = self.mode_registry.input_policy()
-        while (
-            input_policy.kind == InputPolicyKind.SUSPENDED
-            and not self.exiting
-        ):
-            self.shutdown_event.wait(0.1)
-            input_policy = self.mode_registry.input_policy()
-        if self.exiting:
+        if turn.kind is RuntimeTurnKind.STOPPED:
             return False
-        if input_policy.kind == InputPolicyKind.CONTINUOUS:
-            trigger_source = input_policy.trigger_source
-            self.set_state(
-                BotStates.LISTENING,
-                input_policy.listening_status,
-            )
-        else:
-            trigger_source = self.detect_wake_word_or_ptt()
-        if trigger_source == "MENU":
-            self._start_pending_menu_action()
-            return True
-        if self.exiting:
-            return False
-        if self.interrupted.is_set():
-            self.interrupted.clear()
-            self.set_state(BotStates.IDLE, "Resetting...")
-            return True
-
-        if input_policy.kind == InputPolicyKind.WAKE_WORD:
-            self.set_state(
-                BotStates.LISTENING,
-                input_policy.listening_status,
-            )
-        if trigger_source == "STOP" or self.shutdown_event.is_set():
-            return False
+        input_policy = turn.input_policy
+        trigger_source = turn.trigger_source
+        if input_policy is None or trigger_source is None:
+            raise RuntimeError("Ready runtime turn omitted its input details.")
         self._start_interaction(trigger_source)
         audio_path = (
             str(self.current_interaction.audio_path)
@@ -1172,7 +1192,6 @@ class BotGUI:
         print("Models loaded." if loaded else "Model warm-up incomplete.", flush=True)
 
     def detect_wake_word_or_ptt(self) -> str:
-        self.set_state(BotStates.IDLE, "Waiting...")
         trigger = self.wake_word.wait_for_trigger(
             self.ptt_event,
             self.shutdown_event,

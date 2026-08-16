@@ -39,6 +39,11 @@ the same lifecycle safely.
    feature-vision work to a toolkit-neutral owner. Mode completion returns
    through the presentation dispatcher, and isolated tests prove the boundary
    imports neither Tkinter nor PySide6.
+10. **Assistant worker and trigger loop** — voice and typed launchers now share
+    one toolkit-neutral resilient worker. Voice-turn arbitration for quiet
+    hours, queued menu work, suspended/continuous modes, wake/PTT, interruption,
+    and shutdown returns typed decisions to the current presentation adapter.
+    Import tests also exclude OpenWakeWord and ONNX Runtime initialization.
 
 ## Remaining gates
 
@@ -52,6 +57,10 @@ interrupt, and exit. Keep the existing Tk implementation as an adapter while
 the Qt adapter is developed. Menu snapshot and selection ownership have already
 moved into `RuntimeMenuCoordinator`; extension registry lifetime and menu work
 queues have moved into `RuntimeExtensionCoordinator`.
+Worker iteration and voice-trigger arbitration have moved into
+`RuntimeWorkerLoop` and `RuntimeTurnCoordinator`; audio capture, transcription,
+conversation execution, service construction, and final persistence still need
+neutral runtime ownership.
 
 Completion evidence:
 

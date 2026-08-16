@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import threading
-import traceback
 import tkinter as tk
 from queue import Empty, Queue
 
@@ -63,31 +61,13 @@ class TypedBotGUI(BotGUI):
         return None
 
     def safe_main_execution(self) -> None:
-        try:
-            self.warm_up_logic()
-            self.tts_thread = threading.Thread(
-                target=self._tts_worker,
-                name="bmo-tts",
-                daemon=True,
-            )
-            self.tts_thread.start()
-        except Exception as exc:
-            if not self.exiting:
-                traceback.print_exception(type(exc), exc, exc.__traceback__)
-                self.set_state(BotStates.ERROR, f"Fatal Error: {str(exc)[:40]}")
-            return
-
-        print("Typed on-screen debug input is ready.", flush=True)
-        while not self.exiting:
-            try:
-                if not self._run_typed_interaction():
-                    return
-            except Exception as exc:
-                if self.exiting or self.shutdown_event.is_set():
-                    self.thinking_sound_active.clear()
-                    self._finish_interaction("error", str(exc))
-                    return
-                self._recover_interaction_failure(exc)
+        self._run_runtime_worker(
+            self._run_typed_interaction,
+            after_initialize=lambda: print(
+                "Typed on-screen debug input is ready.",
+                flush=True,
+            ),
+        )
 
     def _run_typed_interaction(self) -> bool:
         """Run one typed-loop iteration, returning false when it should stop."""

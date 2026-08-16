@@ -95,6 +95,9 @@ The application keeps `agent.py` as the stable startup command while implementat
   dispatch; stale selections are rejected when registry visibility changes.
 - `bmo.runtime_extensions` — toolkit-neutral feature/mode registry lifetime,
   worker wake signaling, and serialized mode/vision menu requests.
+- `bmo.runtime_loop` — resilient worker-iteration ownership and typed voice-turn
+  arbitration across quiet hours, menus, mode policy, wake/PTT, interruption,
+  and shutdown.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -160,12 +163,17 @@ executing extension-specific behavior themselves. `bmo.runtime_menu` validates
 that request against a fresh catalog snapshot before invoking the narrow mode
 or feature launch callback. `bmo.runtime_extensions` composes that dispatcher
 with the live feature and mode registries, owns their cleanup, and queues work
-that must cross from the presentation thread to the interaction worker. Menu-
-contributing feature and mode modules keep
+that must cross from the presentation thread to the interaction worker.
+Menu-contributing feature and mode modules keep
 their concrete Tk view imports inside default view factories, so loading their
 registration and metadata boundaries does not import Tkinter. Timer, Calendar,
 and Weather exchange presentation data through narrowly owned immutable
 records; Pup Pairs request matching similarly lives outside its Tk application.
+`bmo.runtime_loop` decides whether a worker iteration should process queued menu
+work, remain paused for quiet hours or a suspended mode, capture continuous mode
+input, wait for wake/PTT, reset an interruption, or stop. It reports a typed
+turn back to the Tk adapter and owns the common startup, per-turn recovery, and
+shutdown-failure loop shared by the voice and typed launchers.
 `bmo.menu_loader` invokes optional `register_menu_metadata(registry, settings)`
 hooks through the same configured-extension algorithm. Missing hooks mean an
 enabled extension has no menu contribution, while a broken hook rolls back only
@@ -232,6 +240,10 @@ UI-independent application runtime is ready. Production Tk additionally uses
 `RuntimeExtensionCoordinator` for registry lifetime, the shared worker wake
 event, and queued mode/feature-vision work. The interaction worker consumes
 those typed requests without requiring the neutral coordinator to import Tk.
+`RuntimeWorkerLoop` owns the resilient worker iteration, and
+`RuntimeTurnCoordinator` performs voice-trigger arbitration before the Tk
+adapter captures or transcribes audio. Neither boundary imports Tkinter,
+PySide6, OpenWakeWord, or ONNX Runtime.
 
 ## Display navigation
 
@@ -886,12 +898,13 @@ selection.
 `bmo.conversation` now owns observable model-call logging and typed tool-result
 presentation, immediate cross-thread UI work passes through one dispatcher
 boundary, and `bmo.runtime_extensions` owns the extension registries plus
-queued menu work. `BotGUI` still owns ordinary streamed-chat orchestration,
-audio/model service composition, attentions, and Tk widgets and animation. The
-next safe step is to move the remaining streamed conversation and assistant
-service lifecycle behind the same neutral boundary, then connect the
-PySide6/QML presenter while retaining Tk as a temporary fallback during parity
-testing.
+queued menu work. `bmo.runtime_loop` now owns resilient worker execution and
+voice-trigger arbitration. `BotGUI` still owns audio capture and transcription,
+ordinary streamed-chat orchestration, model service composition, attentions,
+and Tk widgets and animation. The next safe step is to extract audio-turn
+execution and remaining assistant service lifecycle behind neutral ports, then
+connect the PySide6/QML presenter while retaining Tk as a temporary fallback
+during parity testing.
 
 ## Shutdown ownership
 

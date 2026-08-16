@@ -64,6 +64,7 @@ agent.py
 | `bmo/menu_loader.py` | Resource-free loading of configured feature/mode menu metadata with per-extension failure isolation. |
 | `bmo/runtime_menu.py` | UI-neutral live menu snapshots, stale-selection validation, and typed mode/feature launch dispatch. |
 | `bmo/runtime_extensions.py` | UI-neutral feature/mode registry lifetime, worker wake event, and queued mode/vision menu requests. |
+| `bmo/runtime_loop.py` | UI-neutral resilient assistant worker and voice-turn arbitration across menus, modes, wake/PTT, interrupts, and shutdown. |
 | `bmo/text.py` | Shared spoken-command normalization. |
 | `bmo/network.py` | Shared bounded timeout parsing for online features. |
 | `bmo/location.py` | Location validation, home resolution, and Nominatim geocoding. |
@@ -175,7 +176,7 @@ Modes are longer interactions that temporarily own user input.
 | --- | --- |
 | Extension framework | `tests/test_extension_architecture.py`, `tests/test_feature_loading.py`, `tests/test_mode_loading.py`, `tests/extension_modules/proof_feature.py`, `tests/extension_modules/proof_mode.py` |
 | Tool routing and presentation | `tests/test_tool_registry.py`, `tests/test_tool_routing.py`, `tests/test_tool_routing_characterization.py`, `tests/test_tool_presentation.py`, `tests/test_intent.py` |
-| Main interaction and menus | `tests/test_interaction_failure_recovery.py`, `tests/test_menu.py`, `tests/test_modes.py` |
+| Main interaction and menus | `tests/test_interaction_failure_recovery.py`, `tests/test_runtime_loop.py`, `tests/test_menu.py`, `tests/test_modes.py` |
 | Neutral menu catalog | `tests/test_menu_catalog.py` |
 | Runtime menu and extension dispatch | `tests/test_runtime_menu.py`, `tests/test_runtime_extensions.py` |
 | Core persistence/config | `tests/test_archive.py`, `tests/test_jsonio.py`, `tests/test_config_and_memory.py` |
