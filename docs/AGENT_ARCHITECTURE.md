@@ -98,6 +98,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.runtime_loop` — resilient worker-iteration ownership and typed voice-turn
   arbitration across quiet hours, menus, mode policy, wake/PTT, interruption,
   and shutdown.
+- `bmo.runtime_voice` — ready-turn capture selection, transcription, transcript
+  archival, mode-aware retry state, and successful conversation handoff through
+  narrow recorder, transcriber, archive, and presentation ports.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -174,6 +177,12 @@ work, remain paused for quiet hours or a suspended mode, capture continuous mode
 input, wait for wake/PTT, reset an interruption, or stop. It reports a typed
 turn back to the Tk adapter and owns the common startup, per-turn recovery, and
 shutdown-failure loop shared by the voice and typed launchers.
+`bmo.runtime_voice` consumes only ready `RuntimeTurn` records. It chooses PTT or
+adaptive capture, supplies interaction-owned paths, invokes transcription,
+records the transcript event, presents no-speech and empty-transcript states,
+and hands successful text to conversation routing. Concrete sounddevice,
+Whisper, archive, and GUI implementations remain injected adapters, so importing
+the executor initializes none of those resources.
 `bmo.menu_loader` invokes optional `register_menu_metadata(registry, settings)`
 hooks through the same configured-extension algorithm. Missing hooks mean an
 enabled extension has no menu contribution, while a broken hook rolls back only
@@ -244,6 +253,10 @@ those typed requests without requiring the neutral coordinator to import Tk.
 `RuntimeTurnCoordinator` performs voice-trigger arbitration before the Tk
 adapter captures or transcribes audio. Neither boundary imports Tkinter,
 PySide6, OpenWakeWord, or ONNX Runtime.
+`RuntimeVoiceTurnExecutor` then executes ready turns through injected production
+recorder and transcriber services. It owns capture/transcription sequencing and
+archive completion without importing sounddevice, OpenWakeWord, Tkinter, or
+PySide6.
 
 ## Display navigation
 
@@ -899,12 +912,13 @@ selection.
 presentation, immediate cross-thread UI work passes through one dispatcher
 boundary, and `bmo.runtime_extensions` owns the extension registries plus
 queued menu work. `bmo.runtime_loop` now owns resilient worker execution and
-voice-trigger arbitration. `BotGUI` still owns audio capture and transcription,
-ordinary streamed-chat orchestration, model service composition, attentions,
-and Tk widgets and animation. The next safe step is to extract audio-turn
-execution and remaining assistant service lifecycle behind neutral ports, then
-connect the PySide6/QML presenter while retaining Tk as a temporary fallback
-during parity testing.
+voice-trigger arbitration, while `bmo.runtime_voice` owns capture/transcription
+execution and transcript archival. `BotGUI` still constructs the concrete audio
+and model services and owns ordinary streamed-chat orchestration, attentions,
+final persistence, and Tk widgets and animation. The next safe step is to move
+conversation-turn orchestration and remaining assistant service lifecycle
+behind neutral ports, then connect the PySide6/QML presenter while retaining Tk
+as a temporary fallback during parity testing.
 
 ## Shutdown ownership
 

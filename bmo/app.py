@@ -53,7 +53,6 @@ from bmo.memory import load_chat_history, save_chat_history
 from bmo.menu_catalog import MenuSelectionRequest
 from bmo.kiosk_access import KioskAccessPolicy, load_quiet_hours_config
 from bmo.modes import (
-    InputPolicyKind,
     ModeRuntimeContext,
     load_mode_registry,
 )
@@ -65,6 +64,7 @@ from bmo.runtime_loop import (
     RuntimeWorkerLoop,
 )
 from bmo.runtime_menu import RuntimeMenuCoordinator
+from bmo.runtime_voice import RuntimeVoiceTurnExecutor
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
@@ -277,6 +277,7 @@ class BotGUI:
         self.runtime_menu = self.extension_runtime.menu
         self.menu_action_event = self.extension_runtime.wake_event
         self.runtime_turns = self._build_runtime_turn_coordinator()
+        self.voice_turn_runtime = self._build_voice_turn_executor()
         atexit.register(self.safe_exit)
 
         self._build_gui()
@@ -1057,6 +1058,34 @@ class BotGUI:
             self.runtime_turns = coordinator
         return coordinator
 
+    def _build_voice_turn_executor(self) -> RuntimeVoiceTurnExecutor:
+        """Bind capture and transcription services to the neutral turn owner."""
+        return RuntimeVoiceTurnExecutor(
+            recorder=self.recorder,
+            transcriber=self.transcriber,
+            recording_active_event=self.recording_active,
+            shutdown_event=self.shutdown_event,
+            interrupted_event=self.interrupted,
+            start_interaction=self._start_interaction,
+            current_archive=lambda: self.current_interaction,
+            finish_interaction=self._finish_interaction,
+            play_acknowledgement=lambda: self.play_sound(
+                self.random_sound("ack")
+            ),
+            mode_is_active=self.mode_registry.is_active,
+            set_state=self.set_state,
+            present_transcript=lambda text: self.append_to_text(f"YOU: {text}"),
+            chat=self.chat_and_respond,
+        )
+
+    def _voice_turn_executor(self) -> RuntimeVoiceTurnExecutor:
+        """Return the voice executor, constructing old test fixtures lazily."""
+        executor = getattr(self, "voice_turn_runtime", None)
+        if executor is None:
+            executor = self._build_voice_turn_executor()
+            self.voice_turn_runtime = executor
+        return executor
+
     def _run_voice_interaction(self) -> bool:
         """Run one voice-loop iteration, returning false when it should stop."""
         turn = self._runtime_turn_coordinator().next_turn()
@@ -1064,82 +1093,7 @@ class BotGUI:
             return True
         if turn.kind is RuntimeTurnKind.STOPPED:
             return False
-        input_policy = turn.input_policy
-        trigger_source = turn.trigger_source
-        if input_policy is None or trigger_source is None:
-            raise RuntimeError("Ready runtime turn omitted its input details.")
-        self._start_interaction(trigger_source)
-        audio_path = (
-            str(self.current_interaction.audio_path)
-            if self.current_interaction
-            else "input.wav"
-        )
-        if trigger_source == "PTT":
-            audio_file = self.recorder.record_ptt(
-                self.recording_active,
-                filename=audio_path,
-                shutdown_event=self.shutdown_event,
-            )
-        else:
-            audio_file = self.recorder.record_adaptive(
-                filename=audio_path,
-                shutdown_event=self.shutdown_event,
-                initial_silence_timeout=(input_policy.initial_silence_timeout),
-            )
-
-        if not audio_file:
-            if (
-                input_policy.kind == InputPolicyKind.CONTINUOUS
-                and self.mode_registry.is_active()
-            ):
-                self.set_state(
-                    BotStates.LISTENING,
-                    input_policy.no_speech_status,
-                )
-            else:
-                self.set_state(BotStates.IDLE, "Heard nothing.")
-            self._finish_interaction("no_speech")
-            return True
-
-        self.play_sound(self.random_sound("ack"))
-        user_text = self.transcriber.transcribe(
-            audio_file,
-            archive_directory=(
-                self.current_interaction.path / "input"
-                if self.current_interaction
-                else None
-            ),
-        )
-        if not user_text:
-            if (
-                input_policy.kind == InputPolicyKind.CONTINUOUS
-                and self.mode_registry.is_active()
-            ):
-                self.set_state(
-                    BotStates.LISTENING,
-                    input_policy.empty_transcript_status,
-                )
-            else:
-                self.set_state(
-                    BotStates.IDLE,
-                    "Transcription empty.",
-                )
-            self._finish_interaction("transcription_empty")
-            return True
-
-        if self.current_interaction:
-            self.current_interaction.write_text(
-                "input", "transcript.txt", user_text + "\n"
-            )
-            self.current_interaction.event(
-                "transcription_completed",
-                {"text": user_text, "audio_file": str(audio_file)},
-            )
-        self.append_to_text(f"YOU: {user_text}")
-        self.interrupted.clear()
-        self.chat_and_respond(user_text)
-        self._finish_interaction("completed")
-        return True
+        return self._voice_turn_executor().execute(turn)
 
     def _recover_interaction_failure(self, exc: Exception) -> None:
         """Report one failed turn and restore the loop to a usable state."""

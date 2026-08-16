@@ -44,6 +44,12 @@ the same lifecycle safely.
     hours, queued menu work, suspended/continuous modes, wake/PTT, interruption,
     and shutdown returns typed decisions to the current presentation adapter.
     Import tests also exclude OpenWakeWord and ONNX Runtime initialization.
+11. **Voice-turn executor** — ready turns now cross a toolkit-neutral boundary
+    that selects PTT/adaptive capture, invokes transcription, records transcript
+    artifacts/events, presents retry states, and hands successful text to
+    conversation routing. Recorder, transcriber, archive, mode, and presentation
+    implementations are injected, and importing the executor starts no audio or
+    GUI backend.
 
 ## Remaining gates
 
@@ -59,8 +65,10 @@ moved into `RuntimeMenuCoordinator`; extension registry lifetime and menu work
 queues have moved into `RuntimeExtensionCoordinator`.
 Worker iteration and voice-trigger arbitration have moved into
 `RuntimeWorkerLoop` and `RuntimeTurnCoordinator`; audio capture, transcription,
-conversation execution, service construction, and final persistence still need
-neutral runtime ownership.
+and transcript archival sequencing have moved into
+`RuntimeVoiceTurnExecutor`. Concrete service construction, conversation
+execution, attentions, speech output, and final persistence still need neutral
+runtime ownership.
 
 Completion evidence:
 

@@ -65,6 +65,7 @@ agent.py
 | `bmo/runtime_menu.py` | UI-neutral live menu snapshots, stale-selection validation, and typed mode/feature launch dispatch. |
 | `bmo/runtime_extensions.py` | UI-neutral feature/mode registry lifetime, worker wake event, and queued mode/vision menu requests. |
 | `bmo/runtime_loop.py` | UI-neutral resilient assistant worker and voice-turn arbitration across menus, modes, wake/PTT, interrupts, and shutdown. |
+| `bmo/runtime_voice.py` | UI-neutral voice capture selection, transcription, transcript archival, retry presentation, and successful turn completion. |
 | `bmo/text.py` | Shared spoken-command normalization. |
 | `bmo/network.py` | Shared bounded timeout parsing for online features. |
 | `bmo/location.py` | Location validation, home resolution, and Nominatim geocoding. |
@@ -180,7 +181,7 @@ Modes are longer interactions that temporarily own user input.
 | Neutral menu catalog | `tests/test_menu_catalog.py` |
 | Runtime menu and extension dispatch | `tests/test_runtime_menu.py`, `tests/test_runtime_extensions.py` |
 | Core persistence/config | `tests/test_archive.py`, `tests/test_jsonio.py`, `tests/test_config_and_memory.py` |
-| Audio and speech | `tests/test_speech.py` |
+| Audio and speech | `tests/test_speech.py`, `tests/test_runtime_voice.py` |
 | Installation | `tests/test_setup_script.py` |
 | Time/location/weather | `tests/test_location_weather.py`, `tests/test_weather_feature.py` |
 | Timer | `tests/test_set_timer.py`, `tests/test_timer_ui.py` |
