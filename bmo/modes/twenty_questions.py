@@ -8,7 +8,6 @@ from pathlib import Path
 import threading
 from typing import Any
 
-from bmo.intent import infer_game_answer, infer_game_guess
 from bmo.modes.contracts import (
     Chat,
     InputPolicy,
@@ -32,6 +31,20 @@ from bmo.twenty_questions import (
 GameAnswerInference = Callable[[str, str, Chat], str | None]
 GameGuessInference = Callable[..., str | None]
 TwentyQuestionsAppFactory = Callable[..., Any]
+
+
+def _infer_game_answer(*args: Any, **kwargs: Any) -> str | None:
+    """Load model-backed answer inference only when a game needs it."""
+    from bmo.intent import infer_game_answer
+
+    return infer_game_answer(*args, **kwargs)
+
+
+def _infer_game_guess(*args: Any, **kwargs: Any) -> str | None:
+    """Load model-backed guess inference only when a game needs it."""
+    from bmo.intent import infer_game_guess
+
+    return infer_game_guess(*args, **kwargs)
 
 
 def _create_twenty_questions_app(*args: Any, **kwargs: Any) -> Any:
@@ -66,8 +79,8 @@ class TwentyQuestionsMode:
         wait_for_tts: Callable[[], None],
         set_state: Callable[[str, str], None],
         answer_wait_seconds: object = 12,
-        answer_inference: GameAnswerInference = infer_game_answer,
-        guess_inference: GameGuessInference = infer_game_guess,
+        answer_inference: GameAnswerInference = _infer_game_answer,
+        guess_inference: GameGuessInference = _infer_game_guess,
         menu_item: ModeMenuItem | None = TWENTY_QUESTIONS_MENU_ITEM,
         app_factory: TwentyQuestionsAppFactory = _create_twenty_questions_app,
         face_provider: Callable[[], Any] | None = None,
@@ -455,8 +468,18 @@ def register(
     )
 
 
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Contribute game metadata without datasets, history, or runtime context."""
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("Twenty Questions show_in_menu must be true or false")
+    if show_in_menu:
+        registry.register(TWENTY_QUESTIONS_MENU_ITEM)
+
+
 __all__ = [
     "TWENTY_QUESTIONS_MENU_ITEM",
     "TwentyQuestionsMode",
     "register",
+    "register_menu_metadata",
 ]

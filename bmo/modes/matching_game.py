@@ -161,3 +161,12 @@ def register(
             menu_item=MATCHING_GAME_MENU_ITEM if show_in_menu else None,
         )
     )
+
+
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Contribute Pup Pairs metadata without constructing its mode or UI."""
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("matching-game show_in_menu must be true or false")
+    if show_in_menu:
+        registry.register(MATCHING_GAME_MENU_ITEM)

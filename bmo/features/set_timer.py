@@ -832,3 +832,12 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
             menu_item=TIMER_MENU_ITEM if show_in_menu else None,
         )
     )
+
+
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Contribute timer menu metadata without constructing its scheduler."""
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("timer show_in_menu must be true or false")
+    if show_in_menu:
+        registry.register(TIMER_MENU_ITEM)

@@ -89,6 +89,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   hit geometry, and ordered swipe history shared by Tk and Qt.
 - `bmo.menu_catalog` — ordered registry-to-menu composition and validated,
   namespaced mode/feature selection requests shared by Tk and Qt.
+- `bmo.menu_loader` — resource-free configured menu-metadata discovery with
+  optional per-extension hooks, transactional rollback, and failure isolation.
 - `bmo.runtime_menu` — live catalog snapshots and owner-specific launch
   dispatch; stale selections are rejected when registry visibility changes.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
@@ -115,9 +117,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.qt.controller` — Qt properties, signals, real face-frame animation,
   camera overlay state, HUD text, shared menu pages, selection events, and
   gesture translation without importing Tk.
-- `bmo.qt.app` — isolated Qt Quick engine and controller lifetime ownership; it
-  intentionally starts no assistant services until the coordinator boundary is
-  ready to replace Tk.
+- `bmo.qt.app` — Qt Quick engine and controller lifetime ownership plus the
+  configured resource-free menu catalog; it intentionally starts no assistant
+  services until the coordinator boundary is ready to replace Tk.
 - `bmo/qt/qml/Main.qml` — fullscreen 800x480 face surface, touch input,
   diagnostic HUD, image overlay, and kiosk shortcuts.
 
@@ -159,6 +161,14 @@ their concrete Tk view imports inside default view factories, so loading their
 registration and metadata boundaries does not import Tkinter. Timer, Calendar,
 and Weather exchange presentation data through narrowly owned immutable
 records; Pup Pairs request matching similarly lives outside its Tk application.
+`bmo.menu_loader` invokes optional `register_menu_metadata(registry, settings)`
+hooks through the same configured-extension algorithm. Missing hooks mean an
+enabled extension has no menu contribution, while a broken hook rolls back only
+its own metadata. Calendar and Learning may read their private configuration to
+reflect menu visibility, but the catalog constructs no stores, clients,
+workers, tools, modes, model services, or UI objects. Twenty Questions defers
+its model-inference import so catalog discovery also avoids OpenWakeWord and
+ONNX Runtime initialization.
 
 Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.
@@ -203,15 +213,16 @@ The production flow above remains on Tk during the migration. `qt_agent.py`
 currently exercises only the real Qt/QML presentation shell: it loads the
 configured face frames, animation timings, touch gestures, status, response
 text, camera-overlay path, and the shared icon-menu geometry without
-constructing audio, models, features, or modes. The shell supplies disposable
-built-in preview metadata; selections are diagnostic events and do not execute
-features or modes. Keeping that launcher isolated makes the display/event-loop
-boundary testable on the Pi before runtime ownership moves away from `BotGUI`.
+constructing audio, models, feature tools, or modes. The shell loads configured
+metadata from enabled feature/mode modules; selections are
+diagnostic events and do not execute features or modes. Keeping that launcher
+isolated makes the display/event-loop boundary testable on the Pi before
+runtime ownership moves away from `BotGUI`.
 The ordered production Tk menu now also uses `MenuCatalog`, proving that the
 same typed selection boundary can receive real runtime registry contributions.
 Both production Tk and the isolated Qt shell dispatch selections through
-`RuntimeMenuCoordinator`; Qt uses diagnostic callbacks until the rest of the
-application runtime and extension UI imports are toolkit-neutral.
+`RuntimeMenuCoordinator`; Qt uses diagnostic callbacks until the
+UI-independent application runtime is ready.
 
 ## Display navigation
 
@@ -530,6 +541,13 @@ prompt and compatibility loading prefers that hook and otherwise falls back to
 ordinary registration followed by immediate cleanup. The metadata hook must
 register the same actions, aliases, prompt fields, matchers, and request
 normalizers, but must not start workers or acquire runtime-only resources.
+Any feature that contributes a touch-menu item must also expose
+`register_menu_metadata(registry, settings)`. That hook registers only its
+`FeatureMenuItem`, observes the same visibility configuration as runtime
+registration, and must not construct the tool, view, worker, client, or store.
+Resource-free Qt catalog loading treats this hook as optional because voice-only
+features intentionally have no menu metadata; it never falls back to the
+runtime `register()` hook.
 That hook registers one or more objects satisfying the structural `Tool`
 contract in `bmo.features.contracts`:
 
@@ -632,6 +650,10 @@ context must be `ModeRuntimeContext`; it deliberately exposes approved services
 rather than the entire GUI coordinator. Its `call_soon()` boundary queues work
 on the active presentation thread without requiring a mode to call Tk directly;
 the temporary `master` field remains only for constructing the legacy views.
+Modes with a touch-menu item additionally expose
+`register_menu_metadata(registry, settings)`, which validates menu visibility
+and registers only the `ModeMenuItem` without requiring `ModeRuntimeContext` or
+constructing the mode.
 Registration order controls the first
 matching start request. The built-in modules construct the existing adapters.
 Twenty Questions owns a lazily loaded immutable base JSONL catalog, an
@@ -734,7 +756,8 @@ The exact minimal workflow for an optional feature is:
    `register(registry, settings)` hook. Keep imports free of side effects;
    allocate threads, devices, or clients during registration or first use.
    Give each action and alias a globally unique name and return a typed
-   `ToolResult` for every expected outcome.
+   `ToolResult` for every expected outcome. If it contributes a menu item, add
+   the resource-free `register_menu_metadata(registry, settings)` hook too.
 2. **Add config entry:** add its module name, enabled boolean, and settings to
    the local `features` list. No edit to `tools.py`, `intent.py`, `prompts.py`,
    `app.py`, or `bmo.features.__init__` is required. Edit
@@ -800,7 +823,9 @@ The exact minimal workflow for an optional mode is:
 
 1. **Create module:** implement `InteractionMode` without import-time workers
    or UI creation, then expose `register(registry, context, settings)`. Construct
-   it only from `ModeRuntimeContext` and settings; do not retain `BotGUI`.
+   it only from `ModeRuntimeContext` and settings; do not retain `BotGUI`. If it
+   contributes a menu item, also expose the resource-free
+   `register_menu_metadata(registry, settings)` hook.
 2. **Add config entry:** add the importable module to the local `modes` list.
    No edit to `app.py`, the mode registry, or `bmo.modes.__init__` is required.
    Edit `DEFAULT_MODE_MODULES` only when deliberately adding an omitted-key

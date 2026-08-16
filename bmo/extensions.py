@@ -84,6 +84,7 @@ def load_configured_extensions(
     invoke_register: Callable[[Callable[..., Any], Mapping[str, Any]], None],
     register_signature: str,
     register_names: Sequence[str] = ("register",),
+    allow_missing_register: bool = False,
     make_failure: Callable[[str, str, str], FailureT],
     reporter: Callable[[str], None],
 ) -> tuple[tuple[FailureT, ...], tuple[str, ...]]:
@@ -184,6 +185,9 @@ def load_configured_extensions(
             fail(module_name, "register", exc)
             continue
         if not callable(register):
+            if allow_missing_register:
+                loaded_modules.append(module_name)
+                continue
             fail(
                 module_name,
                 "register",

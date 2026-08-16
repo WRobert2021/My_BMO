@@ -282,3 +282,12 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
             photos_per_page=_photos_per_page_setting(settings),
         )
     )
+
+
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Validate Album settings and contribute metadata without a library."""
+    _path_setting(settings, "photo_root", DEFAULT_PHOTO_ROOT)
+    _path_setting(settings, "wastebasket_root", DEFAULT_WASTEBASKET_ROOT)
+    _path_setting(settings, "bmo_button_image", DEFAULT_BMO_BUTTON)
+    _photos_per_page_setting(settings)
+    registry.register(ALBUM_MENU_ITEM)

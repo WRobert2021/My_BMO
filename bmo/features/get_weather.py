@@ -350,3 +350,12 @@ def register_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
             WeatherService(location_service, timeout=timeout),
         )
     )
+
+
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Contribute Weather menu metadata without clients or private config."""
+    show_in_menu = settings.get("show_in_menu", True)
+    if not isinstance(show_in_menu, bool):
+        raise TypeError("weather show_in_menu must be true or false")
+    if show_in_menu:
+        registry.register(WEATHER_MENU_ITEM)

@@ -572,3 +572,9 @@ def register_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
         CalendarConfig(show_in_menu=False),
         start_worker=False,
     )
+
+
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Contribute configured Calendar metadata without a store or worker."""
+    if load_calendar_config(settings).show_in_menu:
+        registry.register(CALENDAR_MENU_ITEM)

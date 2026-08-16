@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -19,7 +20,11 @@ from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
 from bmo.menu_catalog import MenuCatalog, MenuOwner  # noqa: E402
 from bmo.menu_model import IconMenuItem  # noqa: E402
-from bmo.qt.app import QML_PATH, preview_menu_catalog  # noqa: E402
+from bmo.qt.app import (  # noqa: E402
+    QML_PATH,
+    configured_menu_catalog,
+    preview_menu_catalog,
+)
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
 
@@ -210,6 +215,24 @@ class QtQmlShellTests(unittest.TestCase):
         self.assertEqual(items[0].name, "mode:matching_game")
         self.assertEqual(items[1].name, "mode:twenty_questions")
         self.assertTrue(all(item.icon_path.parent.name == "icons" for item in items))
+
+    def test_configured_menu_uses_extension_metadata_instead_of_preview(
+        self,
+    ) -> None:
+        with patch(
+            "bmo.qt.app.load_config",
+            return_value={
+                "features": [{"module": "bmo.features.set_timer"}],
+                "modes": [],
+            },
+        ):
+            result = configured_menu_catalog()
+
+        self.assertEqual(result.failures, ())
+        self.assertEqual(
+            tuple(item.name for item in result.catalog.items),
+            ("feature:set_timer",),
+        )
 
 
 if __name__ == "__main__":

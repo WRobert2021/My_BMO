@@ -29,6 +29,11 @@ the same lifecycle safely.
    Pup Pairs start-request matching no longer imports the Tk game application.
    Subprocess tests enforce that importing these extension modules does not
    import `tkinter`.
+8. **Configured resource-free menu** — extension-owned metadata hooks build the
+   Qt shell's menu from enabled modules, configured order, and visibility
+   settings. Metadata failures roll back independently, and construction starts
+   no UI, workers, stores, clients, modes, model services, OpenWakeWord, or ONNX
+   Runtime. Selections remain diagnostic until the full runtime is connected.
 
 ## Remaining gates
 
@@ -51,15 +56,11 @@ Completion evidence:
 ### 2. Connect the full runtime to Qt
 
 Create the production-capable Qt launcher and connect `QtFaceController` to the
-runtime presentation port. Replace diagnostic menu metadata with the enabled
-feature/mode catalog and route typed selection requests to the runtime worker.
+runtime presentation port. The shell now displays the enabled feature/mode
+catalog without constructing their runtimes; the remaining step is to replace
+its diagnostic launch callbacks with real registry/runtime-worker dispatch.
 Voice, PTT, streaming responses, TTS interruption, memory, archives, and clean
 shutdown must match Tk.
-
-The extension modules are now safe to import in the Qt process. The next slice
-must add resource-free mode/feature catalog construction, then replace the
-shell's preview catalog and diagnostic launch callbacks with the configured
-registries and runtime-worker dispatch.
 
 ### 3. Convert global overlays
 

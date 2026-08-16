@@ -157,6 +157,18 @@ def register(registry: Any, settings: Mapping[str, Any]) -> None:
     registry.register(LearningTool(config))
 
 
+def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
+    """Contribute configured Learning metadata without engine or store objects."""
+    private_settings = (
+        {"config_path": settings["config_path"]}
+        if "config_path" in settings
+        else {}
+    )
+    config = load_learning_config(private_settings, project_root=PROJECT_ROOT)
+    if config.show_in_menu:
+        registry.register(LEARNING_MENU_ITEM)
+
+
 __all__ = [
     "CURRICULUM",
     "LEARNING_MENU_ITEM",
@@ -165,4 +177,5 @@ __all__ = [
     "LearningStore",
     "LearningTool",
     "register",
+    "register_menu_metadata",
 ]

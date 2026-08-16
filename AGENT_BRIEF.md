@@ -32,7 +32,7 @@ agent.py
 | --- | --- |
 | `agent.py` | Production launcher; creates Tk, constructs `BotGUI`, and starts the event loop. |
 | `typed_agent.py` | Debug launcher that replaces microphone turns with an on-screen text field while retaining normal routing and presentation. |
-| `qt_agent.py` | Migration-only launcher for the isolated fullscreen Qt/QML face shell; it does not start assistant services yet. |
+| `qt_agent.py` | Migration-only launcher for the fullscreen Qt/QML face shell and configured resource-free menu; it does not start assistant services yet. |
 | `start_agent.sh` | Runs `agent.py` with the repository virtual environment. |
 | `setup.sh` | Raspberry Pi/aarch64 installer for system packages, Whisper.cpp, Piper, voices, Python packages, Ollama models, and the wake-word model. |
 | `be-more-agent.desktop` | Linux desktop shortcut for `start_agent.sh`. |
@@ -61,6 +61,7 @@ agent.py
 | `bmo/gestures.py` | UI-toolkit-neutral tap and horizontal-swipe recognition shared by Tk and Qt. |
 | `bmo/menu_model.py` | UI-toolkit-neutral menu items, 5x3 pagination, hit geometry, and swipe history shared by Tk and Qt. |
 | `bmo/menu_catalog.py` | Namespaced registry-to-menu composition and typed mode/feature selection requests shared by Tk and Qt. |
+| `bmo/menu_loader.py` | Resource-free loading of configured feature/mode menu metadata with per-extension failure isolation. |
 | `bmo/runtime_menu.py` | UI-neutral live menu snapshots, stale-selection validation, and typed mode/feature launch dispatch. |
 | `bmo/text.py` | Shared spoken-command normalization. |
 | `bmo/network.py` | Shared bounded timeout parsing for online features. |
@@ -152,7 +153,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/weather.py` | Forecast-to-view state, asynchronous carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
 | `bmo/ui/weather_web/index.html` | Weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
 | `bmo/qt/controller.py` | Qt properties/signals for face frames, overlay, HUD, shared menu pages, selections, and kiosk gestures. |
-| `bmo/qt/app.py` | Qt Quick engine ownership and migration-shell startup. |
+| `bmo/qt/app.py` | Qt Quick engine ownership, configured menu metadata loading, and migration-shell startup. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 QML face, touch surface, overlay, diagnostic HUD, and kiosk shortcuts. |
 
 ## Configuration examples

@@ -10,8 +10,10 @@ from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 
+from bmo.config import load_config
 from bmo.face_config import PROJECT_ROOT
 from bmo.menu_catalog import MenuCatalog
+from bmo.menu_loader import MenuCatalogLoadResult, load_menu_catalog
 from bmo.menu_model import IconMenuItem
 from bmo.qt.controller import QtFaceController
 from bmo.runtime_menu import RuntimeMenuCoordinator
@@ -43,13 +45,19 @@ def preview_menu_catalog(
     )
 
 
+def configured_menu_catalog() -> MenuCatalogLoadResult:
+    """Load the real configured menu without constructing extension runtimes."""
+    return load_menu_catalog(load_config())
+
+
 def run_qt_face_shell(argv: Sequence[str] | None = None) -> int:
-    """Run the isolated Qt face shell without starting assistant services."""
+    """Run Qt with configured metadata but without assistant services."""
     arguments = list(sys.argv if argv is None else argv)
     app = QGuiApplication(arguments)
     app.setApplicationName("Be More Agent Qt Shell")
 
-    catalog = preview_menu_catalog()
+    catalog_result = configured_menu_catalog()
+    catalog = catalog_result.catalog
     controller = QtFaceController(menu_catalog=catalog)
     runtime_menu = RuntimeMenuCoordinator(
         lambda: catalog,
@@ -91,10 +99,17 @@ def run_qt_face_shell(argv: Sequence[str] | None = None) -> int:
         ),
     )
     print(
-        f"Qt/QML face shell: platform={app.platformName()} qml={QML_PATH}",
+        f"Qt/QML face shell: platform={app.platformName()} qml={QML_PATH} "
+        f"configured_items={len(catalog.items)} "
+        f"metadata_failures={len(catalog_result.failures)}",
         flush=True,
     )
     return app.exec()
 
 
-__all__ = ["QML_PATH", "preview_menu_catalog", "run_qt_face_shell"]
+__all__ = [
+    "QML_PATH",
+    "configured_menu_catalog",
+    "preview_menu_catalog",
+    "run_qt_face_shell",
+]
