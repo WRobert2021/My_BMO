@@ -211,6 +211,39 @@ class InteractionFailureRecoveryTests(unittest.TestCase):
         save_chat_history.assert_called_once()
         generate.assert_called_once()
 
+    @patch("bmo.app.ollama.generate")
+    @patch("bmo.app.save_chat_history")
+    def test_shutdown_delegates_registry_ownership_to_extension_runtime(
+        self,
+        _save_chat_history: Mock,
+        _generate: Mock,
+    ) -> None:
+        gui = BotGUI.__new__(BotGUI)
+        gui.exiting = False
+        gui.shutdown_event = threading.Event()
+        gui.extension_runtime = Mock()
+        gui.tool_router = Mock()
+        gui.mode_registry = Mock()
+        gui.interrupted = threading.Event()
+        gui.ptt_event = threading.Event()
+        gui.recording_active = threading.Event()
+        gui.thinking_sound_active = threading.Event()
+        gui.tts_queue_lock = threading.Lock()
+        gui.tts_queue = []
+        gui.speaker = Mock()
+        gui.main_thread = None
+        gui.tts_thread = None
+        gui.permanent_memory = []
+        gui.session_memory = []
+        gui.text_model = "test-model"
+        gui.master = Mock()
+
+        gui.safe_exit()
+
+        gui.extension_runtime.close.assert_called_once_with()
+        gui.tool_router.close.assert_not_called()
+        gui.mode_registry.close.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

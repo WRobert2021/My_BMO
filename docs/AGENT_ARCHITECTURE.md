@@ -93,6 +93,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   optional per-extension hooks, transactional rollback, and failure isolation.
 - `bmo.runtime_menu` — live catalog snapshots and owner-specific launch
   dispatch; stale selections are rejected when registry visibility changes.
+- `bmo.runtime_extensions` — toolkit-neutral feature/mode registry lifetime,
+  worker wake signaling, and serialized mode/vision menu requests.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -156,7 +158,10 @@ parallel implementations. Registry contributions become namespaced catalog
 items once; views return a typed owner/name request rather than parsing or
 executing extension-specific behavior themselves. `bmo.runtime_menu` validates
 that request against a fresh catalog snapshot before invoking the narrow mode
-or feature launch callback. Menu-contributing feature and mode modules keep
+or feature launch callback. `bmo.runtime_extensions` composes that dispatcher
+with the live feature and mode registries, owns their cleanup, and queues work
+that must cross from the presentation thread to the interaction worker. Menu-
+contributing feature and mode modules keep
 their concrete Tk view imports inside default view factories, so loading their
 registration and metadata boundaries does not import Tkinter. Timer, Calendar,
 and Weather exchange presentation data through narrowly owned immutable
@@ -207,7 +212,8 @@ of executable feature resources.
    interaction; camera captures are also copied to the feature's configured
    persistent directory.
 9. Piper streams speech through `sounddevice` while also writing archival WAVs.
-10. Shutdown stops audio, saves recent memory atomically, unloads the text model, and closes Tkinter.
+10. Shutdown closes the extension runtime and both registries, stops audio,
+    saves recent memory atomically, unloads the text model, and closes Tkinter.
 
 The production flow above remains on Tk during the migration. `qt_agent.py`
 currently exercises only the real Qt/QML presentation shell: it loads the
@@ -222,7 +228,10 @@ The ordered production Tk menu now also uses `MenuCatalog`, proving that the
 same typed selection boundary can receive real runtime registry contributions.
 Both production Tk and the isolated Qt shell dispatch selections through
 `RuntimeMenuCoordinator`; Qt uses diagnostic callbacks until the
-UI-independent application runtime is ready.
+UI-independent application runtime is ready. Production Tk additionally uses
+`RuntimeExtensionCoordinator` for registry lifetime, the shared worker wake
+event, and queued mode/feature-vision work. The interaction worker consumes
+those typed requests without requiring the neutral coordinator to import Tk.
 
 ## Display navigation
 
@@ -262,11 +271,12 @@ additional actions are placed on later swipeable pages. Grid cells render only
 their alpha-preserving icons, without tile backgrounds, borders, or labels;
 each invisible cell remains the full touch target. A mode tap queues the
 selected mode for the normal interaction worker, interrupting wake-word waiting
-without starting mode lifecycle work on Tk's event thread. A feature tap opens
-its view on Tk's event thread with a narrow `FeatureMenuContext`; voice and
-model routing remain unchanged because opening a view is a separate hook. When
-no enabled extension contributes an item, the menu retains its intentionally
-blank fallback page.
+without starting mode lifecycle work on Tk's event thread; completion is posted
+back to the presentation dispatcher before the originating menu is revealed. A
+feature tap opens its view on Tk's event thread with a narrow
+`FeatureMenuContext`; voice and model routing remain unchanged because opening
+a view is a separate hook. When no enabled extension contributes an item, the
+menu retains its intentionally blank fallback page.
 
 Selecting a menu item does not destroy or navigate away from `MenuApp`. The
 originating grid page remains placed below the launched mode's newer embedded
@@ -874,18 +884,21 @@ selection.
 ## Next extraction
 
 `bmo.conversation` now owns observable model-call logging and typed tool-result
-presentation, and immediate cross-thread UI work passes through one dispatcher
-boundary. `BotGUI` still owns ordinary streamed-chat orchestration as well as
-Tk widgets and animation. The next safe step is to move the remaining streamed
-conversation workflow behind the same neutral boundary, then implement a
+presentation, immediate cross-thread UI work passes through one dispatcher
+boundary, and `bmo.runtime_extensions` owns the extension registries plus
+queued menu work. `BotGUI` still owns ordinary streamed-chat orchestration,
+audio/model service composition, attentions, and Tk widgets and animation. The
+next safe step is to move the remaining streamed conversation and assistant
+service lifecycle behind the same neutral boundary, then connect the
 PySide6/QML presenter while retaining Tk as a temporary fallback during parity
 testing.
 
 ## Shutdown ownership
 
 Audio streams are closed cooperatively by the thread that created them. The UI
-shutdown path cancels the quiet-hours poll, closes feature-owned workers such as
-the calendar date-change watcher, sets a shared event, wakes any push-to-talk
-wait, joins the interaction and TTS threads, and then exits Tkinter. It
+shutdown path cancels the quiet-hours poll, asks `RuntimeExtensionCoordinator`
+to close feature-owned workers such as the calendar date-change watcher and all
+mode resources, sets the shutdown event, wakes any push-to-talk wait, joins the
+interaction and TTS threads, and then exits Tkinter. It
 deliberately does not call process-wide `sounddevice.stop()` while another
 thread owns an input stream; doing so can crash Core Audio on macOS.

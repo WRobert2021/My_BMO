@@ -34,6 +34,11 @@ the same lifecycle safely.
    settings. Metadata failures roll back independently, and construction starts
    no UI, workers, stores, clients, modes, model services, OpenWakeWord, or ONNX
    Runtime. Selections remain diagnostic until the full runtime is connected.
+9. **Extension runtime coordinator** — production Tk now delegates feature/mode
+   registry lifetime, menu dispatch, the worker wake event, and queued mode and
+   feature-vision work to a toolkit-neutral owner. Mode completion returns
+   through the presentation dispatcher, and isolated tests prove the boundary
+   imports neither Tkinter nor PySide6.
 
 ## Remaining gates
 
@@ -45,7 +50,8 @@ runtime owner. Define a narrow presentation port for dispatch, state/status,
 response streaming, overlays, menu catalogs, selection requests, PTT,
 interrupt, and exit. Keep the existing Tk implementation as an adapter while
 the Qt adapter is developed. Menu snapshot and selection ownership have already
-moved into `RuntimeMenuCoordinator`.
+moved into `RuntimeMenuCoordinator`; extension registry lifetime and menu work
+queues have moved into `RuntimeExtensionCoordinator`.
 
 Completion evidence:
 

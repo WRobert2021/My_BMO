@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import atexit
 import os
-import queue
 import random
 import re
 import threading
@@ -59,6 +58,7 @@ from bmo.modes import (
     load_mode_registry,
 )
 from bmo.prompts import build_system_prompt
+from bmo.runtime_extensions import RuntimeExtensionCoordinator
 from bmo.runtime_menu import RuntimeMenuCoordinator
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
@@ -222,11 +222,6 @@ class BotGUI:
         self.current_overlay_image: ImageTk.PhotoImage | None = None
         self.face_gesture = HorizontalSwipeRecognizer()
         self.menu_ui: MenuApp | None = None
-        self.menu_mode_requests: queue.Queue[str] = queue.Queue()
-        self.menu_vision_requests: queue.Queue[
-            tuple[Path, Callable[[], None]]
-        ] = queue.Queue()
-        self.menu_action_event = threading.Event()
 
         self.permanent_memory = load_chat_history(MEMORY_FILE, self.system_prompt)
         self.session_memory: list[dict[str, str]] = []
@@ -269,6 +264,13 @@ class BotGUI:
         self.mode_registry = mode_result.registry
         self.mode_failures = mode_result.failures
         self.mode_modules = mode_result.modules
+        self.extension_runtime = RuntimeExtensionCoordinator(
+            self.mode_registry,
+            self.tool_router.registry,
+            launch_feature=self._open_feature_menu,
+        )
+        self.runtime_menu = self.extension_runtime.menu
+        self.menu_action_event = self.extension_runtime.wake_event
         atexit.register(self.safe_exit)
 
         self._build_gui()
@@ -366,8 +368,12 @@ class BotGUI:
         # Cooperative cancellation is critical on macOS. Never call the global
         # sounddevice.stop() while the wake-word thread owns an InputStream.
         self.shutdown_event.set()
-        self.tool_router.close()
-        self.mode_registry.close()
+        extension_runtime = getattr(self, "extension_runtime", None)
+        if extension_runtime is not None:
+            extension_runtime.close()
+        else:
+            self.tool_router.close()
+            self.mode_registry.close()
         self.interrupted.set()
         self.ptt_event.set()
         self.recording_active.clear()
@@ -519,12 +525,14 @@ class BotGUI:
         """Return the UI-neutral live catalog and selection owner."""
         coordinator = getattr(self, "runtime_menu", None)
         if coordinator is None:
-            coordinator = RuntimeMenuCoordinator.from_registries(
+            extension_runtime = RuntimeExtensionCoordinator(
                 self.mode_registry,
                 self.tool_router.registry,
-                launch_mode=self._queue_menu_mode,
                 launch_feature=self._open_feature_menu,
             )
+            self.extension_runtime = extension_runtime
+            self.menu_action_event = extension_runtime.wake_event
+            coordinator = extension_runtime.menu
             self.runtime_menu = coordinator
         return coordinator
 
@@ -565,44 +573,35 @@ class BotGUI:
             except tk.TclError:
                 pass
             return
-        self.menu_vision_requests.put((image_path, on_complete))
-        self.menu_action_event.set()
-
-    def _queue_menu_mode(self, name: str) -> None:
-        """Wake the interaction worker to start a mode selected by touch."""
-        if self.exiting:
-            return
-        self.menu_mode_requests.put(name)
-        self.menu_action_event.set()
+        self.extension_runtime.queue_vision(image_path, on_complete)
 
     def _start_pending_menu_mode(self) -> bool:
         """Start one queued menu mode on the normal interaction thread."""
-        requests = getattr(self, "menu_mode_requests", None)
-        if requests is None:
+        runtime = getattr(self, "extension_runtime", None)
+        if runtime is None:
             return False
-        try:
-            name = requests.get_nowait()
-        except queue.Empty:
-            return False
-        self._clear_menu_event_if_idle()
-        try:
-            self.mode_registry.start_menu_item(name)
-        finally:
-            menu_ui = getattr(self, "menu_ui", None)
-            if menu_ui is not None:
-                menu_ui.finish_selection()
-        return True
+        menu_ui = getattr(self, "menu_ui", None)
+
+        def finish_selection() -> None:
+            if menu_ui is None:
+                return
+            try:
+                self._dispatch_ui(menu_ui.finish_selection)
+            except tk.TclError:
+                pass
+
+        return runtime.start_pending_mode(on_complete=finish_selection)
 
     def _start_pending_menu_vision(self) -> bool:
         """Run one queued menu image through the normal vision pipeline."""
-        requests = getattr(self, "menu_vision_requests", None)
-        if requests is None:
+        runtime = getattr(self, "extension_runtime", None)
+        if runtime is None:
             return False
-        try:
-            image_path, on_complete = requests.get_nowait()
-        except queue.Empty:
+        request = runtime.take_pending_vision()
+        if request is None:
             return False
-        self._clear_menu_event_if_idle()
+        image_path = request.image_path
+        on_complete = request.on_complete
         self._start_interaction("MENU_VISION")
         self.interrupted.clear()
         try:
@@ -628,15 +627,6 @@ class BotGUI:
             self._start_pending_menu_vision()
             or self._start_pending_menu_mode()
         )
-
-    def _clear_menu_event_if_idle(self) -> None:
-        """Clear the shared wake event only after every menu queue drains."""
-        mode_requests = getattr(self, "menu_mode_requests", None)
-        vision_requests = getattr(self, "menu_vision_requests", None)
-        mode_empty = mode_requests is None or mode_requests.empty()
-        vision_empty = vision_requests is None or vision_requests.empty()
-        if mode_empty and vision_empty:
-            self.menu_action_event.clear()
 
     def handle_ptt_toggle(self, event: tk.Event | None = None) -> None:
         del event

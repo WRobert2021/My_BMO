@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import queue
 import threading
 import unittest
 from pathlib import Path
@@ -12,6 +11,7 @@ from unittest.mock import Mock, patch
 from bmo.app import BotGUI, _FeatureMenuAnnouncer, _SpeechQueueItem
 from bmo.features import FeatureMenuContext, FeatureMenuItem
 from bmo.modes import ModeMenuItem
+from bmo.runtime_extensions import RuntimeExtensionCoordinator
 from bmo.state import BotStates
 from bmo.ui import (
     COMPACT_FACE_CENTER,
@@ -330,26 +330,30 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
     def test_menu_selection_queues_mode_and_wakes_interaction_worker(self) -> None:
         gui = BotGUI.__new__(BotGUI)
         gui.exiting = False
-        gui.menu_mode_requests = queue.Queue()
-        gui.menu_action_event = threading.Event()
-        gui.mode_registry = SimpleNamespace(
-            menu_items=(
-                ModeMenuItem(
-                    "matching_game",
-                    "Matching Game",
-                    Path("matching.png"),
-                    "Start matching",
-                ),
-            )
+        gui.mode_registry = Mock()
+        gui.mode_registry.menu_items = (
+            ModeMenuItem(
+                "matching_game",
+                "Matching Game",
+                Path("matching.png"),
+                "Start matching",
+            ),
         )
-        gui.tool_router = SimpleNamespace(
-            registry=SimpleNamespace(menu_items=())
+        gui.tool_router = Mock()
+        gui.tool_router.registry.menu_items = ()
+        gui.extension_runtime = RuntimeExtensionCoordinator(
+            gui.mode_registry,
+            gui.tool_router.registry,
+            launch_feature=gui._open_feature_menu,
         )
+        gui.runtime_menu = gui.extension_runtime.menu
+        gui.menu_action_event = gui.extension_runtime.wake_event
 
         gui._select_menu_item("mode:matching_game")
 
-        self.assertEqual(gui.menu_mode_requests.get_nowait(), "matching_game")
         self.assertTrue(gui.menu_action_event.is_set())
+        self.assertTrue(gui._start_pending_menu_mode())
+        gui.mode_registry.start_menu_item.assert_called_once_with("matching_game")
 
     def test_feature_selection_opens_view_and_returns_to_same_menu(self) -> None:
         gui = BotGUI.__new__(BotGUI)
@@ -359,7 +363,8 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui.tool_router.registry.menu_items = (
             FeatureMenuItem("set_timer", "Timers", Path("timer.png")),
         )
-        gui.mode_registry = SimpleNamespace(menu_items=())
+        gui.mode_registry = Mock()
+        gui.mode_registry.menu_items = ()
         gui._current_mode_face = Mock(return_value=None)
         gui._queue_menu_vision = Mock()
         originating_menu = gui.menu_ui
@@ -388,11 +393,17 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
 
     def test_mode_launch_preserves_originating_menu_and_page(self) -> None:
         gui = BotGUI.__new__(BotGUI)
-        gui.menu_mode_requests = queue.Queue()
-        gui.menu_mode_requests.put("matching_game")
-        gui.menu_action_event = threading.Event()
-        gui.menu_action_event.set()
+        gui.master = Mock()
         gui.mode_registry = Mock()
+        feature_registry = Mock()
+        feature_registry.menu_items = ()
+        gui.extension_runtime = RuntimeExtensionCoordinator(
+            gui.mode_registry,
+            feature_registry,
+            launch_feature=gui._open_feature_menu,
+        )
+        gui.menu_action_event = gui.extension_runtime.wake_event
+        gui.extension_runtime.queue_mode("matching_game")
         gui.menu_ui = Mock()
         gui.menu_ui.navigator.page_index = 1
         originating_menu = gui.menu_ui
@@ -400,6 +411,8 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         self.assertTrue(gui._start_pending_menu_mode())
 
         gui.mode_registry.start_menu_item.assert_called_once_with("matching_game")
+        gui.master.after.assert_called_once()
+        gui.master.after.call_args.args[1]()
         originating_menu.finish_selection.assert_called_once_with()
         self.assertIs(gui.menu_ui, originating_menu)
         self.assertEqual(gui.menu_ui.navigator.page_index, 1)
@@ -409,10 +422,15 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         self,
     ) -> None:
         gui = BotGUI.__new__(BotGUI)
-        gui.menu_vision_requests = queue.Queue()
-        gui.menu_mode_requests = queue.Queue()
-        gui.menu_action_event = threading.Event()
-        gui.menu_action_event.set()
+        gui.mode_registry = Mock()
+        feature_registry = Mock()
+        feature_registry.menu_items = ()
+        gui.extension_runtime = RuntimeExtensionCoordinator(
+            gui.mode_registry,
+            feature_registry,
+            launch_feature=gui._open_feature_menu,
+        )
+        gui.menu_action_event = gui.extension_runtime.wake_event
         gui.interrupted = threading.Event()
         gui.master = Mock()
         gui._start_interaction = Mock()
@@ -420,7 +438,7 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui._finish_interaction = Mock()
         completion = Mock()
         path = Path("/tmp/photo.jpg")
-        gui.menu_vision_requests.put((path, completion))
+        gui.extension_runtime.queue_vision(path, completion)
 
         self.assertTrue(gui._start_pending_menu_vision())
 
@@ -435,11 +453,17 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
 
     def test_typed_debug_loop_also_starts_pending_menu_mode(self) -> None:
         gui = TypedBotGUI.__new__(TypedBotGUI)
-        gui.menu_mode_requests = queue.Queue()
-        gui.menu_mode_requests.put("matching_game")
-        gui.menu_action_event = threading.Event()
-        gui.menu_action_event.set()
+        gui.exiting = False
         gui.mode_registry = Mock()
+        feature_registry = Mock()
+        feature_registry.menu_items = ()
+        gui.extension_runtime = RuntimeExtensionCoordinator(
+            gui.mode_registry,
+            feature_registry,
+            launch_feature=gui._open_feature_menu,
+        )
+        gui.menu_action_event = gui.extension_runtime.wake_event
+        gui.extension_runtime.queue_mode("matching_game")
 
         self.assertTrue(gui._run_typed_interaction())
 
