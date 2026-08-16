@@ -20,6 +20,9 @@ the same lifecycle safely.
 5. **Typed menu catalog boundary** — production registries compose namespaced
    menu items through `MenuCatalog`; QML selections emit a validated
    `MenuSelectionRequest(owner, name)` without executing a Tk view.
+6. **Runtime menu coordinator** — production Tk and the Qt shell both use one
+   UI-neutral live-catalog and typed-dispatch owner. It rejects selections that
+   are no longer visible before calling the mode or feature launch boundary.
 
 ## Remaining gates
 
@@ -30,7 +33,8 @@ memory, archives, attentions, worker queues, and shutdown into a UI-independent
 runtime owner. Define a narrow presentation port for dispatch, state/status,
 response streaming, overlays, menu catalogs, selection requests, PTT,
 interrupt, and exit. Keep the existing Tk implementation as an adapter while
-the Qt adapter is developed.
+the Qt adapter is developed. Menu snapshot and selection ownership have already
+moved into `RuntimeMenuCoordinator`.
 
 Completion evidence:
 
@@ -45,6 +49,11 @@ runtime presentation port. Replace diagnostic menu metadata with the enabled
 feature/mode catalog and route typed selection requests to the runtime worker.
 Voice, PTT, streaming responses, TTS interruption, memory, archives, and clean
 shutdown must match Tk.
+
+Before constructing the live registries in the Qt process, move remaining
+top-level Tk view imports behind their feature/mode launch boundaries. Metadata
+and runtime service construction must not import Tkinter merely because a menu
+item is enabled.
 
 ### 3. Convert global overlays
 

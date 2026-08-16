@@ -332,6 +332,19 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui.exiting = False
         gui.menu_mode_requests = queue.Queue()
         gui.menu_action_event = threading.Event()
+        gui.mode_registry = SimpleNamespace(
+            menu_items=(
+                ModeMenuItem(
+                    "matching_game",
+                    "Matching Game",
+                    Path("matching.png"),
+                    "Start matching",
+                ),
+            )
+        )
+        gui.tool_router = SimpleNamespace(
+            registry=SimpleNamespace(menu_items=())
+        )
 
         gui._select_menu_item("mode:matching_game")
 
@@ -343,6 +356,10 @@ class BotGuiMenuIntegrationTests(unittest.TestCase):
         gui.master = Mock()
         gui.menu_ui = Mock()
         gui.tool_router = Mock()
+        gui.tool_router.registry.menu_items = (
+            FeatureMenuItem("set_timer", "Timers", Path("timer.png")),
+        )
+        gui.mode_registry = SimpleNamespace(menu_items=())
         gui._current_mode_face = Mock(return_value=None)
         gui._queue_menu_vision = Mock()
         originating_menu = gui.menu_ui

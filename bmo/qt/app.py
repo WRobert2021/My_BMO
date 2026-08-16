@@ -14,6 +14,7 @@ from bmo.face_config import PROJECT_ROOT
 from bmo.menu_catalog import MenuCatalog
 from bmo.menu_model import IconMenuItem
 from bmo.qt.controller import QtFaceController
+from bmo.runtime_menu import RuntimeMenuCoordinator
 from bmo.state import BotStates
 
 
@@ -48,19 +49,26 @@ def run_qt_face_shell(argv: Sequence[str] | None = None) -> int:
     app = QGuiApplication(arguments)
     app.setApplicationName("Be More Agent Qt Shell")
 
-    controller = QtFaceController(menu_catalog=preview_menu_catalog())
+    catalog = preview_menu_catalog()
+    controller = QtFaceController(menu_catalog=catalog)
+    runtime_menu = RuntimeMenuCoordinator(
+        lambda: catalog,
+        launch_mode=lambda name: print(
+            f"[QT MENU] launch request: owner=mode name={name}",
+            flush=True,
+        ),
+        launch_feature=lambda name: print(
+            f"[QT MENU] launch request: owner=feature name={name}",
+            flush=True,
+        ),
+    )
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("bmoUi", controller)
     controller.exitRequested.connect(app.quit)
     controller.menuRequested.connect(
         lambda: print("[QT MENU] opened", flush=True)
     )
-    controller.menuSelectionRequested.connect(
-        lambda request: print(
-            f"[QT MENU] request: owner={request.owner.value} name={request.name}",
-            flush=True,
-        )
-    )
+    controller.menuSelectionRequested.connect(runtime_menu.dispatch)
     controller.pushToTalkRequested.connect(
         lambda: controller.set_state(BotStates.LISTENING, "PTT request received")
     )

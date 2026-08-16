@@ -51,7 +51,7 @@ from bmo.features.contracts import (
 )
 from bmo.intent import infer_tool_action
 from bmo.memory import load_chat_history, save_chat_history
-from bmo.menu_catalog import MenuCatalog, MenuOwner, MenuSelectionRequest
+from bmo.menu_catalog import MenuSelectionRequest
 from bmo.kiosk_access import KioskAccessPolicy, load_quiet_hours_config
 from bmo.modes import (
     InputPolicyKind,
@@ -59,6 +59,7 @@ from bmo.modes import (
     load_mode_registry,
 )
 from bmo.prompts import build_system_prompt
+from bmo.runtime_menu import RuntimeMenuCoordinator
 from bmo.speech import WakeWordDetector, WhisperTranscriber, extract_json_from_text
 from bmo.state import BotStates
 from bmo.tools import ToolRouter
@@ -495,10 +496,7 @@ class BotGUI:
         if self.exiting or self.menu_ui is not None or self._quiet_hours_locked():
             return
         self._refresh_runtime_attention_ui()
-        catalog = MenuCatalog.from_contributions(
-            modes=self.mode_registry.menu_items,
-            features=self.tool_router.registry.menu_items,
-        )
+        catalog = self._runtime_menu_coordinator().catalog()
         self.menu_ui = MenuApp(
             self.master,
             on_close=self._handle_menu_close,
@@ -515,9 +513,23 @@ class BotGUI:
     def _select_menu_item(self, selection: str) -> None:
         """Route a namespaced menu selection to its owning extension registry."""
         request = MenuSelectionRequest.parse(selection)
-        if request.owner == MenuOwner.MODE:
-            self._queue_menu_mode(request.name)
-            return
+        self._runtime_menu_coordinator().dispatch(request)
+
+    def _runtime_menu_coordinator(self) -> RuntimeMenuCoordinator:
+        """Return the UI-neutral live catalog and selection owner."""
+        coordinator = getattr(self, "runtime_menu", None)
+        if coordinator is None:
+            coordinator = RuntimeMenuCoordinator.from_registries(
+                self.mode_registry,
+                self.tool_router.registry,
+                launch_mode=self._queue_menu_mode,
+                launch_feature=self._open_feature_menu,
+            )
+            self.runtime_menu = coordinator
+        return coordinator
+
+    def _open_feature_menu(self, name: str) -> None:
+        """Open one Tk-owned feature view selected by the runtime boundary."""
 
         menu_ui = self.menu_ui
         if menu_ui is None:
@@ -531,7 +543,7 @@ class BotGUI:
         announcer = _FeatureMenuAnnouncer(self)
 
         self.tool_router.registry.open_menu_item(
-            request.name,
+            name,
             FeatureMenuContext(
                 master=self.master,
                 on_close=finish_selection,

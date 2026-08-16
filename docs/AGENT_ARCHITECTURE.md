@@ -81,6 +81,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   hit geometry, and ordered swipe history shared by Tk and Qt.
 - `bmo.menu_catalog` — ordered registry-to-menu composition and validated,
   namespaced mode/feature selection requests shared by Tk and Qt.
+- `bmo.runtime_menu` — live catalog snapshots and owner-specific launch
+  dispatch; stale selections are rejected when registry visibility changes.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -142,7 +144,9 @@ independent features. Face configuration and gesture recognition live in
 importing the Qt presentation path does not initialize the Tk package or create
 parallel implementations. Registry contributions become namespaced catalog
 items once; views return a typed owner/name request rather than parsing or
-executing extension-specific behavior themselves.
+executing extension-specific behavior themselves. `bmo.runtime_menu` validates
+that request against a fresh catalog snapshot before invoking the narrow mode
+or feature launch callback.
 
 Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.
@@ -193,6 +197,9 @@ features or modes. Keeping that launcher isolated makes the display/event-loop
 boundary testable on the Pi before runtime ownership moves away from `BotGUI`.
 The ordered production Tk menu now also uses `MenuCatalog`, proving that the
 same typed selection boundary can receive real runtime registry contributions.
+Both production Tk and the isolated Qt shell dispatch selections through
+`RuntimeMenuCoordinator`; Qt uses diagnostic callbacks until the rest of the
+application runtime and extension UI imports are toolkit-neutral.
 
 ## Display navigation
 
