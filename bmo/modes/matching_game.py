@@ -9,7 +9,7 @@ from typing import Any
 
 from PIL import Image
 
-from bmo.matching_game import MatchingGameApp, is_matching_game_start_request
+from bmo.matching_game_text import is_matching_game_start_request
 from bmo.modes.contracts import (
     InputPolicy,
     ModeMenuItem,
@@ -21,7 +21,16 @@ from bmo.modes.contracts import (
 from bmo.state import BotStates
 
 
-MatchingAppFactory = Callable[..., MatchingGameApp]
+MatchingAppFactory = Callable[..., Any]
+
+
+def _create_matching_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk game view only when the mode starts from the menu."""
+    from bmo.matching_game import MatchingGameApp
+
+    return MatchingGameApp(*args, **kwargs)
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MATCHING_GAME_MENU_ITEM = ModeMenuItem(
     name="matching_game",
@@ -47,7 +56,7 @@ class MatchingGameMode:
         announce: Callable[[str], None],
         face_provider: Callable[[], Image.Image | None],
         dispatch_ui: Callable[[Callable[[], None]], None] | None = None,
-        app_factory: MatchingAppFactory = MatchingGameApp,
+        app_factory: MatchingAppFactory = _create_matching_app,
         menu_item: ModeMenuItem | None = MATCHING_GAME_MENU_ITEM,
     ) -> None:
         self.master = master
@@ -63,7 +72,7 @@ class MatchingGameMode:
         self.app_factory = app_factory
         self.menu_item = menu_item
         self._active = threading.Event()
-        self.ui: MatchingGameApp | None = None
+        self.ui: Any | None = None
 
     def matches_start_request(self, user_text: str) -> bool:
         return is_matching_game_start_request(user_text)

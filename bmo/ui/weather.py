@@ -15,7 +15,6 @@ import threading
 import time
 import tkinter as tk
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,7 +24,6 @@ from urllib.parse import urlsplit
 
 from PIL import Image
 
-from bmo.features.weather_alerts import WeatherAlert
 from bmo.features.weather_config import WeatherLocationConfig
 from bmo.features.weather_narration import (
     WeatherCondition,
@@ -39,6 +37,7 @@ from bmo.features.weather_narration import (
     narrate_temperature,
     season_for,
 )
+from bmo.features.weather_view import WeatherPageData
 from bmo.ui.compact_face import (
     CompactFace,
     CompactFaceConfig,
@@ -142,14 +141,6 @@ def day_period_for(snapshot: WeatherSnapshot, local_now: datetime) -> str:
     if local_now.hour < 14:
         return "midday"
     return "afternoon"
-
-
-@dataclass(frozen=True)
-class WeatherPageData:
-    """One successfully loaded location page."""
-
-    snapshot: WeatherSnapshot
-    alerts: tuple[WeatherAlert, ...] = ()
 
 
 class WeatherCarousel:

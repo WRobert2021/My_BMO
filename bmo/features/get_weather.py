@@ -22,6 +22,7 @@ from bmo.features.weather_config import (
     WeatherLocationConfig,
     load_weather_config,
 )
+from bmo.features.weather_view import WeatherPageData
 from bmo.location import (
     Location,
     LocationError,
@@ -29,7 +30,6 @@ from bmo.location import (
     LocationService,
 )
 from bmo.network import online_timeout_seconds
-from bmo.ui.weather import WeatherApp, WeatherPageData
 from bmo.weather import WeatherError, WeatherService
 
 
@@ -39,7 +39,15 @@ WEATHER_MENU_ITEM = FeatureMenuItem(
     label="Weather",
     icon_path=PROJECT_ROOT / "graphics" / "icons" / "weather.png",
 )
-WeatherAppFactory = Callable[..., WeatherApp]
+WeatherAppFactory = Callable[..., Any]
+
+
+def _create_weather_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk weather view only when its menu item is launched."""
+    from bmo.ui.weather import WeatherApp
+
+    return WeatherApp(*args, **kwargs)
+
 
 WEATHER_AT_HOME = frozenset(
     {
@@ -127,7 +135,7 @@ class GetWeatherTool:
         *,
         feature_config: WeatherFeatureConfig | None = None,
         alert_service: NWSAlertService | None = None,
-        app_factory: WeatherAppFactory = WeatherApp,
+        app_factory: WeatherAppFactory = _create_weather_app,
         menu_item: FeatureMenuItem | None = None,
     ) -> None:
         self.weather_service = weather_service
@@ -135,7 +143,7 @@ class GetWeatherTool:
         self.alert_service = alert_service
         self._app_factory = app_factory
         self.menu_item = menu_item
-        self._menu_ui: WeatherApp | None = None
+        self._menu_ui: Any | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
         value = request.get("value") or request.get("query")

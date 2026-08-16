@@ -93,9 +93,12 @@ configuration list.
 | `bmo/features/search_web.py` | DuckDuckGo news/text search, result formatting, and search archive details. |
 | `bmo/features/capture_image.py` | Raspberry Pi still capture, rotation, persistent copy, and vision follow-up. |
 | `bmo/features/set_timer.py` | Duration parsing, multi-timer scheduler, voice operations, menu callbacks, and alarm attentions. |
+| `bmo/features/timer_view.py` | Toolkit-neutral active-timer snapshots shared with presentation adapters. |
 | `bmo/features/calendar.py` | Read-only spoken calendar, editable menu view, midnight refresh worker, and current-day attentions. |
 | `bmo/features/calendar_config.py` | Calendar-owned private configuration. |
 | `bmo/features/calendar_store.py` | Event/acknowledgement storage, recurrence expansion, occurrence overrides, and US holidays. |
+| `bmo/features/calendar_view.py` | Toolkit-neutral calendar occurrence and editor records shared with presentation adapters. |
+| `bmo/features/weather_view.py` | Toolkit-neutral weather-page records shared with presentation adapters. |
 | `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
 
 ## Learning feature modules
@@ -126,6 +129,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/modes/matching_game.py` | Adapter connecting Pup Pairs to the mode registry and menu lifecycle. |
 | `bmo/modes/twenty_questions.py` | Adapter connecting Twenty Questions to voice/menu input, model fallback guesses, learning, and history. |
 | `bmo/matching_game.py` | Pup Pairs card model, imperfect BMO memory player, score history, and Tk game application. |
+| `bmo/matching_game_text.py` | Dependency-light spoken start-request matching for Pup Pairs. |
 | `bmo/twenty_questions.py` | Strict dataset loader, learned overlay, bitset candidate index, adaptive game engine, and recent-target history. |
 | `bmo/twenty_questions_contracts.py` | Dataset and learning-persistence errors. |
 | `bmo/twenty_questions_text.py` | Object-name and answer normalization. |

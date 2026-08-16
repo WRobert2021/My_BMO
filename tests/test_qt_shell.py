@@ -152,6 +152,39 @@ class QtFaceControllerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_menu_extension_modules_import_without_tkinter(self) -> None:
+        modules = (
+            "bmo.features.get_weather",
+            "bmo.features.calendar",
+            "bmo.features.set_timer",
+            "bmo.features.album",
+            "bmo.features.learning",
+            "bmo.modes.twenty_questions",
+            "bmo.modes.matching_game",
+        )
+        script = (
+            "import importlib, sys; "
+            "module = sys.argv[1]; "
+            "importlib.import_module(module); "
+            "raise SystemExit('tkinter' in sys.modules)"
+        )
+
+        for module in modules:
+            with self.subTest(module=module):
+                result = subprocess.run(
+                    [sys.executable, "-c", script, module],
+                    cwd=Path(__file__).resolve().parents[1],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    result.stdout + result.stderr,
+                )
+
 
 class QtQmlShellTests(unittest.TestCase):
     @classmethod

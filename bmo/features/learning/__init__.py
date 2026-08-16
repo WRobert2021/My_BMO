@@ -18,7 +18,6 @@ from bmo.features.learning.config import LearningConfig, load_learning_config
 from bmo.features.learning.curriculum import CURRICULUM, Catalog, validate_catalog
 from bmo.features.learning.engine import LearningEngine
 from bmo.features.learning.store import LearningStore
-from bmo.ui.learning import LearningApp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -27,7 +26,14 @@ LEARNING_MENU_ITEM = FeatureMenuItem(
     label="Learning",
     icon_path=PROJECT_ROOT / "graphics" / "icons" / "learning.png",
 )
-LearningAppFactory = Callable[..., LearningApp]
+LearningAppFactory = Callable[..., Any]
+
+
+def _create_learning_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk Learning view only when its menu item is launched."""
+    from bmo.ui.learning import LearningApp
+
+    return LearningApp(*args, **kwargs)
 
 
 class LearningTool:
@@ -48,7 +54,7 @@ class LearningTool:
         catalog: Catalog = CURRICULUM,
         engine: LearningEngine | None = None,
         store: LearningStore | None = None,
-        app_factory: LearningAppFactory = LearningApp,
+        app_factory: LearningAppFactory = _create_learning_app,
         menu_item: FeatureMenuItem = LEARNING_MENU_ITEM,
     ) -> None:
         validate_catalog(catalog)
@@ -70,7 +76,7 @@ class LearningTool:
         )
         self.menu_item = menu_item
         self._app_factory = app_factory
-        self._menu_ui: LearningApp | None = None
+        self._menu_ui: Any | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
         """Reject execution because Learning has no tool-routing surface."""

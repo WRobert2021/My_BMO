@@ -17,7 +17,6 @@ from bmo.features.contracts import (
     ToolRequest,
     ToolResult,
 )
-from bmo.ui.album import AlbumApp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -34,7 +33,14 @@ ALBUM_MENU_ITEM = FeatureMenuItem(
 PHOTO_EXTENSIONS = frozenset(
     {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"}
 )
-AlbumAppFactory = Callable[..., AlbumApp]
+AlbumAppFactory = Callable[..., Any]
+
+
+def _create_album_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk album view only when its menu item is launched."""
+    from bmo.ui.album import AlbumApp
+
+    return AlbumApp(*args, **kwargs)
 
 
 class AlbumLibrary:
@@ -177,7 +183,7 @@ class AlbumTool:
         *,
         bmo_button_path: str | Path = DEFAULT_BMO_BUTTON,
         photos_per_page: int = 6,
-        app_factory: AlbumAppFactory = AlbumApp,
+        app_factory: AlbumAppFactory = _create_album_app,
         menu_item: FeatureMenuItem = ALBUM_MENU_ITEM,
     ) -> None:
         self.library = library
@@ -185,7 +191,7 @@ class AlbumTool:
         self.photos_per_page = photos_per_page
         self._app_factory = app_factory
         self.menu_item = menu_item
-        self._menu_ui: AlbumApp | None = None
+        self._menu_ui: Any | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
         del request

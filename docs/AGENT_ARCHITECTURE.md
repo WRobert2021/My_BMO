@@ -49,8 +49,14 @@ The application keeps `agent.py` as the stable startup command while implementat
   store and codec without a circular dependency.
 - `bmo.features.set_timer` — natural durations and a single condition-driven
   priority-queue scheduler for all active timers.
+- `bmo.features.timer_view` — immutable active-timer presentation snapshots
+  shared without importing a concrete UI toolkit.
 - `bmo.features.calendar` — read-only calendar voice routing, touch-view
   registration, local-date attention refresh, and menu persistence actions.
+- `bmo.features.calendar_view` — immutable occurrence and editor records at the
+  Calendar presentation boundary.
+- `bmo.features.weather_view` — immutable forecast and alert page records at
+  the Weather presentation boundary.
 - `bmo.features.calendar_store` — versioned event and acknowledgment JSON,
   recurrence expansion, occurrence exceptions, and built-in US holidays.
 - `bmo.features.calendar_config` — private calendar-file validation without
@@ -59,6 +65,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   long-lived interactions.
 - `bmo.modes.loader` — standard-library module loading from `modes` config.
 - `bmo.modes.matching_game` — Pup Pairs lifecycle and registration adapter.
+- `bmo.matching_game_text` — dependency-light Pup Pairs start-request matching
+  shared without importing the Tk game application.
 - `bmo.modes.twenty_questions` — Twenty Questions lifecycle and registration
   adapter over the indexed dataset engine in `bmo.twenty_questions`.
 - `bmo.twenty_questions_ui` — embedded touch canvas for menu-launched Twenty
@@ -146,7 +154,11 @@ parallel implementations. Registry contributions become namespaced catalog
 items once; views return a typed owner/name request rather than parsing or
 executing extension-specific behavior themselves. `bmo.runtime_menu` validates
 that request against a fresh catalog snapshot before invoking the narrow mode
-or feature launch callback.
+or feature launch callback. Menu-contributing feature and mode modules keep
+their concrete Tk view imports inside default view factories, so loading their
+registration and metadata boundaries does not import Tkinter. Timer, Calendar,
+and Weather exchange presentation data through narrowly owned immutable
+records; Pup Pairs request matching similarly lives outside its Tk application.
 
 Learning has two intentional JSON boundaries. Model `to_json()` methods are the
 public UI/transport representation, including the teacher-facing plan `name`.

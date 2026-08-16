@@ -23,6 +23,12 @@ the same lifecycle safely.
 6. **Runtime menu coordinator** — production Tk and the Qt shell both use one
    UI-neutral live-catalog and typed-dispatch owner. It rejects selections that
    are no longer visible before calling the mode or feature launch boundary.
+7. **Extension import isolation** — every built-in menu-contributing feature
+   and mode defers its concrete Tk view import until that view is launched.
+   Timer, Calendar, and Weather use toolkit-neutral presentation records, and
+   Pup Pairs start-request matching no longer imports the Tk game application.
+   Subprocess tests enforce that importing these extension modules does not
+   import `tkinter`.
 
 ## Remaining gates
 
@@ -50,10 +56,10 @@ feature/mode catalog and route typed selection requests to the runtime worker.
 Voice, PTT, streaming responses, TTS interruption, memory, archives, and clean
 shutdown must match Tk.
 
-Before constructing the live registries in the Qt process, move remaining
-top-level Tk view imports behind their feature/mode launch boundaries. Metadata
-and runtime service construction must not import Tkinter merely because a menu
-item is enabled.
+The extension modules are now safe to import in the Qt process. The next slice
+must add resource-free mode/feature catalog construction, then replace the
+shell's preview catalog and diagnostic launch callbacks with the configured
+registries and runtime-worker dispatch.
 
 ### 3. Convert global overlays
 

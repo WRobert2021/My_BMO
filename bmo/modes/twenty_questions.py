@@ -27,12 +27,20 @@ from bmo.twenty_questions import (
     TwentyQuestionsHistory,
     normalize_player_answer,
 )
-from bmo.twenty_questions_ui import TwentyQuestionsApp
 
 
 GameAnswerInference = Callable[[str, str, Chat], str | None]
 GameGuessInference = Callable[..., str | None]
-TwentyQuestionsAppFactory = Callable[..., TwentyQuestionsApp]
+TwentyQuestionsAppFactory = Callable[..., Any]
+
+
+def _create_twenty_questions_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk game view only when a menu launch needs it."""
+    from bmo.twenty_questions_ui import TwentyQuestionsApp
+
+    return TwentyQuestionsApp(*args, **kwargs)
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 TWENTY_QUESTIONS_MENU_ITEM = ModeMenuItem(
     name="twenty_questions",
@@ -61,7 +69,7 @@ class TwentyQuestionsMode:
         answer_inference: GameAnswerInference = infer_game_answer,
         guess_inference: GameGuessInference = infer_game_guess,
         menu_item: ModeMenuItem | None = TWENTY_QUESTIONS_MENU_ITEM,
-        app_factory: TwentyQuestionsAppFactory = TwentyQuestionsApp,
+        app_factory: TwentyQuestionsAppFactory = _create_twenty_questions_app,
         face_provider: Callable[[], Any] | None = None,
         thing_history: TwentyQuestionsHistory | None = None,
         dispatch_ui: Callable[[Callable[[], None]], None] | None = None,
@@ -85,7 +93,7 @@ class TwentyQuestionsMode:
             if self.master is not None
             else None
         )
-        self.ui: TwentyQuestionsApp | None = None
+        self.ui: Any | None = None
         self._active = threading.Event()
         self._menu_launched = False
         self._gui_input_lock = threading.Lock()

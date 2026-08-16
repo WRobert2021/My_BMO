@@ -24,7 +24,7 @@ from bmo.features.contracts import (
     ToolResult,
     normalize_direct_text,
 )
-from bmo.ui.timer import TimerApp, TimerViewItem
+from bmo.features.timer_view import TimerViewItem
 
 
 DEFAULT_MAX_TIMERS = 20
@@ -35,7 +35,15 @@ TIMER_MENU_ITEM = FeatureMenuItem(
     label="Timers",
     icon_path=PROJECT_ROOT / "graphics" / "icons" / "timer.png",
 )
-TimerAppFactory = Callable[..., TimerApp]
+TimerAppFactory = Callable[..., Any]
+
+
+def _create_timer_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk timer view only when its menu item is launched."""
+    from bmo.ui.timer import TimerApp
+
+    return TimerApp(*args, **kwargs)
+
 
 _SMALL_NUMBERS = {
     "zero": 0,
@@ -393,7 +401,7 @@ class SetTimerTool:
         clock: Callable[[], float] = time.monotonic,
         max_timers: int = DEFAULT_MAX_TIMERS,
         max_duration_seconds: float = DEFAULT_MAX_DURATION_SECONDS,
-        app_factory: TimerAppFactory = TimerApp,
+        app_factory: TimerAppFactory = _create_timer_app,
         menu_item: FeatureMenuItem | None = TIMER_MENU_ITEM,
     ) -> None:
         self._runtime_callback = runtime_callback
@@ -403,7 +411,7 @@ class SetTimerTool:
         self._max_duration_seconds = max_duration_seconds
         self._app_factory = app_factory
         self.menu_item = menu_item
-        self._menu_ui: TimerApp | None = None
+        self._menu_ui: Any | None = None
         self._expired: dict[int, ScheduledTimer] = {}
         self.scheduler = TimerScheduler(
             self._timer_expired,

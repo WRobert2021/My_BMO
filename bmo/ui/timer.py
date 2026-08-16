@@ -8,21 +8,13 @@ import math
 import tkinter as tk
 from typing import Any
 
+from bmo.features.timer_view import TimerViewItem
 from bmo.ui.compact_face import CompactFace
 from bmo.ui.scrolling import VerticalScrollController
 
 
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
-
-
-@dataclass(frozen=True)
-class TimerViewItem:
-    """Display-only snapshot of one active countdown timer."""
-
-    timer_id: int
-    label: str | None
-    remaining_seconds: float
 
 
 @dataclass(frozen=True)

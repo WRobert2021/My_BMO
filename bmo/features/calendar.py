@@ -19,6 +19,7 @@ from bmo.features.calendar_store import (
     built_in_us_holidays,
     expand_events,
 )
+from bmo.features.calendar_view import CalendarEdit, CalendarViewEvent
 from bmo.features.contracts import (
     DirectAction,
     FeatureMenuContext,
@@ -29,7 +30,6 @@ from bmo.features.contracts import (
     ToolResult,
     normalize_direct_text,
 )
-from bmo.ui.calendar import CalendarApp, CalendarEdit, CalendarViewEvent
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -58,7 +58,14 @@ WEEKDAYS = {
     "saturday": 5,
     "sunday": 6,
 }
-CalendarAppFactory = Callable[..., CalendarApp]
+CalendarAppFactory = Callable[..., Any]
+
+
+def _create_calendar_app(*args: Any, **kwargs: Any) -> Any:
+    """Construct the Tk calendar view only when its menu item is launched."""
+    from bmo.ui.calendar import CalendarApp
+
+    return CalendarApp(*args, **kwargs)
 
 
 class CalendarMidnightWorker:
@@ -135,7 +142,7 @@ class CalendarTool:
         notify_attention: Callable[[RuntimeAttention], None],
         dismiss_attention: Callable[[RuntimeAttentionDismissal], None],
         now: Callable[[], datetime] = datetime.now,
-        app_factory: CalendarAppFactory = CalendarApp,
+        app_factory: CalendarAppFactory = _create_calendar_app,
         menu_item: FeatureMenuItem | None = CALENDAR_MENU_ITEM,
         start_worker: bool = True,
     ) -> None:
@@ -146,7 +153,7 @@ class CalendarTool:
         self._now = now
         self._app_factory = app_factory
         self.menu_item = menu_item
-        self._menu_ui: CalendarApp | None = None
+        self._menu_ui: Any | None = None
         self._published_ids: set[str] = set()
         self._worker = CalendarMidnightWorker(self._publish_attentions, now=now)
         if start_worker:
