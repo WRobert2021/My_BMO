@@ -24,10 +24,10 @@ class GalaxyRVRConfig:
     camera_port: int = 9000
     photo_directory: Path = Path("~/Pictures/bmo/galaxy_rvr")
     controller_device: str = "auto"
-    left_y_axis: int = 1
-    right_x_axis: int = 4
-    lt_axis: int = 2
-    rt_axis: int = 5
+    left_y_axis: int = 0
+    right_x_axis: int = 3
+    lt_axis: int = 5
+    rt_axis: int = 4
     lt_axis_inverted: bool = False
     rt_axis_inverted: bool = True
     snap_button: int = 0
@@ -164,6 +164,21 @@ def _parse(values: Mapping[str, Any]) -> GalaxyRVRConfig:
         servo_max,
     )
 
+    axis_keys = ("left_y_axis", "right_x_axis", "lt_axis", "rt_axis")
+    configured_axes = tuple(values.get(key) for key in axis_keys)
+    obsolete_defaults = {
+        (1, 3, 2, 5),
+        (1, 5, 2, 4),
+        (1, 4, 2, 5),
+    }
+    migrate_obsolete_axes = configured_axes in obsolete_defaults
+
+    def controller_axis(key: str) -> int:
+        default = getattr(defaults, key)
+        if migrate_obsolete_axes:
+            return default
+        return _integer(values, key, default, 0, 31)
+
     return GalaxyRVRConfig(
         host=str(host),
         control_port=_integer(values, "control_port", defaults.control_port, 1, 65535),
@@ -171,10 +186,10 @@ def _parse(values: Mapping[str, Any]) -> GalaxyRVRConfig:
         camera_port=_integer(values, "camera_port", defaults.camera_port, 1, 65535),
         photo_directory=Path(photo_directory).expanduser(),
         controller_device=controller_device,
-        left_y_axis=_integer(values, "left_y_axis", defaults.left_y_axis, 0, 31),
-        right_x_axis=_integer(values, "right_x_axis", defaults.right_x_axis, 0, 31),
-        lt_axis=_integer(values, "lt_axis", defaults.lt_axis, 0, 31),
-        rt_axis=_integer(values, "rt_axis", defaults.rt_axis, 0, 31),
+        left_y_axis=controller_axis("left_y_axis"),
+        right_x_axis=controller_axis("right_x_axis"),
+        lt_axis=controller_axis("lt_axis"),
+        rt_axis=controller_axis("rt_axis"),
         lt_axis_inverted=_boolean(
             values,
             "lt_axis_inverted",

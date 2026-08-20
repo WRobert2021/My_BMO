@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import errno
-import fcntl
 import glob
 import hashlib
 import os
@@ -229,22 +228,12 @@ class LinuxJoystick:
     BUTTON = 0x01
     AXIS = 0x02
     INITIAL = 0x80
-    JSIOCGAXES = 0x80016A11
-    JSIOCGAXMAP = 0x80406A32
-    ABS_Y = 0x01
-    ABS_Z = 0x02
-    ABS_RX = 0x03
-    ABS_RZ = 0x05
-    ABS_GAS = 0x09
-    ABS_BRAKE = 0x0A
-
     def __init__(self, configured_path: str) -> None:
         self.configured_path = configured_path
         self.path: str | None = None
         self.file_descriptor: int | None = None
         self.axes: dict[int, float] = {}
         self.buttons: dict[int, bool] = {}
-        self.axis_codes: dict[int, int] = {}
 
     def open(self) -> None:
         self.close()
@@ -264,37 +253,10 @@ class LinuxJoystick:
                 continue
             self.file_descriptor = descriptor
             self.path = candidate
-            self._load_axis_codes()
             return
         if last_error is not None:
             raise last_error
         raise FileNotFoundError("No Bluetooth controller was found.")
-
-    def _load_axis_codes(self) -> None:
-        """Read Linux semantic axis codes while retaining numeric fallbacks."""
-        descriptor = self.file_descriptor
-        if descriptor is None:
-            return
-        axis_count = bytearray(1)
-        axis_map = bytearray(64)
-        try:
-            fcntl.ioctl(descriptor, self.JSIOCGAXES, axis_count, True)
-            fcntl.ioctl(descriptor, self.JSIOCGAXMAP, axis_map, True)
-        except OSError:
-            self.axis_codes.clear()
-            return
-        self.axis_codes = {
-            number: axis_map[number]
-            for number in range(min(axis_count[0], len(axis_map)))
-        }
-
-    def axis_number(self, semantic_codes: tuple[int, ...], fallback: int) -> int:
-        """Resolve a configured control from the kernel's semantic axis map."""
-        for semantic_code in semantic_codes:
-            for number, mapped_code in self.axis_codes.items():
-                if mapped_code == semantic_code:
-                    return number
-        return fallback
 
     def read_events(self) -> tuple[tuple[str, int, float | bool], ...]:
         descriptor = self.file_descriptor
@@ -330,7 +292,6 @@ class LinuxJoystick:
         self.path = None
         self.axes.clear()
         self.buttons.clear()
-        self.axis_codes.clear()
         if descriptor is not None:
             try:
                 os.close(descriptor)
@@ -578,24 +539,6 @@ class GalaxyRVRSession:
                     try:
                         candidate.open()
                         joystick = candidate
-                        resolve_axis = getattr(candidate, "axis_number", None)
-                        if callable(resolve_axis):
-                            left_y_axis = resolve_axis(
-                                (LinuxJoystick.ABS_Y,),
-                                self.config.left_y_axis,
-                            )
-                            right_x_axis = resolve_axis(
-                                (LinuxJoystick.ABS_RX,),
-                                self.config.right_x_axis,
-                            )
-                            lt_axis = resolve_axis(
-                                (LinuxJoystick.ABS_Z, LinuxJoystick.ABS_BRAKE),
-                                self.config.lt_axis,
-                            )
-                            rt_axis = resolve_axis(
-                                (LinuxJoystick.ABS_RZ, LinuxJoystick.ABS_GAS),
-                                self.config.rt_axis,
-                            )
                         trigger_rest.clear()
                         self._publish(
                             controller_connected=True,

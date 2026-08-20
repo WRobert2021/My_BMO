@@ -17,7 +17,6 @@ from bmo.features.galaxy_rvr import (
     GALAXY_RVR_MENU_ITEM,
     GalaxyRVRSession,
     GalaxyRVRTool,
-    LinuxJoystick,
     WebSocketTransport,
     apply_deadzone,
     mix_drive,
@@ -40,10 +39,10 @@ class GalaxyRVRConfigTests(unittest.TestCase):
     def test_defaults_match_observed_bluetooth_controller_layout(self) -> None:
         config = GalaxyRVRConfig()
 
-        self.assertEqual(config.left_y_axis, 1)
-        self.assertEqual(config.right_x_axis, 4)
-        self.assertEqual(config.lt_axis, 2)
-        self.assertEqual(config.rt_axis, 5)
+        self.assertEqual(config.left_y_axis, 0)
+        self.assertEqual(config.right_x_axis, 3)
+        self.assertEqual(config.lt_axis, 5)
+        self.assertEqual(config.rt_axis, 4)
         self.assertFalse(config.lt_axis_inverted)
         self.assertTrue(config.rt_axis_inverted)
         self.assertEqual(config.preview_fps, 10)
@@ -84,6 +83,30 @@ class GalaxyRVRConfigTests(unittest.TestCase):
         self.assertEqual(
             config.capture_url,
             "http://192.168.50.42:9000/capture",
+        )
+
+    def test_obsolete_shipped_axis_mapping_migrates_to_measured_layout(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = load_galaxy_rvr_config(
+                {
+                    "config_path": str(Path(directory) / "missing.json"),
+                    "left_y_axis": 1,
+                    "right_x_axis": 4,
+                    "lt_axis": 2,
+                    "rt_axis": 5,
+                }
+            )
+
+        self.assertEqual(
+            (
+                config.left_y_axis,
+                config.right_x_axis,
+                config.lt_axis,
+                config.rt_axis,
+            ),
+            (0, 3, 5, 4),
         )
 
     def test_nonlocal_address_and_unknown_settings_fall_back_safely(self) -> None:
@@ -181,24 +204,6 @@ class GalaxyRVRProtocolTests(unittest.TestCase):
             0,
         )
 
-    def test_linux_axis_map_resolves_physical_controls_by_semantics(self) -> None:
-        joystick = LinuxJoystick("auto")
-        joystick.axis_codes = {
-            1: LinuxJoystick.ABS_Y,
-            3: 0x04,
-            4: LinuxJoystick.ABS_RX,
-            5: LinuxJoystick.ABS_RZ,
-        }
-
-        self.assertEqual(
-            joystick.axis_number((LinuxJoystick.ABS_RX,), fallback=3),
-            4,
-        )
-        self.assertEqual(
-            joystick.axis_number((LinuxJoystick.ABS_RZ,), fallback=4),
-            5,
-        )
-
     def test_websocket_client_masks_binary_frames(self) -> None:
         sent: list[bytes] = []
         fake_socket = SimpleNamespace(sendall=sent.append, close=Mock())
@@ -269,7 +274,7 @@ class GalaxyRVRSnapshotTests(unittest.TestCase):
 
 
 class GalaxyRVRSessionTests(unittest.TestCase):
-    def test_semantic_axes_drive_steer_and_calibrate_inverted_rt(self) -> None:
+    def test_measured_axes_drive_steer_and_calibrate_inverted_rt(self) -> None:
         frames: list[bytes] = []
         statuses: list[object] = []
         controls_seen = threading.Event()
@@ -299,25 +304,16 @@ class GalaxyRVRSessionTests(unittest.TestCase):
             def open(self) -> None:
                 return None
 
-            def axis_number(self, codes, fallback: int) -> int:
-                del fallback
-                return {
-                    (LinuxJoystick.ABS_Y,): 6,
-                    (LinuxJoystick.ABS_RX,): 7,
-                    (LinuxJoystick.ABS_Z, LinuxJoystick.ABS_BRAKE): 8,
-                    (LinuxJoystick.ABS_RZ, LinuxJoystick.ABS_GAS): 9,
-                }[codes]
-
             def read_events(self):
                 self.read_count += 1
                 return ()
 
             def axis(self, number: int) -> float:
-                if number == 7 and self.read_count == 2:
+                if number == 3 and self.read_count == 2:
                     return 1.0
-                if number == 8:
+                if number == 5:
                     return -1.0
-                if number == 9:
+                if number == 4:
                     return -1.0 if self.read_count >= 3 else 1.0
                 return 0.0
 
@@ -341,8 +337,8 @@ class GalaxyRVRSessionTests(unittest.TestCase):
         self.assertTrue(controls_seen.wait(1.0))
         session.close()
 
-        self.assertTrue(any("RX7" in status.axis_summary for status in statuses))
-        self.assertTrue(any("RT9" in status.axis_summary for status in statuses))
+        self.assertTrue(any("RX3" in status.axis_summary for status in statuses))
+        self.assertTrue(any("RT4" in status.axis_summary for status in statuses))
 
     def test_controller_disconnect_and_close_send_motor_stop(self) -> None:
         frames: list[bytes] = []
@@ -380,7 +376,7 @@ class GalaxyRVRSessionTests(unittest.TestCase):
                 return ()
 
             def axis(self, number: int) -> float:
-                if number == 1 and self.read_count > 14:
+                if number == 0 and self.read_count > 14:
                     return -1.0
                 return 0.0
 
