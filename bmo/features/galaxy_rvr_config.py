@@ -25,9 +25,11 @@ class GalaxyRVRConfig:
     photo_directory: Path = Path("~/Pictures/bmo/galaxy_rvr")
     controller_device: str = "auto"
     left_y_axis: int = 1
-    right_x_axis: int = 5
+    right_x_axis: int = 4
     lt_axis: int = 2
-    rt_axis: int = 4
+    rt_axis: int = 5
+    lt_axis_inverted: bool = False
+    rt_axis_inverted: bool = True
     snap_button: int = 0
     deadzone: float = 0.12
     trigger_threshold: float = 0.2
@@ -173,6 +175,16 @@ def _parse(values: Mapping[str, Any]) -> GalaxyRVRConfig:
         right_x_axis=_integer(values, "right_x_axis", defaults.right_x_axis, 0, 31),
         lt_axis=_integer(values, "lt_axis", defaults.lt_axis, 0, 31),
         rt_axis=_integer(values, "rt_axis", defaults.rt_axis, 0, 31),
+        lt_axis_inverted=_boolean(
+            values,
+            "lt_axis_inverted",
+            defaults.lt_axis_inverted,
+        ),
+        rt_axis_inverted=_boolean(
+            values,
+            "rt_axis_inverted",
+            defaults.rt_axis_inverted,
+        ),
         snap_button=_integer(values, "snap_button", defaults.snap_button, 0, 63),
         deadzone=_number(values, "deadzone", defaults.deadzone, 0.0, 0.5),
         trigger_threshold=_number(

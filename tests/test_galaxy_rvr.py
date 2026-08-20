@@ -40,9 +40,11 @@ class GalaxyRVRConfigTests(unittest.TestCase):
         config = GalaxyRVRConfig()
 
         self.assertEqual(config.left_y_axis, 1)
-        self.assertEqual(config.right_x_axis, 5)
+        self.assertEqual(config.right_x_axis, 4)
         self.assertEqual(config.lt_axis, 2)
-        self.assertEqual(config.rt_axis, 4)
+        self.assertEqual(config.rt_axis, 5)
+        self.assertFalse(config.lt_axis_inverted)
+        self.assertTrue(config.rt_axis_inverted)
         self.assertEqual(config.preview_fps, 10)
 
     def test_private_config_loads_network_photos_mapping_and_safety_values(
@@ -160,10 +162,10 @@ class GalaxyRVRProtocolTests(unittest.TestCase):
     def test_lt_and_rt_move_camera_in_opposite_bounded_directions(self) -> None:
         config = GalaxyRVRConfig()
 
-        self.assertEqual(next_servo_angle(90, 1.0, -1.0, 1.0, config), 35)
-        self.assertEqual(next_servo_angle(90, -1.0, 1.0, 1.0, config), 140)
-        self.assertEqual(next_servo_angle(90, 1.0, 1.0, 1.0, config), 90)
-        self.assertEqual(next_servo_angle(5, 1.0, -1.0, 1.0, config), 0)
+        self.assertEqual(next_servo_angle(90, 1.0, 1.0, 1.0, config), 35)
+        self.assertEqual(next_servo_angle(90, -1.0, -1.0, 1.0, config), 140)
+        self.assertEqual(next_servo_angle(90, 1.0, -1.0, 1.0, config), 90)
+        self.assertEqual(next_servo_angle(5, 1.0, 1.0, 1.0, config), 0)
 
     def test_websocket_client_masks_binary_frames(self) -> None:
         sent: list[bytes] = []
@@ -266,12 +268,14 @@ class GalaxyRVRSessionTests(unittest.TestCase):
 
             def read_events(self):
                 self.read_count += 1
-                if self.read_count > 1:
+                if self.read_count > 18:
                     raise OSError(errno.ENODEV, "controller gone")
                 return ()
 
             def axis(self, number: int) -> float:
-                return -1.0 if number == 1 else 0.0
+                if number == 1 and self.read_count > 14:
+                    return -1.0
+                return 0.0
 
             def close(self) -> None:
                 return None
@@ -302,6 +306,59 @@ class GalaxyRVRSessionTests(unittest.TestCase):
         self.assertEqual(motor_pairs[-1], (0, 0))
         self.assertFalse(session.status.rover_connected)
         self.assertFalse(session.status.controller_connected)
+        self.assertFalse(session.status.drive_armed)
+
+    def test_drive_stays_stopped_until_both_mapped_axes_are_centered(self) -> None:
+        frames: list[bytes] = []
+
+        class Transport:
+            def __init__(self, _config) -> None:
+                return None
+
+            def connect(self) -> None:
+                return None
+
+            def send_binary(self, frame: bytes) -> None:
+                frames.append(frame)
+
+            def poll(self) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        class Joystick:
+            path = "/dev/input/js-test"
+
+            def __init__(self, _path) -> None:
+                return None
+
+            def open(self) -> None:
+                return None
+
+            def read_events(self):
+                return ()
+
+            def axis(self, number: int) -> float:
+                return 1.0 if number == 4 else 0.0
+
+            def close(self) -> None:
+                return None
+
+        config = replace(GalaxyRVRConfig(), command_rate_hz=50)
+        session = GalaxyRVRSession(
+            config,
+            Mock(),
+            transport_factory=Transport,
+            joystick_factory=Joystick,
+        )
+        session.start()
+        threading.Event().wait(0.15)
+        session.close()
+
+        self.assertGreater(len(frames), 2)
+        self.assertTrue(all((frame[4], frame[5]) == (0, 0) for frame in frames))
+        self.assertFalse(session.status.drive_armed)
 
     def test_snapshot_requests_are_single_flight(self) -> None:
         release = threading.Event()
