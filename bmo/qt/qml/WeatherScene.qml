@@ -8,6 +8,18 @@ Item {
     property string season: "summer"
     property string phase: "full"
     property bool animations: true
+    readonly property bool storm: condition === "storm" || condition === "severe"
+    property real stormClock: 0
+
+    NumberAnimation on stormClock {
+        from: 0; to: 1; duration: 4600
+        loops: Animation.Infinite
+        running: root.animations && root.storm
+    }
+
+    function lightningPulse(start, finish) {
+        return stormClock >= start && stormClock <= finish
+    }
 
     function skyColor() {
         if (condition === "storm" || condition === "severe") return "#6f83aa"
@@ -28,7 +40,7 @@ Item {
         if (condition === "freezing-rain" || condition === "sleet") return "sleet"
         if (condition === "snow" || condition === "heavy-snow") return "snow"
         if (condition === "hail") return "hail"
-        if (condition === "storm" || condition === "severe") return "storm"
+        if (condition === "storm" || condition === "severe") return "cloud"
         if (condition === "wind") return "wind"
         if (condition === "cold") return "cold"
         return "cloud"
@@ -37,7 +49,8 @@ Item {
     function precipType() {
         if (["drizzle", "rain", "heavy-rain", "storm", "severe", "mixed"].indexOf(condition) >= 0) return "rain"
         if (["snow", "heavy-snow"].indexOf(condition) >= 0) return "snow"
-        if (["freezing-rain", "sleet", "hail"].indexOf(condition) >= 0) return "hail"
+        if (["freezing-rain", "sleet"].indexOf(condition) >= 0) return "sleet"
+        if (condition === "hail") return "hail"
         if (condition === "wind") return "wind"
         return ""
     }
@@ -84,7 +97,6 @@ Item {
             let ctx = getContext("2d")
             ctx.clearRect(0, 0, width, height)
             let bottom = height + 25
-            if (root.season === "neutral" || root.season === "off") return
             let hillOne = root.season === "fall" ? "#bc8e54" : root.season === "winter" ? "#b8c7c3" : "#87c878"
             let hillTwo = root.season === "fall" ? "#9d7548" : root.season === "winter" ? "#94aaa5" : "#6db66f"
             ctx.globalAlpha = root.season === "winter" ? .62 : .82
@@ -93,6 +105,23 @@ Item {
             ctx.fillStyle = hillTwo
             ctx.beginPath(); ctx.ellipse(width * .72, bottom + 4, width * .46, height * .29, 0, Math.PI, Math.PI * 2); ctx.fill()
             ctx.globalAlpha = 1
+
+            // Tall foreground grass remains readable through the translucent
+            // forecast cards and gives every seasonal ground layer texture.
+            let grassColor = root.season === "fall" ? "#9a7139" : root.season === "winter" ? "#d9e9e4" : "#398e52"
+            ctx.strokeStyle = grassColor
+            ctx.lineWidth = 2.2
+            ctx.lineCap = "round"
+            for (let tuft = 0; tuft < 28; tuft += 1) {
+                let gx = 13 + ((tuft * 61) % Math.max(1, width - 22))
+                let gy = height - 3 - (tuft % 3) * 2
+                let blade = 19 + (tuft % 5) * 5
+                ctx.beginPath()
+                ctx.moveTo(gx, gy); ctx.quadraticCurveTo(gx - 4, gy - blade * .62, gx - 9, gy - blade)
+                ctx.moveTo(gx, gy); ctx.quadraticCurveTo(gx + 1, gy - blade * .72, gx + 2, gy - blade * 1.12)
+                ctx.moveTo(gx, gy); ctx.quadraticCurveTo(gx + 6, gy - blade * .6, gx + 10, gy - blade * .88)
+                ctx.stroke()
+            }
 
             if (root.season === "summer" || root.season === "fall") {
                 ctx.fillStyle = "#765542"; ctx.fillRect(width * .065, height * .68, 16, height * .26)
@@ -144,7 +173,7 @@ Item {
     }
 
     Repeater {
-        model: (root.season === "spring" || root.season === "fall") ? 12 : 0
+        model: (root.season === "spring" || root.season === "fall") ? 18 : 0
         delegate: Rectangle {
             required property int index
             property bool petal: root.season === "spring"
@@ -183,13 +212,11 @@ Item {
         height: 220
         icon: root.sceneIcon()
         phase: root.phase
-        NumberAnimation on y {
-            from: 7
-            to: 0
-            duration: 1300
-            easing.type: Easing.InOutSine
+        SequentialAnimation on y {
             loops: Animation.Infinite
             running: root.animations
+            NumberAnimation { from: 7; to: 0; duration: 1300; easing.type: Easing.InOutSine }
+            NumberAnimation { from: 0; to: 7; duration: 1300; easing.type: Easing.InOutSine }
         }
     }
 
@@ -198,20 +225,21 @@ Item {
         delegate: Rectangle {
             required property int index
             property string kind: root.precipType()
+            property bool sleetDrop: kind === "sleet" && index % 2 === 0
             x: kind === "wind" ? -145 : ((index * 127 + 31) % Math.max(1, root.width - 18))
             y: kind === "wind" ? 22 + ((index * 43) % Math.max(1, root.height - 70)) : -35
-            width: kind === "wind" ? 132 : kind === "rain" ? 5 : 10
-            height: kind === "wind" ? 6 : kind === "rain" ? 27 : 10
-            radius: width / 2
-            color: kind === "rain" ? "#258dcc" : kind === "snow" ? "#ffffff" : kind === "wind" ? "#ecfdff" : "#f7ffff"
-            border.color: kind === "hail" ? "#779eac" : "transparent"
-            border.width: kind === "hail" ? 2 : 0
+            width: kind === "wind" ? 132 : (kind === "rain" || sleetDrop) ? 5 : kind === "hail" ? 8 + index % 3 : 10
+            height: kind === "wind" ? 6 : (kind === "rain" || sleetDrop) ? 25 : kind === "hail" ? 7 + (index + 1) % 3 : 10
+            radius: kind === "wind" || kind === "rain" || sleetDrop || kind === "snow" ? width / 2 : 2
+            color: kind === "rain" ? "#258dcc" : sleetDrop ? "#3e9ed1" : kind === "snow" ? "#ffffff" : kind === "wind" ? "#ecfdff" : kind === "hail" ? (index % 2 ? "#d9f6ff" : "#b9e6f2") : "#c8eff9"
+            border.color: kind === "hail" || (kind === "sleet" && !sleetDrop) ? "#5f91a5" : "transparent"
+            border.width: kind === "hail" || (kind === "sleet" && !sleetDrop) ? 2 : 0
             opacity: kind === "wind" ? .6 : .76
-            rotation: kind === "rain" ? 18 : 0
+            rotation: kind === "rain" || sleetDrop ? 18 : kind === "sleet" ? 45 : index * 19
             NumberAnimation on y {
                 from: -40 - (index % 6) * 24
                 to: root.height + 30
-                duration: kind === "snow" ? 3200 + (index % 4) * 650 : kind === "hail" ? 1000 + (index % 3) * 120 : 1150 + (index % 4) * 90
+                duration: kind === "snow" ? 3200 + (index % 4) * 650 : kind === "hail" ? 850 + (index % 4) * 110 : kind === "sleet" ? 1050 + (index % 3) * 120 : 1150 + (index % 4) * 90
                 loops: Animation.Infinite
                 running: root.animations && kind !== "wind"
             }
@@ -227,7 +255,13 @@ Item {
                 to: index * 15 + 250
                 duration: 2700
                 loops: Animation.Infinite
-                running: root.animations && kind === "snow"
+                running: root.animations && (kind === "snow" || kind === "hail" || (kind === "sleet" && !sleetDrop))
+            }
+            SequentialAnimation on scale {
+                loops: Animation.Infinite
+                running: root.animations && kind === "hail"
+                NumberAnimation { from: 1; to: .76; duration: 310 + index * 7; easing.type: Easing.InOutSine }
+                NumberAnimation { from: .76; to: 1; duration: 310 + index * 7; easing.type: Easing.InOutSine }
             }
         }
     }
@@ -235,18 +269,27 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "white"
-        opacity: 0
-        visible: root.condition === "storm" || root.condition === "severe"
-        SequentialAnimation on opacity {
-            loops: Animation.Infinite
-            running: root.animations && parent.visible
-            PauseAnimation { duration: 1600 }
-            NumberAnimation { to: .22; duration: 55 }
-            NumberAnimation { to: 0; duration: 70 }
-            PauseAnimation { duration: 95 }
-            NumberAnimation { to: .16; duration: 45 }
-            NumberAnimation { to: 0; duration: 65 }
-            PauseAnimation { duration: 760 }
-        }
+        z: 1
+        opacity: root.storm && root.animations
+                 && (root.lightningPulse(.20, .225) || root.lightningPulse(.245, .268)) ? .2 : 0
+        visible: root.storm
+    }
+
+    WeatherBolt {
+        x: 145; y: 137; width: 62; height: 82; z: 3
+        visible: root.storm
+        opacity: !root.animations || root.lightningPulse(.20, .225) || root.lightningPulse(.245, .268) ? 1 : 0
+    }
+    WeatherBolt {
+        x: 53; y: 128; width: 42; height: 58; z: 3
+        visible: root.storm
+        opacity: !root.animations ? .78 : root.lightningPulse(.49, .525) ? .9 : 0
+        fillColor: "#fff08a"
+    }
+    WeatherBolt {
+        x: 276; y: 119; width: 48; height: 67; z: 3
+        visible: root.storm
+        opacity: !root.animations ? .7 : root.lightningPulse(.73, .765) ? .88 : 0
+        fillColor: "#fff08a"
     }
 }

@@ -47,8 +47,29 @@ Item {
     }
 
     function speak(key) {
-        if (ready && !debugActive && model.speech_available === true)
+        if (model.speech_available !== true || (!ready && !debugActive))
+            return
+        if (!debugActive) {
             send("weather_speak", key)
+            return
+        }
+        let hour = null
+        for (let index = 0; index < shownHours.length; index += 1) {
+            if (shownHours[index].key === key) {
+                hour = shownHours[index]
+                break
+            }
+        }
+        send("weather_debug_speak", JSON.stringify({
+            "key": key,
+            "condition": shownCondition,
+            "temperature": Number(liveValue("temperature")),
+            "feels": Number(liveValue("feels")),
+            "high": Number(liveValue("high")),
+            "low": Number(liveValue("low")),
+            "rain": Number(liveValue("rain")),
+            "hour": hour
+        }))
     }
 
     function previewFor(condition) {
@@ -95,6 +116,8 @@ Item {
     }
 
     function displaySpeech() {
+        if ((model.speaking_key || "") !== "" && (model.speech || "") !== "")
+            return model.speech
         if (!debugActive) return model.speech || shownPreview.speech
         if (shownTime === "night" && ["sunny", "mostly-clear"].indexOf(shownCondition) >= 0) return "The moon is smiling! Cozy night-sky time."
         if (shownTime === "night" && shownCondition === "partly") return "The moon and clouds are playing peekaboo!"
@@ -131,7 +154,7 @@ Item {
             Text { anchors.horizontalCenter: parent.horizontalCenter; text: card.label; color: "#477269"; font.pixelSize: 15; font.bold: true }
             Text { anchors.horizontalCenter: parent.horizontalCenter; text: card.value; color: "#123e38"; font.pixelSize: 29; font.bold: true }
         }
-        MouseArea { anchors.fill: parent; enabled: root.ready && !root.debugActive && root.model.speech_available === true; onClicked: card.clicked() }
+        MouseArea { anchors.fill: parent; enabled: (root.ready || root.debugActive) && root.model.speech_available === true; onClicked: card.clicked() }
     }
 
     Rectangle { anchors.fill: parent; color: "#101514" }
@@ -273,17 +296,43 @@ Item {
                 x: 7; y: 361; width: 742; height: 69
                 color: "#e0f7ee"
                 border.color: "#9bc9bf"; border.width: 2
-                Text { x: 20; y: 0; width: 158; height: parent.height; verticalAlignment: Text.AlignVCenter; text: "Later today"; color: "#123e38"; font.pixelSize: 27; font.bold: true }
+                Text {
+                    id: laterTodayLabel
+                    x: 20; y: 0; width: Math.min(184, implicitWidth + 10); height: parent.height
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Later today"; color: "#123e38"; font.pixelSize: 27; font.bold: true
+                }
                 Row {
-                    x: 172; y: 2; width: 562; height: 65; spacing: 2
+                    id: hourlyForecasts
+                    x: laterTodayLabel.x + laterTodayLabel.width + 8
+                    y: 2
+                    width: parent.width - x - 8
+                    height: 65
+                    spacing: 0
                     Repeater {
                         model: root.shownHours
                         delegate: Item {
                             required property var modelData
-                            width: 138; height: 65
-                            WeatherIcon { x: 0; y: 5; width: 65; height: 56; icon: modelData.icon || "cloud"; phase: root.shownPhase }
-                            Text { x: 62; y: 8; width: 76; height: 24; text: modelData.time || ""; color: "#477269"; font.pixelSize: 16; font.bold: true }
-                            Text { x: 62; y: 31; width: 76; height: 30; text: String(modelData.temperature) + "°"; color: "#123e38"; font.pixelSize: 24; font.bold: true }
+                            width: hourlyForecasts.width / Math.max(1, root.shownHours.length)
+                            height: 65
+                            WeatherIcon {
+                                id: hourlyIcon
+                                x: 0; y: 4
+                                width: Math.min(62, parent.width * .48); height: 57
+                                icon: modelData.icon || "cloud"; phase: root.shownPhase
+                            }
+                            Text {
+                                x: hourlyIcon.x + hourlyIcon.width - 1; y: 7
+                                width: parent.width - x; height: 24
+                                text: modelData.time || ""; color: "#477269"; font.pixelSize: 15; font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                x: hourlyIcon.x + hourlyIcon.width - 1; y: 30
+                                width: parent.width - x; height: 31
+                                text: String(modelData.temperature) + "°"; color: "#123e38"; font.pixelSize: 23; font.bold: true
+                                elide: Text.ElideRight
+                            }
                             Rectangle { anchors.fill: parent; color: "transparent"; border.color: (root.model.speaking_key || "") === (modelData.key || "") ? "#ffe66f" : "transparent"; border.width: 4; radius: 10 }
                             MouseArea { anchors.fill: parent; onClicked: root.speak(modelData.key || "") }
                         }

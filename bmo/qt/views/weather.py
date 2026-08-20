@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import threading
 import time
 from datetime import datetime, timedelta
@@ -26,6 +28,30 @@ from bmo.features.weather_view import (
 )
 from bmo.qt.views.base import QtHostedView
 from bmo.weather import HourlyWeather, WeatherSnapshot
+
+
+_DEBUG_CONDITION_SPEECH = {
+    "sunny": "The sun is smiling! Grab water and sunscreen.",
+    "mostly-clear": "The sun has a few fluffy cloud friends!",
+    "partly": "The sun and clouds are sharing the sky!",
+    "cloudy": "The clouds are having a parade!",
+    "overcast": "A soft cloud blanket is covering the sky!",
+    "fog": "The clouds came down to visit. Stay where a grown-up can see you!",
+    "drizzle": "A light raincoat could be a cozy sidekick.",
+    "rain": "Puddle-jumping weather! Bring your raincoat and boots.",
+    "heavy-rain": "Big rain is falling. Raincoat and boots time!",
+    "freezing-rain": "Icy rain can make slippery spots. Stay close to a grown-up!",
+    "storm": "Thunder nearby. Let's stay safely inside with a grown-up!",
+    "snow": "Bundle up! Coat, hat, gloves, and warm boots.",
+    "heavy-snow": "Lots of snow is dancing down. Bundle up and stay with a grown-up!",
+    "sleet": "Icy drops can make slippery spots. Stay close to a grown-up!",
+    "hail": "Hail is falling. Please stay safely inside!",
+    "wind": "Hold onto your hat and check with a grown-up before going outside!",
+    "hot": "Super-hot alert! Water, shade, sunscreen, and plenty of breaks.",
+    "cold": "Brrr! Coat, hat, gloves, and warm boots.",
+    "mixed": "The sky has a little bit of everything today!",
+    "severe": "BMO safety alert. Go with a grown-up and follow official instructions now.",
+}
 
 
 class QtWeatherView(QtHostedView):
@@ -281,6 +307,9 @@ class QtWeatherView(QtHostedView):
             )
         else:
             return
+        self._announce_text(key, text)
+
+    def _announce_text(self, key: str, text: str) -> None:
         self.speaking_key = key
         self.subtitle = text
         self.refresh()
@@ -291,6 +320,83 @@ class QtWeatherView(QtHostedView):
         if not self.announce(text, completed):
             self.speaking_key = None
             self.refresh()
+
+    @staticmethod
+    def _debug_number(
+        payload: dict[str, object],
+        name: str,
+        *,
+        minimum: float = -200,
+        maximum: float = 200,
+    ) -> int | None:
+        value = payload.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        number = float(value)
+        if not math.isfinite(number) or not minimum <= number <= maximum:
+            return None
+        return round(number)
+
+    def _speak_debug(self, value: str) -> None:
+        if (
+            not self.debug
+            or not self.announcements_available
+            or len(value) > 2048
+        ):
+            return
+        try:
+            payload = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        key = payload.get("key")
+        condition = payload.get("condition")
+        if (
+            not isinstance(key, str)
+            or not isinstance(condition, str)
+            or condition not in _DEBUG_CONDITION_SPEECH
+        ):
+            return
+
+        temperature = self._debug_number(payload, "temperature")
+        feels = self._debug_number(payload, "feels")
+        high = self._debug_number(payload, "high")
+        low = self._debug_number(payload, "low")
+        rain = self._debug_number(payload, "rain", minimum=0, maximum=100)
+        if key == "condition":
+            text = _DEBUG_CONDITION_SPEECH[condition]
+        elif key == "temperature" and temperature is not None:
+            text = f"Beep boop! This weather preview is {temperature} degrees."
+        elif key == "feels" and feels is not None:
+            text = f"In this preview, it feels like {feels} degrees outside."
+        elif key == "high_low" and high is not None and low is not None:
+            text = f"This preview has a high of {high} and a low of {low} degrees."
+        elif key == "rain" and rain is not None:
+            text = f"This preview's rain chance is {rain} percent."
+        elif key == "alert" and condition == "severe":
+            text = _DEBUG_CONDITION_SPEECH["severe"]
+        elif key.startswith("hour:"):
+            try:
+                hour_index = int(key.partition(":")[2])
+            except ValueError:
+                return
+            if hour_index not in range(4):
+                return
+            hour = payload.get("hour")
+            if not isinstance(hour, dict):
+                return
+            hour_temperature = self._debug_number(hour, "temperature")
+            if hour_temperature is None:
+                return
+            labels = ("12 P M", "2 P M", "4 P M", "8 P M")
+            text = (
+                f"At {labels[hour_index]}, this preview shows "
+                f"{hour_temperature} degrees."
+            )
+        else:
+            return
+        self._announce_text(key, text)
 
     def _speech_completed(self, key: str) -> None:
         if self.closed or self.speaking_key != key:
@@ -315,6 +421,9 @@ class QtWeatherView(QtHostedView):
             return
         if action in {"weather_speak", "weather_announce"}:
             self._speak(value or "condition")
+            return
+        if action == "weather_debug_speak":
+            self._speak_debug(value)
             return
         super().handle_action(action, value)
 

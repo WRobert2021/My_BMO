@@ -480,8 +480,11 @@ profile, heartbeat, and process/server cleanup.
 Setting private weather configuration `debug` to true exposes a collapsible
 QML preview panel for every visual condition, season, day period, and moon
 phase. Preview selection never mutates provider data or the Python cache; Live
-Weather clears the override. Debug controls remain absent when disabled. The
-legacy renderer retains equivalent selectors.
+Weather clears the override. Preview taps use a bounded weather-owned action
+whose values are validated before deterministic narration, so every visual
+state can be checked without substituting preview data into the live cache.
+Debug controls remain absent when disabled. The legacy renderer retains
+equivalent selectors.
 
 Optional National Weather Service alerts are fetched by forecast coordinates
 and cached independently. An alert-provider error is reported generically and

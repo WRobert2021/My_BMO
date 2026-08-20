@@ -69,6 +69,33 @@ Canvas {
         ctx.strokeStyle = "#6c4a24"; ctx.lineWidth = Math.max(2, radius * .09); ctx.stroke()
     }
 
+    function drawSnowflake(ctx, x, y, radius) {
+        ctx.save()
+        ctx.translate(x, y)
+        ctx.strokeStyle = "#68a9c8"
+        ctx.lineWidth = Math.max(1.4, radius * .24)
+        ctx.lineCap = "round"
+        for (let arm = 0; arm < 3; arm += 1) {
+            let angle = arm * Math.PI / 3
+            ctx.save()
+            ctx.rotate(angle)
+            ctx.beginPath()
+            ctx.moveTo(-radius, 0)
+            ctx.lineTo(radius, 0)
+            ctx.moveTo(radius * .48, 0)
+            ctx.lineTo(radius * .75, -radius * .28)
+            ctx.moveTo(radius * .48, 0)
+            ctx.lineTo(radius * .75, radius * .28)
+            ctx.moveTo(-radius * .48, 0)
+            ctx.lineTo(-radius * .75, -radius * .28)
+            ctx.moveTo(-radius * .48, 0)
+            ctx.lineTo(-radius * .75, radius * .28)
+            ctx.stroke()
+            ctx.restore()
+        }
+        ctx.restore()
+    }
+
     function moonShadow(ctx, x, y, radius) {
         let shadow = "#526b85"
         ctx.fillStyle = shadow
@@ -77,45 +104,147 @@ Canvas {
         if (phase === "new") {
             ctx.beginPath(); ctx.arc(x, y, radius + 1, 0, Math.PI * 2); ctx.fill()
         } else if (phase === "waxing-crescent") {
-            ctx.beginPath(); ctx.arc(x - radius * .28, y, radius * .96, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x, y - radius)
+            ctx.arc(x, y, radius, -Math.PI / 2, Math.PI / 2, true)
+            ctx.quadraticCurveTo(x + radius * 1.05, y, x, y - radius)
+            ctx.closePath(); ctx.fill()
         } else if (phase === "waning-crescent") {
-            ctx.beginPath(); ctx.arc(x + radius * .28, y, radius * .96, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x, y - radius)
+            ctx.arc(x, y, radius, -Math.PI / 2, Math.PI / 2, false)
+            ctx.quadraticCurveTo(x - radius * 1.05, y, x, y - radius)
+            ctx.closePath(); ctx.fill()
         } else if (phase === "first-quarter") {
             ctx.fillRect(x - radius, y - radius, radius, radius * 2)
         } else if (phase === "last-quarter") {
             ctx.fillRect(x, y - radius, radius, radius * 2)
         } else if (phase === "waxing-gibbous") {
-            ctx.beginPath(); ctx.arc(x - radius * .82, y, radius, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x, y - radius)
+            ctx.arc(x, y, radius, -Math.PI / 2, Math.PI / 2, true)
+            ctx.quadraticCurveTo(x - radius * .75, y, x, y - radius)
+            ctx.closePath(); ctx.fill()
         } else if (phase === "waning-gibbous") {
-            ctx.beginPath(); ctx.arc(x + radius * .82, y, radius, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x, y - radius)
+            ctx.arc(x, y, radius, -Math.PI / 2, Math.PI / 2, false)
+            ctx.quadraticCurveTo(x + radius * .75, y, x, y - radius)
+            ctx.closePath(); ctx.fill()
         }
         ctx.restore()
     }
 
     function drawMoon(ctx, x, y, radius) {
-        ctx.fillStyle = "#fff3a6"; ctx.strokeStyle = "#d0b756"; ctx.lineWidth = Math.max(2, radius * .11)
-        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+        ctx.fillStyle = "#fff3a6"
+        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill()
         moonShadow(ctx, x, y, radius)
-        let face = phase === "new" ? "#fff3a6" : "#5b4b38"
+
+        // Only the illuminated outer limb is gold. The dark edge deliberately
+        // has no yellow ring, so quarter and gibbous phases read correctly.
+        ctx.strokeStyle = "#d0a92d"
+        ctx.lineWidth = Math.max(2, radius * .1)
+        ctx.lineCap = "round"
+        if (phase === "full") {
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke()
+        } else if (["waxing-crescent", "first-quarter", "waxing-gibbous"].indexOf(phase) >= 0) {
+            ctx.beginPath(); ctx.arc(x, y, radius, -Math.PI / 2, Math.PI / 2); ctx.stroke()
+        } else if (["waning-crescent", "last-quarter", "waning-gibbous"].indexOf(phase) >= 0) {
+            ctx.beginPath(); ctx.arc(x, y, radius, Math.PI / 2, Math.PI * 1.5); ctx.stroke()
+        }
+
+        let face = "#5b4b38"
         ctx.fillStyle = face
-        ctx.beginPath(); ctx.arc(x - radius * .28, y - radius * .07, radius * .08, 0, Math.PI * 2); ctx.fill()
-        ctx.beginPath(); ctx.arc(x + radius * .28, y - radius * .07, radius * .08, 0, Math.PI * 2); ctx.fill()
-        ctx.beginPath(); ctx.moveTo(x - radius * .26, y + radius * .27); ctx.quadraticCurveTo(x, y + radius * .46, x + radius * .29, y + radius * .25)
-        ctx.strokeStyle = face; ctx.lineWidth = Math.max(2, radius * .08); ctx.stroke()
+        ctx.strokeStyle = face
+        ctx.lineWidth = Math.max(2, radius * .08)
+        if (phase === "full") {
+            ctx.beginPath(); ctx.arc(x - radius * .28, y - radius * .07, radius * .08, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(x + radius * .28, y - radius * .07, radius * .08, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x - radius * .26, y + radius * .27); ctx.quadraticCurveTo(x, y + radius * .46, x + radius * .29, y + radius * .25); ctx.stroke()
+        } else if (["first-quarter", "waxing-gibbous"].indexOf(phase) >= 0) {
+            ctx.beginPath(); ctx.arc(x + radius * .31, y - radius * .08, radius * .08, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x + radius * .05, y + radius * .26); ctx.quadraticCurveTo(x + radius * .25, y + radius * .42, x + radius * .43, y + radius * .22); ctx.stroke()
+        } else if (["last-quarter", "waning-gibbous"].indexOf(phase) >= 0) {
+            ctx.beginPath(); ctx.arc(x - radius * .31, y - radius * .08, radius * .08, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.moveTo(x - radius * .05, y + radius * .26); ctx.quadraticCurveTo(x - radius * .25, y + radius * .42, x - radius * .43, y + radius * .22); ctx.stroke()
+        }
+    }
+
+    function drawIceCube(ctx, scale) {
+        ctx.lineJoin = "round"
+        ctx.lineWidth = 3 * scale
+        ctx.strokeStyle = "#4f7d91"
+
+        ctx.fillStyle = "#d8f6ff"
+        ctx.beginPath()
+        ctx.moveTo(18 * scale, 16 * scale)
+        ctx.lineTo(27 * scale, 7 * scale)
+        ctx.lineTo(62 * scale, 7 * scale)
+        ctx.lineTo(55 * scale, 16 * scale)
+        ctx.closePath(); ctx.fill(); ctx.stroke()
+
+        ctx.fillStyle = "#a9deef"
+        ctx.beginPath()
+        ctx.moveTo(55 * scale, 16 * scale)
+        ctx.lineTo(62 * scale, 7 * scale)
+        ctx.lineTo(62 * scale, 44 * scale)
+        ctx.lineTo(55 * scale, 53 * scale)
+        ctx.closePath(); ctx.fill(); ctx.stroke()
+
+        ctx.fillStyle = "#c8eff9"
+        ctx.beginPath()
+        ctx.moveTo(18 * scale, 16 * scale)
+        ctx.lineTo(55 * scale, 16 * scale)
+        ctx.lineTo(55 * scale, 53 * scale)
+        ctx.lineTo(18 * scale, 53 * scale)
+        ctx.closePath(); ctx.fill(); ctx.stroke()
+
+        ctx.fillStyle = "#315660"
+        ctx.beginPath(); ctx.arc(29 * scale, 32 * scale, 2 * scale, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(43 * scale, 32 * scale, 2 * scale, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(29 * scale, 40 * scale); ctx.quadraticCurveTo(36 * scale, 46 * scale, 44 * scale, 39 * scale)
+        ctx.strokeStyle = "#315660"; ctx.lineWidth = 2.2 * scale; ctx.stroke()
+
+        ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2 * scale; ctx.lineCap = "round"
+        ctx.beginPath(); ctx.moveTo(23 * scale, 21 * scale); ctx.lineTo(23 * scale, 27 * scale); ctx.moveTo(20 * scale, 24 * scale); ctx.lineTo(26 * scale, 24 * scale); ctx.stroke()
+    }
+
+    function drawWindLeaf(ctx, scale) {
+        ctx.strokeStyle = "#e8fbff"; ctx.lineWidth = 2.5 * scale; ctx.lineCap = "round"
+        ctx.beginPath(); ctx.moveTo(8 * scale, 18 * scale); ctx.quadraticCurveTo(21 * scale, 10 * scale, 34 * scale, 18 * scale); ctx.quadraticCurveTo(44 * scale, 25 * scale, 54 * scale, 18 * scale); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(15 * scale, 47 * scale); ctx.quadraticCurveTo(27 * scale, 54 * scale, 39 * scale, 47 * scale); ctx.stroke()
+
+        ctx.fillStyle = "#e98a3e"; ctx.strokeStyle = "#9b5931"; ctx.lineWidth = 2.5 * scale
+        ctx.beginPath()
+        ctx.moveTo(20 * scale, 31 * scale)
+        ctx.bezierCurveTo(30 * scale, 17 * scale, 54 * scale, 19 * scale, 60 * scale, 33 * scale)
+        ctx.bezierCurveTo(48 * scale, 46 * scale, 29 * scale, 47 * scale, 20 * scale, 31 * scale)
+        ctx.closePath(); ctx.fill(); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(19 * scale, 31 * scale); ctx.lineTo(10 * scale, 25 * scale); ctx.stroke()
+        ctx.fillStyle = "#68452f"
+        ctx.beginPath(); ctx.arc(37 * scale, 30 * scale, 1.4 * scale, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(45 * scale, 30 * scale, 1.4 * scale, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.moveTo(37 * scale, 35 * scale); ctx.quadraticCurveTo(41 * scale, 39 * scale, 46 * scale, 35 * scale)
+        ctx.strokeStyle = "#68452f"; ctx.lineWidth = 1.7 * scale; ctx.stroke()
     }
 
     function paintPrecipitation(ctx, kind, centerX, top, scale) {
-        for (let index = 0; index < 3; index += 1) {
-            let x = centerX + (index - 1) * 13 * scale
+        let count = kind === "hail" || kind === "sleet" ? 5 : 3
+        for (let index = 0; index < count; index += 1) {
+            let x = centerX + (index - (count - 1) / 2) * (count > 3 ? 9 : 13) * scale
             if (kind === "snow") {
-                ctx.strokeStyle = "#6aa8c6"; ctx.lineWidth = 2 * scale
-                ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, top + 11 * scale); ctx.moveTo(x - 5 * scale, top + 5 * scale); ctx.lineTo(x + 5 * scale, top + 5 * scale); ctx.stroke()
+                drawSnowflake(ctx, x, top + 5 * scale, 5 * scale)
             } else if (kind === "hail") {
-                ctx.fillStyle = "#f7ffff"; ctx.strokeStyle = "#779eac"; ctx.lineWidth = 1.5 * scale
-                ctx.beginPath(); ctx.arc(x, top + 5 * scale, 3.5 * scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-            } else if (kind === "sleet" && index === 1) {
-                ctx.fillStyle = "#f7ffff"; ctx.strokeStyle = "#779eac"; ctx.lineWidth = 1.5 * scale
-                ctx.beginPath(); ctx.arc(x, top + 5 * scale, 3.5 * scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+                let radius = (2.6 + (index % 2) * .7) * scale
+                ctx.fillStyle = index % 2 ? "#d9f6ff" : "#b9e6f2"; ctx.strokeStyle = "#5f91a5"; ctx.lineWidth = 1.3 * scale
+                ctx.beginPath()
+                for (let side = 0; side < 6; side += 1) {
+                    let angle = side * Math.PI / 3 + index * .28
+                    let px = x + Math.cos(angle) * radius
+                    let py = top + 5 * scale + Math.sin(angle) * radius
+                    if (side === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
+                }
+                ctx.closePath(); ctx.fill(); ctx.stroke()
+                ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x - radius * .25, top + 4 * scale, radius * .22, 0, Math.PI * 2); ctx.fill()
+            } else if (kind === "sleet" && index % 2 === 1) {
+                ctx.fillStyle = "#c8eff9"; ctx.strokeStyle = "#5f91a5"; ctx.lineWidth = 1.2 * scale
+                ctx.beginPath(); ctx.moveTo(x, top + scale); ctx.lineTo(x + 3.2 * scale, top + 5 * scale); ctx.lineTo(x, top + 9 * scale); ctx.lineTo(x - 3.2 * scale, top + 5 * scale); ctx.closePath(); ctx.fill(); ctx.stroke()
             } else {
                 ctx.strokeStyle = kind === "drizzle" ? "#58aee0" : "#258dcc"
                 ctx.lineWidth = (kind === "drizzle" ? 2 : 3) * scale
@@ -145,13 +274,9 @@ Canvas {
             drawMoon(ctx, 24 * scale, 20 * scale, 13 * scale)
             drawCloud(ctx, 15 * scale, 17 * scale, .78 * scale)
         } else if (icon === "wind") {
-            ctx.strokeStyle = "#4f879d"; ctx.lineWidth = 4 * scale; ctx.lineCap = "round"
-            ctx.beginPath(); ctx.moveTo(8 * scale, 18 * scale); ctx.lineTo(59 * scale, 18 * scale); ctx.moveTo(14 * scale, 32 * scale); ctx.lineTo(65 * scale, 32 * scale); ctx.moveTo(7 * scale, 47 * scale); ctx.lineTo(45 * scale, 47 * scale); ctx.stroke()
+            drawWindLeaf(ctx, scale)
         } else if (icon === "cold") {
-            ctx.fillStyle = "#e8f5fa"; ctx.strokeStyle = "#4d7482"; ctx.lineWidth = 3 * scale
-            ctx.beginPath(); ctx.rect(31 * scale, 7 * scale, 14 * scale, 36 * scale); ctx.fill(); ctx.stroke()
-            ctx.fillStyle = "#4d8fc9"; ctx.fillRect(36 * scale, 20 * scale, 5 * scale, 25 * scale)
-            ctx.beginPath(); ctx.arc(38 * scale, 47 * scale, 11 * scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+            drawIceCube(ctx, scale)
         } else if (icon === "warning") {
             ctx.fillStyle = "#ffd85a"; ctx.strokeStyle = "#8f5e18"; ctx.lineWidth = 4 * scale
             ctx.beginPath(); ctx.moveTo(38 * scale, 5 * scale); ctx.lineTo(70 * scale, 57 * scale); ctx.lineTo(6 * scale, 57 * scale); ctx.closePath(); ctx.fill(); ctx.stroke()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import subprocess
@@ -366,6 +367,35 @@ class QtWeatherViewTests(unittest.TestCase):
                 self.assertEqual(view.payload()["speaking_key"], "feels")
                 completed()
                 self.assertIsNone(view.payload()["speaking_key"])
+
+                announce.reset_mock()
+                view.handle_action(
+                    "weather_debug_speak",
+                    json.dumps(
+                        {
+                            "key": "condition",
+                            "condition": "snow",
+                            "temperature": 28,
+                            "feels": 20,
+                            "high": 31,
+                            "low": 19,
+                            "rain": 85,
+                            "hour": None,
+                        }
+                    ),
+                )
+                debug_spoken, debug_completed = announce.call_args.args
+                self.assertIn("Coat, hat, gloves", debug_spoken)
+                self.assertEqual(view.payload()["speaking_key"], "condition")
+                debug_completed()
+
+                announce.reset_mock()
+                view.handle_action("weather_debug_speak", "not json")
+                view.handle_action(
+                    "weather_debug_speak",
+                    json.dumps({"key": "condition", "condition": []}),
+                )
+                announce.assert_not_called()
                 view.close()
 
     def test_navigation_keeps_location_results_isolated(self) -> None:
@@ -493,7 +523,13 @@ class QtQmlShellTests(unittest.TestCase):
             self.assertIn(f'"{phase}"', view + icon)
         self.assertIn("controller.frameSource", view)
         self.assertIn("DragHandler", view)
+        self.assertIn("weather_debug_speak", view)
+        self.assertIn("hourlyForecasts.width / Math.max", view)
         self.assertIn("clip: true", scene)
+        self.assertIn("SequentialAnimation on y", scene)
+        self.assertIn("WeatherBolt", scene)
+        self.assertIn("drawSnowflake", icon)
+        self.assertIn("drawIceCube", icon)
         self.assertNotIn("☀", view + scene + icon)
         self.assertNotIn("🌧", view + scene + icon)
 
