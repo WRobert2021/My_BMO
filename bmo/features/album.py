@@ -17,6 +17,7 @@ from bmo.features.contracts import (
     ToolRequest,
     ToolResult,
 )
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,9 @@ AlbumAppFactory = Callable[..., Any]
 
 def _create_album_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk album view only when its menu item is launched."""
+    hosted = create_hosted_view("album", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.ui.album import AlbumApp
 
     return AlbumApp(*args, **kwargs)

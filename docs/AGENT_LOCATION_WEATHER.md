@@ -10,21 +10,16 @@ requests use HTTPS and require an internet connection, but neither requires an
 API key.
 
 The menu-launched weather view uses the same forecast snapshot as the spoken
-response. It opens a dedicated fullscreen Chromium surface containing only
-project-owned HTML, CSS, and SVG graphics. Its local communication server binds
-to a random `127.0.0.1` port with a per-view token and stops when Weather
-closes; it is never exposed on the LAN. The Tk menu and other features do not
-use Chromium. The temporary kiosk profile does not use the desktop keyring, and
-a renderer heartbeat automatically closes a blank or unresponsive weather
-surface so the main menu remains recoverable.
+response. The production presentation renders the carousel directly in QML;
+it starts no browser, loopback server, or temporary profile. The legacy
+`tk_agent.py` fallback retains the older isolated Chromium renderer for its one
+validation cycle.
 
 Copy `config/example.weather.json` to the ignored `config/weather.json` to set
 the ordered location carousel. Set `"debug": true` while verifying graphics.
-A small **D** control then opens selectors for every supported condition,
-season, morning/midday/afternoon/sunset/night period, and eight basic moon
-phases. The debugger changes only the browser preview; **Live weather** restores
-the real forecast immediately. Keep debug disabled for the normal child-facing
-screen.
+The legacy renderer's small **D** control provides its historical visual
+selectors. The QML production view ignores that legacy-only preview flag and
+always shows live forecast data. Keep debug disabled for normal deployment.
 
 These are external services. A named-place lookup sends the spoken place name
 to Nominatim, and every weather lookup sends coordinates to Open-Meteo. Keep a

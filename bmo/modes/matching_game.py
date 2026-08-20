@@ -19,6 +19,7 @@ from bmo.modes.contracts import (
     SpeakResponse,
 )
 from bmo.state import BotStates
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 MatchingAppFactory = Callable[..., Any]
@@ -26,6 +27,9 @@ MatchingAppFactory = Callable[..., Any]
 
 def _create_matching_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk game view only when the mode starts from the menu."""
+    hosted = create_hosted_view("matching_game", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.matching_game import MatchingGameApp
 
     return MatchingGameApp(*args, **kwargs)

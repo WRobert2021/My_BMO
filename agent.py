@@ -7,16 +7,12 @@
 #  Source: https://github.com/brenpoly/be-more-agent
 # =========================================================================
 
-import tkinter as tk
-
-from bmo.app import BotGUI
+from bmo.qt.app import run_qt_application
 
 
 def main() -> None:
     print("--- SYSTEM STARTING ---", flush=True)
-    root = tk.Tk()
-    BotGUI(root)
-    root.mainloop()
+    raise SystemExit(run_qt_application())
 
 
 if __name__ == "__main__":

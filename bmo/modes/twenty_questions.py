@@ -26,6 +26,7 @@ from bmo.twenty_questions import (
     TwentyQuestionsHistory,
     normalize_player_answer,
 )
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 GameAnswerInference = Callable[[str, str, Chat], str | None]
@@ -49,6 +50,9 @@ def _infer_game_guess(*args: Any, **kwargs: Any) -> str | None:
 
 def _create_twenty_questions_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk game view only when a menu launch needs it."""
+    hosted = create_hosted_view("twenty_questions", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.twenty_questions_ui import TwentyQuestionsApp
 
     return TwentyQuestionsApp(*args, **kwargs)

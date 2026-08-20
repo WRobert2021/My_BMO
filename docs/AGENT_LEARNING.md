@@ -149,18 +149,20 @@ After adding it:
 3. Add deterministic generation tests over many seeds, including answer and
    contrast checks.
 4. Add engine tests for feedback, retry/reveal, scoring, and persistence.
-5. Run `.venv/bin/python -m pytest -q`.
+5. Add or update the generic QML interaction adapter when introducing a new
+   interaction kind; lesson IDs must not create presentation branches.
+6. Run `.venv/bin/python -m pytest -q`.
 
 ## Artwork and platform behavior
 
-The current repository policy makes `graphics/` read-only. Learning therefore
-references the existing menu icon and draws its original lesson visuals using
-Tk Canvas primitives. Optional future asset lookup is strictly contained under
-`graphics/learning/` and always has a programmatic fallback. If the policy is
-later changed, add only original or clearly licensed assets and record their
-licenses.
+The current repository policy makes `graphics/` read-only. Learning references
+the existing menu icon and renders lesson choices with QML primitives. Optional
+future asset lookup remains strictly contained under `graphics/learning/` and
+must always have a programmatic fallback. If the policy is later changed, add
+only original or clearly licensed assets and record their licenses.
 
-Learning uses the Python standard library and the project's existing
-Tkinter/Pillow stack. It has no network, browser, model, microphone, or new
-package requirement and is designed for 64-bit Raspberry Pi OS on a Raspberry
-Pi 5 with Python 3.13.5.
+Learning uses the existing PySide6/QML production presentation. Its engine,
+curriculum, selection controller, and persistence remain toolkit-neutral. It
+has no network, browser, model, or microphone requirement and is designed for
+64-bit Raspberry Pi OS on a Raspberry Pi 5 with Python 3.13.5. The explicit
+legacy launcher retains the old Tk/Pillow view during its validation cycle.

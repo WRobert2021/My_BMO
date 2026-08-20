@@ -4,7 +4,11 @@ The application keeps `agent.py` as the stable startup command while implementat
 
 ## Module boundaries
 
-- `bmo.app` — Tkinter UI and top-level interaction workflow.
+- `bmo.runtime` — toolkit-neutral production service composition,
+  conversation workflow, worker ownership, attentions, persistence, and
+  shutdown.
+- `bmo.app` — legacy Tk presentation and composition adapter retained only for
+  the explicit `tk_agent.py` fallback.
 - `bmo.conversation` — UI-neutral model-call logging and typed tool-result
   presentation, including summary prompts and generic vision follow-ups.
 - `bmo.audio` — audio-device discovery, microphone recording, sound effects, and Piper playback.
@@ -101,6 +105,10 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.runtime_voice` — ready-turn capture selection, transcription, transcript
   archival, mode-aware retry state, and successful conversation handoff through
   narrow recorder, transcriber, archive, and presentation ports.
+- `bmo.matching_game_core` — toolkit-neutral Pup Pairs state, score history,
+  and imperfect BMO memory player used by Qt and the legacy adapter.
+- `bmo.view_factory` — narrow active-presentation discovery used before any
+  concrete Tk fallback import.
 - `bmo.kiosk_access` — global quiet-hours calculation and one-period parent-PIN
   unlock policy.
 - `bmo.ui.gestures` — compatibility exports for `bmo.gestures`.
@@ -123,13 +131,19 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
   secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
 - `bmo.qt.controller` — Qt properties, signals, real face-frame animation,
-  camera overlay state, HUD text, shared menu pages, selection events, and
-  gesture translation without importing Tk.
-- `bmo.qt.app` — Qt Quick engine and controller lifetime ownership plus the
-  configured resource-free menu catalog; it intentionally starts no assistant
-  services until the coordinator boundary is ready to replace Tk.
-- `bmo/qt/qml/Main.qml` — fullscreen 800x480 face surface, touch input,
-  diagnostic HUD, image overlay, and kiosk shortcuts.
+  camera overlay state, HUD text, shared menu pages, hosted-view data, global
+  overlays, selection events, and gesture translation without importing Tk.
+- `bmo.qt.presentation` — queued implementation of the neutral runtime
+  presentation port; worker threads never mutate controller state directly.
+- `bmo.qt.view_host` — active feature/mode view lifecycle and app-factory host.
+- `bmo.qt.views` — adapters from extension-owned callbacks and typed records to
+  serializable QML payloads and actions.
+- `bmo.qt.app` — production Qt Quick engine, runtime wiring, PTT/interrupt/menu
+  dispatch, quiet-hours poll, and coordinated shutdown. It also retains a
+  resource-free preview entry point for tests.
+- `bmo/qt/qml/Main.qml` — fullscreen 800x480 face, menu, HUD, attention,
+  quiet-hours, typed-debug, overlay, and kiosk shortcut surface.
+- `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
 
 ## Neutral shared ownership
 
@@ -167,22 +181,27 @@ that request against a fresh catalog snapshot before invoking the narrow mode
 or feature launch callback. `bmo.runtime_extensions` composes that dispatcher
 with the live feature and mode registries, owns their cleanup, and queues work
 that must cross from the presentation thread to the interaction worker.
-Menu-contributing feature and mode modules keep
-their concrete Tk view imports inside default view factories, so loading their
-registration and metadata boundaries does not import Tkinter. Timer, Calendar,
-and Weather exchange presentation data through narrowly owned immutable
-records; Pup Pairs request matching similarly lives outside its Tk application.
+Menu-contributing feature and mode modules first offer their default app
+factory to `bmo.view_factory`. The production `QtViewHost` supplies QML-backed
+adapters; only the explicit legacy host reaches the lazy Tk import. Loading
+registration and metadata boundaries therefore does not import Tkinter. Timer,
+Calendar, Weather, and Learning exchange presentation state through narrowly
+owned neutral records/controllers. Pup Pairs state and request matching also
+live outside its Tk application.
 `bmo.runtime_loop` decides whether a worker iteration should process queued menu
 work, remain paused for quiet hours or a suspended mode, capture continuous mode
 input, wait for wake/PTT, reset an interruption, or stop. It reports a typed
-turn back to the Tk adapter and owns the common startup, per-turn recovery, and
-shutdown-failure loop shared by the voice and typed launchers.
+turn back to `AssistantRuntime` and owns common startup, per-turn recovery, and
+shutdown-failure behavior.
 `bmo.runtime_voice` consumes only ready `RuntimeTurn` records. It chooses PTT or
 adaptive capture, supplies interaction-owned paths, invokes transcription,
 records the transcript event, presents no-speech and empty-transcript states,
 and hands successful text to conversation routing. Concrete sounddevice,
 Whisper, archive, and GUI implementations remain injected adapters, so importing
-the executor initializes none of those resources.
+the executor initializes none of those resources. `AssistantRuntime` constructs
+the production services and talks only to `RuntimePresentation`; the Qt
+implementation emits queued signals for state, text, attentions, quiet hours,
+and presentation-thread callbacks.
 `bmo.menu_loader` invokes optional `register_menu_metadata(registry, settings)`
 hooks through the same configured-extension algorithm. Missing hooks mean an
 enabled extension has no menu contribution, while a broken hook rolls back only
@@ -213,8 +232,9 @@ of executable feature resources.
 
 ## Runtime flow
 
-1. `agent.py` creates Tkinter and `BotGUI`.
-2. `BotGUI` creates services using defaults overlaid by
+1. `agent.py` starts `bmo.qt.app.run_qt_application`, which loads QML before
+   constructing the heavier assistant services.
+2. `AssistantRuntime` creates services using defaults overlaid by
    `config/settings.json`, then loads feature and mode wiring from
    `config/features.json`. Missing config files are not created; defaults remain
    in memory only. Weather and calendar separately read their private feature
@@ -229,34 +249,17 @@ of executable feature resources.
    interaction; camera captures are also copied to the feature's configured
    persistent directory.
 9. Piper streams speech through `sounddevice` while also writing archival WAVs.
-10. Shutdown closes the extension runtime and both registries, stops audio,
-    saves recent memory atomically, unloads the text model, and closes Tkinter.
+10. Shutdown closes the hosted view and extension runtime, stops audio, saves
+    recent memory atomically, unloads the text model, stops Qt timers, and exits
+    the Qt event loop.
 
-The production flow above remains on Tk during the migration. `qt_agent.py`
-currently exercises only the real Qt/QML presentation shell: it loads the
-configured face frames, animation timings, touch gestures, status, response
-text, camera-overlay path, and the shared icon-menu geometry without
-constructing audio, models, feature tools, or modes. The shell loads configured
-metadata from enabled feature/mode modules; selections are
-diagnostic events and do not execute features or modes. Keeping that launcher
-isolated makes the display/event-loop boundary testable on the Pi before
-runtime ownership moves away from `BotGUI`.
-The ordered production Tk menu now also uses `MenuCatalog`, proving that the
-same typed selection boundary can receive real runtime registry contributions.
-Both production Tk and the isolated Qt shell dispatch selections through
-`RuntimeMenuCoordinator`; Qt uses diagnostic callbacks until the
-UI-independent application runtime is ready. Production Tk additionally uses
-`RuntimeExtensionCoordinator` for registry lifetime, the shared worker wake
-event, and queued mode/feature-vision work. The interaction worker consumes
-those typed requests without requiring the neutral coordinator to import Tk.
-`RuntimeWorkerLoop` owns the resilient worker iteration, and
-`RuntimeTurnCoordinator` performs voice-trigger arbitration before the Tk
-adapter captures or transcribes audio. Neither boundary imports Tkinter,
-PySide6, OpenWakeWord, or ONNX Runtime.
-`RuntimeVoiceTurnExecutor` then executes ready turns through injected production
-recorder and transcriber services. It owns capture/transcription sequencing and
-archive completion without importing sounddevice, OpenWakeWord, Tkinter, or
-PySide6.
+QML menu selections dispatch through `RuntimeMenuCoordinator`. Feature views
+are constructed synchronously on the Qt thread through `QtViewHost`; mode and
+vision work are queued for the interaction worker. Mode callbacks return to the
+Qt thread through `QtRuntimePresentation.call_soon`. State and streaming text
+from any worker cross queued Qt signals. The normal and typed launch paths do
+not import Tkinter. `run_qt_face_shell` remains only as an isolated,
+resource-free presentation smoke test; it is not a production launcher.
 
 ## Display navigation
 
@@ -906,26 +909,23 @@ settings support new configurations. These compatibility surfaces do not
 participate in core matching, model routing, dispatch, presentation, or mode
 selection.
 
-## Next extraction
+## Migration status
 
-`bmo.conversation` now owns observable model-call logging and typed tool-result
-presentation, immediate cross-thread UI work passes through one dispatcher
-boundary, and `bmo.runtime_extensions` owns the extension registries plus
-queued menu work. `bmo.runtime_loop` now owns resilient worker execution and
-voice-trigger arbitration, while `bmo.runtime_voice` owns capture/transcription
-execution and transcript archival. `BotGUI` still constructs the concrete audio
-and model services and owns ordinary streamed-chat orchestration, attentions,
-final persistence, and Tk widgets and animation. The next safe step is to move
-conversation-turn orchestration and remaining assistant service lifecycle
-behind neutral ports, then connect the PySide6/QML presenter while retaining Tk
-as a temporary fallback during parity testing.
+The extraction is complete for the production path. `AssistantRuntime` owns
+concrete audio/model services, streamed conversation orchestration, extension
+lifetime, attentions, speech, and final persistence. QML owns the face, menu,
+global overlays, typed debug input, and built-in feature/mode screens. The Tk
+composition remains reachable only through `tk_agent.py` for one validation
+cycle. Removing that fallback and the dead Tk presentation modules requires a
+separate reviewed cleanup after physical Raspberry Pi acceptance.
 
 ## Shutdown ownership
 
-Audio streams are closed cooperatively by the thread that created them. The UI
-shutdown path cancels the quiet-hours poll, asks `RuntimeExtensionCoordinator`
+Audio streams are closed cooperatively by the thread that created them. The Qt
+shutdown path stops the quiet-hours timer, asks `RuntimeExtensionCoordinator`
 to close feature-owned workers such as the calendar date-change watcher and all
 mode resources, sets the shutdown event, wakes any push-to-talk wait, joins the
-interaction and TTS threads, and then exits Tkinter. It
+interaction and TTS threads, stops the controller animation timer, and then
+exits Qt. It
 deliberately does not call process-wide `sounddevice.stop()` while another
 thread owns an input stream; doing so can crash Core Audio on macOS.

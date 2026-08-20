@@ -39,10 +39,25 @@ class QtFaceController(QObject):
     menuItemsChanged = Signal()
     menuPageLabelChanged = Signal()
     menuSelectionChanged = Signal()
+    viewVisibleChanged = Signal()
+    viewKindChanged = Signal()
+    viewTitleChanged = Signal()
+    viewDataChanged = Signal()
+    attentionCountChanged = Signal()
+    attentionLabelChanged = Signal()
+    quietHoursVisibleChanged = Signal()
+    quietPinChanged = Signal()
+    quietPinErrorChanged = Signal()
+    typedInputVisibleChanged = Signal()
 
     menuRequested = Signal()
     menuItemSelected = Signal(str)
     menuSelectionRequested = Signal(object)
+    viewActionRequested = Signal(str, str)
+    viewCloseRequested = Signal()
+    attentionRequested = Signal()
+    quietPinSubmitted = Signal(str)
+    typedInputRequested = Signal(str)
     pushToTalkRequested = Signal()
     interruptRequested = Signal()
     exitRequested = Signal()
@@ -74,6 +89,16 @@ class QtFaceController(QObject):
         self._menu_items_payload: list[dict[str, object]] = []
         self._menu_page_label = ""
         self._menu_selection = ""
+        self._view_visible = False
+        self._view_kind = ""
+        self._view_title = ""
+        self._view_data: dict[str, object] = {}
+        self._attention_count = 0
+        self._attention_label = ""
+        self._quiet_hours_visible = False
+        self._quiet_pin = ""
+        self._quiet_pin_error = False
+        self._typed_input_visible = False
         self._menu_catalog = MenuCatalog()
         self._menu_pages: tuple[IconMenuPage, ...] = ()
         self._menu_navigator = MenuNavigator(1)
@@ -159,6 +184,46 @@ class QtFaceController(QObject):
     @Property(str, notify=menuSelectionChanged)
     def menuSelection(self) -> str:  # noqa: N802
         return self._menu_selection
+
+    @Property(bool, notify=viewVisibleChanged)
+    def viewVisible(self) -> bool:  # noqa: N802
+        return self._view_visible
+
+    @Property(str, notify=viewKindChanged)
+    def viewKind(self) -> str:  # noqa: N802
+        return self._view_kind
+
+    @Property(str, notify=viewTitleChanged)
+    def viewTitle(self) -> str:  # noqa: N802
+        return self._view_title
+
+    @Property("QVariantMap", notify=viewDataChanged)
+    def viewData(self) -> dict[str, object]:  # noqa: N802
+        return self._view_data
+
+    @Property(int, notify=attentionCountChanged)
+    def attentionCount(self) -> int:  # noqa: N802
+        return self._attention_count
+
+    @Property(str, notify=attentionLabelChanged)
+    def attentionLabel(self) -> str:  # noqa: N802
+        return self._attention_label
+
+    @Property(bool, notify=quietHoursVisibleChanged)
+    def quietHoursVisible(self) -> bool:  # noqa: N802
+        return self._quiet_hours_visible
+
+    @Property(str, notify=quietPinChanged)
+    def quietPinDisplay(self) -> str:  # noqa: N802
+        return "● " * len(self._quiet_pin) + "○ " * (4 - len(self._quiet_pin))
+
+    @Property(bool, notify=quietPinErrorChanged)
+    def quietPinError(self) -> bool:  # noqa: N802
+        return self._quiet_pin_error
+
+    @Property(bool, notify=typedInputVisibleChanged)
+    def typedInputVisible(self) -> bool:  # noqa: N802
+        return self._typed_input_visible
 
     @Slot()
     def advanceFrame(self) -> None:  # noqa: N802 - QML naming convention
@@ -290,6 +355,117 @@ class QtFaceController(QObject):
             self._menu_visible = False
             self.menuVisibleChanged.emit()
 
+    def show_view(
+        self,
+        kind: str,
+        title: str,
+        data: dict[str, object] | None = None,
+    ) -> None:
+        """Present one hosted feature or mode above the retained menu."""
+        normalized = str(kind).strip().lower()
+        if not normalized:
+            raise ValueError("Qt hosted view kind cannot be empty.")
+        self._view_kind = normalized
+        self._view_title = str(title).strip() or normalized.replace("_", " ").title()
+        self._view_data = dict(data or {})
+        self._view_visible = True
+        if self._menu_visible:
+            self._menu_visible = False
+            self.menuVisibleChanged.emit()
+        self._hud_visible = False
+        self.viewKindChanged.emit()
+        self.viewTitleChanged.emit()
+        self.viewDataChanged.emit()
+        self.viewVisibleChanged.emit()
+        self.hudVisibleChanged.emit()
+
+    def update_view(self, data: dict[str, object]) -> None:
+        """Replace the active hosted view payload."""
+        if not isinstance(data, dict):
+            raise TypeError("Qt hosted view data must be a dictionary.")
+        self._view_data = dict(data)
+        self.viewDataChanged.emit()
+
+    def hide_view(self, *, return_to_menu: bool = True) -> None:
+        """Close the hosted surface and optionally reveal its menu."""
+        if not self._view_visible:
+            return
+        self._view_visible = False
+        self._view_kind = ""
+        self._view_title = ""
+        self._view_data = {}
+        self.viewVisibleChanged.emit()
+        self.viewKindChanged.emit()
+        self.viewTitleChanged.emit()
+        self.viewDataChanged.emit()
+        if return_to_menu:
+            self._menu_visible = True
+            self.menuVisibleChanged.emit()
+
+    @Slot(int, str)
+    def set_attentions(self, count: int, label: str = "") -> None:
+        normalized = max(0, int(count))
+        cleaned = str(label).strip()
+        if normalized != self._attention_count:
+            self._attention_count = normalized
+            self.attentionCountChanged.emit()
+        if cleaned != self._attention_label:
+            self._attention_label = cleaned
+            self.attentionLabelChanged.emit()
+
+    @Slot(bool)
+    def setQuietHours(self, visible: bool) -> None:  # noqa: N802
+        shown = bool(visible)
+        if shown != self._quiet_hours_visible:
+            self._quiet_hours_visible = shown
+            self._quiet_pin = ""
+            self._quiet_pin_error = False
+            self.quietHoursVisibleChanged.emit()
+            self.quietPinChanged.emit()
+            self.quietPinErrorChanged.emit()
+
+    @Slot(str)
+    def quietPinDigit(self, digit: str) -> None:  # noqa: N802
+        value = str(digit)
+        if not self._quiet_hours_visible or len(self._quiet_pin) >= 4 or not value.isdigit():
+            return
+        self._quiet_pin += value[0]
+        self._quiet_pin_error = False
+        self.quietPinChanged.emit()
+        self.quietPinErrorChanged.emit()
+        if len(self._quiet_pin) == 4:
+            self.quietPinSubmitted.emit(self._quiet_pin)
+
+    @Slot()
+    def quietPinClear(self) -> None:  # noqa: N802
+        self._quiet_pin = ""
+        self._quiet_pin_error = False
+        self.quietPinChanged.emit()
+        self.quietPinErrorChanged.emit()
+
+    @Slot()
+    def quietPinBackspace(self) -> None:  # noqa: N802
+        self._quiet_pin = self._quiet_pin[:-1]
+        self._quiet_pin_error = False
+        self.quietPinChanged.emit()
+        self.quietPinErrorChanged.emit()
+
+    @Slot(bool)
+    def quietPinResult(self, accepted: bool) -> None:  # noqa: N802
+        if accepted:
+            self.setQuietHours(False)
+            return
+        self._quiet_pin = ""
+        self._quiet_pin_error = True
+        self.quietPinChanged.emit()
+        self.quietPinErrorChanged.emit()
+
+    def set_typed_input_visible(self, visible: bool) -> None:
+        shown = bool(visible)
+        if shown != self._typed_input_visible:
+            self._typed_input_visible = shown
+            self.typedInputVisibleChanged.emit()
+
     @Slot(float, float)
     def menuPressed(self, x: float, y: float) -> None:  # noqa: N802
         self._menu_gesture.press(int(x), int(y))
@@ -335,6 +511,24 @@ class QtFaceController(QObject):
     @Slot()
     def requestInterrupt(self) -> None:  # noqa: N802
         self.interruptRequested.emit()
+
+    @Slot(str, str)
+    def requestViewAction(self, action: str, value: str = "") -> None:  # noqa: N802
+        self.viewActionRequested.emit(str(action), str(value))
+
+    @Slot()
+    def requestViewClose(self) -> None:  # noqa: N802
+        self.viewCloseRequested.emit()
+
+    @Slot()
+    def requestAttention(self) -> None:  # noqa: N802
+        self.attentionRequested.emit()
+
+    @Slot(str)
+    def submitTypedInput(self, text: str) -> None:  # noqa: N802
+        value = str(text).strip()
+        if value:
+            self.typedInputRequested.emit(value)
 
     @Slot()
     def requestExit(self) -> None:  # noqa: N802

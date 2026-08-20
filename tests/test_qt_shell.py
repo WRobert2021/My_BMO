@@ -26,6 +26,7 @@ from bmo.qt.app import (  # noqa: E402
     preview_menu_catalog,
 )
 from bmo.qt.controller import QtFaceController  # noqa: E402
+from bmo.qt.view_host import QtViewHost  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
 
 
@@ -137,6 +138,32 @@ class QtFaceControllerTests(unittest.TestCase):
         self.assertEqual(controller.state, "not-configured")
         self.assertTrue(controller.frameSource.toLocalFile().endswith("00.png"))
 
+    def test_hosted_view_and_global_overlay_properties_are_qml_visible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self.make_controller(Path(directory))
+            controller.show_menu()
+            controller.show_view("timer", "Timers", {"items": []})
+            controller.set_attentions(2, "TIMERS")
+            controller.setQuietHours(True)
+            controller.quietPinDigit("1")
+
+            self.assertTrue(controller.viewVisible)
+            self.assertEqual(controller.viewKind, "timer")
+            self.assertEqual(controller.viewTitle, "Timers")
+            self.assertEqual(controller.viewData, {"items": []})
+            self.assertFalse(controller.menuVisible)
+            self.assertEqual(controller.attentionCount, 2)
+            self.assertEqual(controller.attentionLabel, "TIMERS")
+            self.assertTrue(controller.quietHoursVisible)
+            self.assertTrue(controller.quietPinDisplay.startswith("●"))
+
+            controller.hide_view()
+            controller.quietPinResult(True)
+
+        self.assertFalse(controller.viewVisible)
+        self.assertTrue(controller.menuVisible)
+        self.assertFalse(controller.quietHoursVisible)
+
     def test_qt_controller_import_does_not_import_tkinter(self) -> None:
         result = subprocess.run(
             [
@@ -189,6 +216,56 @@ class QtFaceControllerTests(unittest.TestCase):
                     0,
                     result.stdout + result.stderr,
                 )
+
+    def test_production_qt_runtime_modules_import_without_tkinter(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; import agent, bmo.runtime, bmo.qt.view_host; "
+                    "raise SystemExit('tkinter' in sys.modules)"
+                ),
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_view_host_dispatches_registered_adapter_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self.make_controller(Path(directory))
+            host = QtViewHost(controller)
+            actions: list[tuple[str, str]] = []
+
+            class View:
+                kind = "proof"
+                title = "Proof"
+
+                def __init__(self, owner: QtViewHost) -> None:
+                    self.owner = owner
+
+                def payload(self) -> dict[str, object]:
+                    return {"ready": True}
+
+                def handle_action(self, action: str, value: str) -> None:
+                    actions.append((action, value))
+
+                def close(self) -> None:
+                    self.owner.dismiss(self)
+
+            host.register("proof", View)
+            view = host.create_bmo_view("proof")
+            host.present(view)
+            controller.requestViewAction("go", "now")
+
+        self.assertTrue(controller.viewVisible)
+        self.assertEqual(controller.viewData, {"ready": True})
+        self.assertEqual(actions, [("go", "now")])
 
 
 class QtQmlShellTests(unittest.TestCase):

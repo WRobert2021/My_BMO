@@ -25,6 +25,7 @@ from bmo.features.contracts import (
     normalize_direct_text,
 )
 from bmo.features.timer_view import TimerViewItem
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 DEFAULT_MAX_TIMERS = 20
@@ -40,6 +41,9 @@ TimerAppFactory = Callable[..., Any]
 
 def _create_timer_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk timer view only when its menu item is launched."""
+    hosted = create_hosted_view("timer", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.ui.timer import TimerApp
 
     return TimerApp(*args, **kwargs)

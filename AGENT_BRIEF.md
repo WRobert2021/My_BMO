@@ -7,9 +7,10 @@ rationale.
 
 ## Runtime at a glance
 
-`agent.py` creates the Tk application and `bmo.app.BotGUI`. `BotGUI` composes
-configuration, audio, speech recognition, local Ollama models, archives,
-memory, feature tools, interaction modes, and the fullscreen UI.
+`agent.py` starts the Qt Quick application. `bmo.runtime.AssistantRuntime`
+composes configuration, audio, speech recognition, local Ollama models,
+archives, memory, feature tools, and interaction modes. `bmo.qt` owns the
+fullscreen presentation and marshals worker updates onto the Qt event thread.
 
 For each transcript, an active mode receives input first. Otherwise, the tool
 registry checks deterministic phrases and then exposes enabled capabilities to
@@ -19,20 +20,21 @@ mode registries.
 
 ```text
 agent.py
-  -> bmo.app
-       -> core services: config, audio, speech, memory, archive, prompts
-       -> feature loader -> tool registry -> bmo.features.*
-       -> mode loader    -> mode registry -> bmo.modes.*
-       -> bmo.ui.*
+  -> bmo.qt.app -> QML presentation
+       -> bmo.runtime -> core services: config, audio, speech, memory, archive
+            -> feature loader -> tool registry -> bmo.features.*
+            -> mode loader    -> mode registry -> bmo.modes.*
+            -> bmo.qt.view_host -> QML feature and mode adapters
 ```
 
 ## Launch, installation, and package files
 
 | File | Role |
 | --- | --- |
-| `agent.py` | Production launcher; creates Tk, constructs `BotGUI`, and starts the event loop. |
-| `typed_agent.py` | Debug launcher that replaces microphone turns with an on-screen text field while retaining normal routing and presentation. |
-| `qt_agent.py` | Migration-only launcher for the fullscreen Qt/QML face shell and configured resource-free menu; it does not start assistant services yet. |
+| `agent.py` | Production launcher; starts the Qt/QML application and neutral assistant runtime. |
+| `typed_agent.py` | Qt debug launcher that adds an on-screen text field while retaining normal routing and presentation. |
+| `qt_agent.py` | Explicit alias for the production Qt/QML launcher. |
+| `tk_agent.py` | Explicit legacy Tk fallback retained for one validation cycle. |
 | `start_agent.sh` | Runs `agent.py` with the repository virtual environment. |
 | `setup.sh` | Raspberry Pi/aarch64 installer for system packages, Whisper.cpp, Piper, voices, Python packages, Ollama models, and the wake-word model. |
 | `be-more-agent.desktop` | Linux desktop shortcut for `start_agent.sh`. |
@@ -44,7 +46,8 @@ agent.py
 
 | File | Role |
 | --- | --- |
-| `bmo/app.py` | Main composition root and interaction coordinator: Tk state, menus, workers, tool/mode routing, speech queue, attentions, recovery, and shutdown. |
+| `bmo/runtime.py` | Toolkit-neutral production composition root: workers, tool/mode routing, speech queue, attentions, recovery, persistence, and shutdown. |
+| `bmo/app.py` | Legacy Tk adapter retained only for the explicit fallback launcher. |
 | `bmo/conversation.py` | UI-neutral model-call logging and typed tool-result presentation used by the application coordinator. |
 | `bmo/config.py` | Global defaults, shared paths, Ollama options, and split settings/extension configuration loading. |
 | `bmo/extensions.py` | Shared configuration-driven import, registration transaction, rollback, and failure-isolation mechanism for features and modes. |
@@ -132,7 +135,8 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/modes/games.py` | Compatibility imports for the built-in game adapters. |
 | `bmo/modes/matching_game.py` | Adapter connecting Pup Pairs to the mode registry and menu lifecycle. |
 | `bmo/modes/twenty_questions.py` | Adapter connecting Twenty Questions to voice/menu input, model fallback guesses, learning, and history. |
-| `bmo/matching_game.py` | Pup Pairs card model, imperfect BMO memory player, score history, and Tk game application. |
+| `bmo/matching_game_core.py` | Toolkit-neutral Pup Pairs cards, imperfect BMO memory player, score history, and board state. |
+| `bmo/matching_game.py` | Legacy Tk Pup Pairs presentation over the shared game core. |
 | `bmo/matching_game_text.py` | Dependency-light spoken start-request matching for Pup Pairs. |
 | `bmo/twenty_questions.py` | Strict dataset loader, learned overlay, bitset candidate index, adaptive game engine, and recent-target history. |
 | `bmo/twenty_questions_contracts.py` | Dataset and learning-persistence errors. |
@@ -155,9 +159,13 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/learning.py` | Learner sessions, generic activity rendering, teacher controls, plan/profile management, reports, and scoped speech. |
 | `bmo/ui/weather.py` | Forecast-to-view state, asynchronous carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
 | `bmo/ui/weather_web/index.html` | Weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
-| `bmo/qt/controller.py` | Qt properties/signals for face frames, overlay, HUD, shared menu pages, selections, and kiosk gestures. |
-| `bmo/qt/app.py` | Qt Quick engine ownership, configured menu metadata loading, and migration-shell startup. |
-| `bmo/qt/qml/Main.qml` | Fullscreen 800x480 QML face, touch surface, overlay, diagnostic HUD, and kiosk shortcuts. |
+| `bmo/qt/controller.py` | Qt properties/signals for face frames, overlays, HUD, menus, hosted views, attentions, quiet hours, and kiosk gestures. |
+| `bmo/qt/presentation.py` | Queued Qt implementation of the runtime presentation port. |
+| `bmo/qt/view_host.py` | Feature/mode app-factory host and active QML view lifecycle. |
+| `bmo/qt/views/` | QML adapters for Timer, Calendar, Weather, Album, Learning, Pup Pairs, and Twenty Questions. |
+| `bmo/qt/app.py` | Production Qt Quick engine, runtime wiring, shutdown, and isolated preview ownership. |
+| `bmo/qt/qml/Main.qml` | Fullscreen 800x480 face, menu, global overlays, debug input, and hosted-view surface. |
+| `bmo/qt/qml/HostedView.qml` | Touch presentation for every built-in feature and interaction mode. |
 
 ## Configuration examples
 
@@ -192,7 +200,7 @@ Modes are longer interactions that temporarily own user input.
 | Matching game | `tests/test_matching_game.py` |
 | Twenty Questions | `tests/test_twenty_questions.py` |
 | Compact face and quiet hours | `tests/test_compact_face.py`, `tests/test_quiet_hours.py` |
-| Qt/QML migration shell | `tests/test_qt_shell.py` |
+| Qt/QML production presentation | `tests/test_qt_shell.py` |
 
 `tests/extension_modules/__init__.py` marks the proof-fixture package, and
 `tests/__init__.py` is not present because pytest discovers the suite directly.

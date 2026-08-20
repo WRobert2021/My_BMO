@@ -105,8 +105,8 @@ system libraries and Chromium, creates local folders, builds Whisper.cpp,
 downloads the
 `base.en` speech model and Piper voices, creates the Python environment, pulls
 the Ollama models, installs the default wake-word model, and installs the
-PySide6 Essentials Qt Quick/QML runtime used by the in-progress interface
-migration. It is safe to run again and reuses valid existing downloads.*
+PySide6 Essentials Qt Quick/QML production runtime. It is safe to run again and
+reuses valid existing downloads.*
 
 ### 4. Configure the Wake Word
 The setup script downloads a default wake word ("Hey Jarvis"). To use your own:
@@ -120,27 +120,25 @@ source .venv/bin/activate
 python agent.py
 ```
 
-### Qt/QML Migration Preview
+`start_agent.sh` also supports an existing `venv/` environment (as used by
+the Pi kiosk) and falls back to the installer-created `.venv/` environment.
 
-The production launcher remains Tk-based while the interface is migrated in
-tested slices. To run the current fullscreen Qt shell with BMO's real face
-frames, animation timing, touch gestures, image-overlay surface, and diagnostic
-HUD:
+### Qt/QML interface
+
+The production launcher uses PySide6, Qt 6, and QML. To invoke that same path
+explicitly:
 
 ```bash
 QT_QPA_PLATFORM=wayland python qt_agent.py
 ```
 
-Tap the face to show or hide the HUD. Swipe left to open the QML icon menu, tap
-an icon to confirm its selection at the bottom of the screen, and swipe right
-from the first page or tap the compact face to return. Use **Exit Preview** in
-the HUD to close the shell. The menu reflects enabled modules, configured order,
-and menu-visibility settings without constructing their runtime services. Menu
-selections remain diagnostic: the preview routes them through the shared runtime
-menu coordinator and prints the resulting typed mode/feature launch request, but
-does not start the microphone, models, tools, or modes yet. See the
-[GUI migration roadmap](docs/GUI_MIGRATION.md) for completed gates and the
-remaining production conversion work.
+Tap the face to show or hide the HUD. Swipe left to open the icon menu, tap an
+icon to launch its QML view, and swipe right from the first page or tap the
+compact face to return. Audio, models, tools, modes, PTT, interruption, quiet
+hours, attentions, persistence, and shutdown run through the production
+runtime. `python typed_agent.py` adds the Qt on-screen debug input. The explicit
+temporary legacy fallback is `python tk_agent.py`. See the
+[GUI migration record](docs/GUI_MIGRATION.md) for acceptance status.
 
 ### Development Tests
 

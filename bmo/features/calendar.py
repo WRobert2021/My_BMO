@@ -30,6 +30,7 @@ from bmo.features.contracts import (
     ToolResult,
     normalize_direct_text,
 )
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -63,6 +64,9 @@ CalendarAppFactory = Callable[..., Any]
 
 def _create_calendar_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk calendar view only when its menu item is launched."""
+    hosted = create_hosted_view("calendar", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.ui.calendar import CalendarApp
 
     return CalendarApp(*args, **kwargs)

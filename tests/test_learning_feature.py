@@ -14,6 +14,11 @@ from bmo.features.learning import (
     LearningTool,
 )
 from bmo.features.loader import load_feature_registry
+from bmo.features.learning.view_model import (
+    ChoiceSnapshot,
+    InteractionController,
+    QuestionSnapshot,
+)
 from bmo.prompts import build_routing_prompt, build_system_prompt
 
 
@@ -207,6 +212,47 @@ class LearningLifecycleTests(unittest.TestCase):
         tool.close()
 
         app.close.assert_called_once_with()
+
+
+class LearningViewModelTests(unittest.TestCase):
+    def test_ordering_builds_an_ordered_response_and_truncates_on_retap(self) -> None:
+        controller = InteractionController(
+            QuestionSnapshot(
+                interaction="ordered_sequence",
+                choices=(ChoiceSnapshot("a", "A"), ChoiceSnapshot("b", "B")),
+                requires_submit=True,
+                categories=(),
+            )
+        )
+
+        controller.choose("b")
+        controller.choose("a")
+        self.assertTrue(controller.submit_ready)
+        self.assertEqual(controller.response(), ("b", "a"))
+
+        controller.choose("b")
+        self.assertFalse(controller.submit_ready)
+        self.assertEqual(controller.response(), ())
+
+    def test_category_sorting_cycles_assignments_and_requires_every_choice(self) -> None:
+        controller = InteractionController(
+            QuestionSnapshot(
+                interaction="category_sorting",
+                choices=(ChoiceSnapshot("cat", "Cat"), ChoiceSnapshot("car", "Car")),
+                requires_submit=True,
+                categories=("animal", "vehicle"),
+            )
+        )
+
+        controller.choose("cat")
+        controller.choose("car")
+        controller.choose("car")
+
+        self.assertTrue(controller.submit_ready)
+        self.assertEqual(
+            controller.response(),
+            {"cat": "animal", "car": "vehicle"},
+        )
 
 
 if __name__ == "__main__":

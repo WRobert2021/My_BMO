@@ -31,6 +31,7 @@ from bmo.location import (
 )
 from bmo.network import online_timeout_seconds
 from bmo.weather import WeatherError, WeatherService
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +45,9 @@ WeatherAppFactory = Callable[..., Any]
 
 def _create_weather_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk weather view only when its menu item is launched."""
+    hosted = create_hosted_view("weather", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.ui.weather import WeatherApp
 
     return WeatherApp(*args, **kwargs)

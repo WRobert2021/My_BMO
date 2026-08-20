@@ -309,6 +309,17 @@ class BmoMemoryPlayer:
         ]
 
 
+# Both presentation adapters use one canonical model and history owner.  The
+# names above remain temporarily for source compatibility with the legacy Tk
+# module, but all exports and MatchingGameApp runtime lookups resolve here.
+from bmo.matching_game_core import (  # noqa: E402
+    BmoMemoryPlayer,
+    Card,
+    MatchingGameHistory,
+    MatchingGameModel,
+)
+
+
 class MatchingGameApp:
     """Draw and coordinate the matching game on a Tk canvas."""
 

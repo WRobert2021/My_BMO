@@ -18,6 +18,7 @@ from bmo.features.learning.config import LearningConfig, load_learning_config
 from bmo.features.learning.curriculum import CURRICULUM, Catalog, validate_catalog
 from bmo.features.learning.engine import LearningEngine
 from bmo.features.learning.store import LearningStore
+from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +32,9 @@ LearningAppFactory = Callable[..., Any]
 
 def _create_learning_app(*args: Any, **kwargs: Any) -> Any:
     """Construct the Tk Learning view only when its menu item is launched."""
+    hosted = create_hosted_view("learning", args, kwargs)
+    if hosted is not NOT_HOSTED:
+        return hosted
     from bmo.ui.learning import LearningApp
 
     return LearningApp(*args, **kwargs)

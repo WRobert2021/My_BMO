@@ -161,7 +161,9 @@ class SetupScriptTests(unittest.TestCase):
         )
 
         self.assertIn('VENV_DIR="$BASE_DIR/.venv"', setup)
-        self.assertIn('exec "$BASE_DIR/.venv/bin/python" agent.py', launcher)
+        self.assertIn('PYTHON_BIN="$BASE_DIR/venv/bin/python"', launcher)
+        self.assertIn('PYTHON_BIN="$BASE_DIR/.venv/bin/python"', launcher)
+        self.assertIn('exec "$PYTHON_BIN" agent.py', launcher)
 
     def test_ollama_model_matches_runtime_and_example_defaults(self) -> None:
         script = SETUP_SCRIPT.read_text(encoding="utf-8")

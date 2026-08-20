@@ -367,6 +367,13 @@ class InteractionController:
         self.locked = False
 
 
+# The production QML and legacy Tk adapters share one canonical selection
+# state machine.  UI-specific question snapshotting remains in this module.
+from bmo.features.learning.view_model import (  # noqa: E402
+    InteractionController as InteractionController,
+)
+
+
 @dataclass
 class PinEntry:
     """Four-digit teacher PIN buffer whose display never reveals digits."""
