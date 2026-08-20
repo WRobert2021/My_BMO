@@ -344,13 +344,17 @@ def mix_drive(
 
 
 def motor_servo_frame(left: int, right: int, servo_angle: int) -> bytes:
-    """Build the raw entity sequence consumed by GalaxyRVR firmware 2.x."""
+    """Build a checked binary packet consumed by GalaxyRVR firmware 2.x."""
     for value in (left, right):
         if not -100 <= value <= 100:
             raise ValueError("GalaxyRVR motor power must be between -100 and 100")
     if not 0 <= servo_angle <= 140:
         raise ValueError("GalaxyRVR servo angle must be between 0 and 140")
-    return bytes((0x01, left & 0xFF, right & 0xFF, 0x03, servo_angle))
+    entities = bytes((0x01, left & 0xFF, right & 0xFF, 0x03, servo_angle))
+    checksum = 0
+    for value in entities:
+        checksum ^= value
+    return bytes((0xA0, len(entities), checksum)) + entities + bytes((0xA1,))
 
 
 def next_servo_angle(

@@ -135,11 +135,16 @@ class GalaxyRVRProtocolTests(unittest.TestCase):
         self.assertGreater(left, 0)
         self.assertLess(right, 0)
 
-    def test_binary_entity_frame_uses_signed_twos_complement_motors(self) -> None:
-        self.assertEqual(
-            motor_servo_frame(75, -40, 90),
-            bytes((0x01, 75, 216, 0x03, 90)),
-        )
+    def test_binary_packet_wraps_signed_motor_entities_for_firmware_parser(
+        self,
+    ) -> None:
+        frame = motor_servo_frame(75, -40, 90)
+
+        self.assertEqual(frame[0], 0xA0)
+        self.assertEqual(frame[1], 5)
+        self.assertEqual(frame[3:-1], bytes((0x01, 75, 216, 0x03, 90)))
+        self.assertEqual(frame[2], 0x01 ^ 75 ^ 216 ^ 0x03 ^ 90)
+        self.assertEqual(frame[-1], 0xA1)
         with self.assertRaises(ValueError):
             motor_servo_frame(101, 0, 90)
 
@@ -283,7 +288,7 @@ class GalaxyRVRSessionTests(unittest.TestCase):
         self.assertTrue(disconnected.wait(1.0))
         session.close()
 
-        motor_pairs = [(frame[1], frame[2]) for frame in frames]
+        motor_pairs = [(frame[4], frame[5]) for frame in frames]
         self.assertIn((75, 75), motor_pairs)
         self.assertEqual(motor_pairs[-1], (0, 0))
         self.assertFalse(session.status.rover_connected)

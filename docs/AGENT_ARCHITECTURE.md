@@ -536,8 +536,9 @@ read-only, so the feature has complete original Canvas-drawn fallbacks.
 
 GalaxyRVR control uses only the Python standard library and the Linux joystick
 character-device API, so it adds no package or system dependency. Bluetooth
-pairing remains owned by Raspberry Pi OS. Control frames are small masked RFC
-6455 binary messages sent to firmware port 30102; camera captures use the
+pairing remains owned by Raspberry Pi OS. Control commands use the camera
+library's `0xA0`, payload-length, XOR-checksum, entity, `0xA1` envelope inside
+small masked RFC 6455 binary messages sent to firmware port 30102. Camera captures use the
 firmware's HTTP `/capture` endpoint on port 9000 and are size-bounded before an
 atomic local write. The rover must be on the same IPv4 LAN as the kiosk.
 

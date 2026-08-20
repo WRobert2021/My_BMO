@@ -74,15 +74,33 @@ Rectangle {
         Item {
             id: galaxyPage
             property int previewToken: 0
+            property bool showFirstPreview: false
+            property bool previewActive: root.viewModel.previewEnabled === true
+                                         && root.viewModel.rover_connected === true
+            function requestPreview() {
+                if (!previewActive || root.viewModel.taking_photo === true)
+                    return
+                let target = showFirstPreview ? previewSecond : previewFirst
+                if (target.status === Image.Loading)
+                    return
+                previewToken += 1
+                target.source = root.viewModel.captureUrl + "?t=" + previewToken
+            }
+            onPreviewActiveChanged: {
+                if (!previewActive) {
+                    previewFirst.source = ""
+                    previewSecond.source = ""
+                    showFirstPreview = false
+                }
+            }
 
             Timer {
                 interval: Math.max(100, root.viewModel.previewIntervalMs || 250)
-                running: root.viewModel.previewEnabled === true
-                         && root.viewModel.rover_connected === true
+                running: parent.previewActive
                          && root.viewModel.taking_photo !== true
                 repeat: true
                 triggeredOnStart: true
-                onTriggered: parent.previewToken += 1
+                onTriggered: parent.requestPreview()
             }
 
             Row {
@@ -98,30 +116,52 @@ Rectangle {
                     border.color: "#b7d7e8"
 
                     Image {
+                        id: previewFirst
                         anchors.fill: parent
                         anchors.margins: 8
-                        visible: root.viewModel.previewEnabled === true
-                                 && root.viewModel.rover_connected === true
-                        source: visible
-                                ? root.viewModel.captureUrl + "?t=" + galaxyPage.previewToken
-                                : ""
+                        visible: galaxyPage.previewActive
+                                 && galaxyPage.showFirstPreview
+                                 && status === Image.Ready
                         cache: false
                         asynchronous: true
                         fillMode: Image.PreserveAspectFit
+                        onStatusChanged: {
+                            if (status === Image.Ready)
+                                galaxyPage.showFirstPreview = true
+                        }
+                    }
+
+                    Image {
+                        id: previewSecond
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        visible: galaxyPage.previewActive
+                                 && !galaxyPage.showFirstPreview
+                                 && status === Image.Ready
+                        cache: false
+                        asynchronous: true
+                        fillMode: Image.PreserveAspectFit
+                        onStatusChanged: {
+                            if (status === Image.Ready)
+                                galaxyPage.showFirstPreview = false
+                        }
                     }
 
                     Column {
                         anchors.centerIn: parent
                         width: parent.width - 40
                         spacing: 10
-                        visible: root.viewModel.previewEnabled !== true
-                                 || root.viewModel.rover_connected !== true
+                        visible: !galaxyPage.previewActive
+                                 || (previewFirst.status !== Image.Ready
+                                     && previewSecond.status !== Image.Ready)
                         Label {
                             width: parent.width
                             horizontalAlignment: Text.AlignHCenter
-                            text: root.viewModel.rover_connected === true
-                                  ? "CAMERA PREVIEW DISABLED"
-                                  : "WAITING FOR GALAXYRVR"
+                            text: galaxyPage.previewActive
+                                  ? "LOADING CAMERA"
+                                  : (root.viewModel.rover_connected === true
+                                     ? "CAMERA PREVIEW DISABLED"
+                                     : "WAITING FOR GALAXYRVR")
                             color: "white"
                             font.pixelSize: 21
                             font.bold: true
