@@ -25,9 +25,9 @@ class GalaxyRVRConfig:
     photo_directory: Path = Path("~/Pictures/bmo/galaxy_rvr")
     controller_device: str = "auto"
     left_y_axis: int = 1
-    right_x_axis: int = 3
+    right_x_axis: int = 5
     lt_axis: int = 2
-    rt_axis: int = 5
+    rt_axis: int = 4
     snap_button: int = 0
     deadzone: float = 0.12
     trigger_threshold: float = 0.2
@@ -44,7 +44,7 @@ class GalaxyRVRConfig:
     snapshot_timeout_seconds: float = 5.0
     max_snapshot_bytes: int = 8_000_000
     preview_enabled: bool = True
-    preview_fps: int = 4
+    preview_fps: int = 10
     show_in_menu: bool = True
 
     @property

@@ -36,6 +36,15 @@ JPEG = b"\xff\xd8test-jpeg\xff\xd9"
 
 
 class GalaxyRVRConfigTests(unittest.TestCase):
+    def test_defaults_match_observed_bluetooth_controller_layout(self) -> None:
+        config = GalaxyRVRConfig()
+
+        self.assertEqual(config.left_y_axis, 1)
+        self.assertEqual(config.right_x_axis, 5)
+        self.assertEqual(config.lt_axis, 2)
+        self.assertEqual(config.rt_axis, 4)
+        self.assertEqual(config.preview_fps, 10)
+
     def test_private_config_loads_network_photos_mapping_and_safety_values(
         self,
     ) -> None:

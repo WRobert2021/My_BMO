@@ -6,9 +6,9 @@
   "photo_directory": "/home/pi-bmo/Pictures/bmo/galaxy_rvr",
   "controller_device": "auto",
   "left_y_axis": 1,
-  "right_x_axis": 3,
+  "right_x_axis": 5,
   "lt_axis": 2,
-  "rt_axis": 5,
+  "rt_axis": 4,
   "snap_button": 0,
   "deadzone": 0.12,
   "trigger_threshold": 0.2,
@@ -25,6 +25,6 @@
   "snapshot_timeout_seconds": 5.0,
   "max_snapshot_bytes": 8000000,
   "preview_enabled": true,
-  "preview_fps": 4,
+  "preview_fps": 10,
   "show_in_menu": true
 }
