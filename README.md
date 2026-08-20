@@ -320,8 +320,10 @@ shown in `config/example.features.json`:
   reads `/dev/input/js*` directly and adds no Python dependency. The default
   mapping is left-stick Y (axis 1) for forward/backward, right-stick X (axis 4)
   for steering, LT/RT (axes 2/5) for camera tilt, and A (button 0) for a photo.
-  RT uses the common inverted trigger range and can be changed with
-  `rt_axis_inverted` for another controller.
+  On Linux, the remote uses the kernel's semantic controller map in preference
+  to those numeric fallbacks, and learns each trigger's released value so
+  normal and inverted trigger ranges both work. Live resolved axis numbers and
+  values are shown on the remote screen.
   The double-buffered camera preview targets 10 FPS. It connects to SunFounder's
   firmware-2.x WebSocket on port `30102`, previews/captures from camera port
   `9000`, retries transient disconnects, and sends a motor stop whenever the

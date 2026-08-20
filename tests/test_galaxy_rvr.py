@@ -17,6 +17,7 @@ from bmo.features.galaxy_rvr import (
     GALAXY_RVR_MENU_ITEM,
     GalaxyRVRSession,
     GalaxyRVRTool,
+    LinuxJoystick,
     WebSocketTransport,
     apply_deadzone,
     mix_drive,
@@ -162,10 +163,41 @@ class GalaxyRVRProtocolTests(unittest.TestCase):
     def test_lt_and_rt_move_camera_in_opposite_bounded_directions(self) -> None:
         config = GalaxyRVRConfig()
 
-        self.assertEqual(next_servo_angle(90, 1.0, 1.0, 1.0, config), 35)
-        self.assertEqual(next_servo_angle(90, -1.0, -1.0, 1.0, config), 140)
-        self.assertEqual(next_servo_angle(90, 1.0, -1.0, 1.0, config), 90)
-        self.assertEqual(next_servo_angle(5, 1.0, 1.0, 1.0, config), 0)
+        resting = {"lt_rest_value": -1.0, "rt_rest_value": 1.0}
+        self.assertEqual(
+            next_servo_angle(90, 1.0, 1.0, 1.0, config, **resting),
+            35,
+        )
+        self.assertEqual(
+            next_servo_angle(90, -1.0, -1.0, 1.0, config, **resting),
+            140,
+        )
+        self.assertEqual(
+            next_servo_angle(90, 1.0, -1.0, 1.0, config, **resting),
+            90,
+        )
+        self.assertEqual(
+            next_servo_angle(5, 1.0, 1.0, 1.0, config, **resting),
+            0,
+        )
+
+    def test_linux_axis_map_resolves_physical_controls_by_semantics(self) -> None:
+        joystick = LinuxJoystick("auto")
+        joystick.axis_codes = {
+            1: LinuxJoystick.ABS_Y,
+            3: 0x04,
+            4: LinuxJoystick.ABS_RX,
+            5: LinuxJoystick.ABS_RZ,
+        }
+
+        self.assertEqual(
+            joystick.axis_number((LinuxJoystick.ABS_RX,), fallback=3),
+            4,
+        )
+        self.assertEqual(
+            joystick.axis_number((LinuxJoystick.ABS_RZ,), fallback=4),
+            5,
+        )
 
     def test_websocket_client_masks_binary_frames(self) -> None:
         sent: list[bytes] = []
@@ -237,6 +269,81 @@ class GalaxyRVRSnapshotTests(unittest.TestCase):
 
 
 class GalaxyRVRSessionTests(unittest.TestCase):
+    def test_semantic_axes_drive_steer_and_calibrate_inverted_rt(self) -> None:
+        frames: list[bytes] = []
+        statuses: list[object] = []
+        controls_seen = threading.Event()
+
+        class Transport:
+            def __init__(self, _config) -> None:
+                return None
+
+            def connect(self) -> None:
+                return None
+
+            def send_binary(self, frame: bytes) -> None:
+                frames.append(frame)
+
+            def poll(self) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        class Joystick:
+            path = "/dev/input/js-test"
+
+            def __init__(self, _path) -> None:
+                self.read_count = 0
+
+            def open(self) -> None:
+                return None
+
+            def axis_number(self, codes, fallback: int) -> int:
+                del fallback
+                return {
+                    (LinuxJoystick.ABS_Y,): 6,
+                    (LinuxJoystick.ABS_RX,): 7,
+                    (LinuxJoystick.ABS_Z, LinuxJoystick.ABS_BRAKE): 8,
+                    (LinuxJoystick.ABS_RZ, LinuxJoystick.ABS_GAS): 9,
+                }[codes]
+
+            def read_events(self):
+                self.read_count += 1
+                return ()
+
+            def axis(self, number: int) -> float:
+                if number == 7 and self.read_count == 2:
+                    return 1.0
+                if number == 8:
+                    return -1.0
+                if number == 9:
+                    return -1.0 if self.read_count >= 3 else 1.0
+                return 0.0
+
+            def close(self) -> None:
+                return None
+
+        def status_changed(status) -> None:
+            statuses.append(status)
+            steered = any(frame[4] > 0 and frame[5] > 127 for frame in frames)
+            if steered and status.servo_angle > 90:
+                controls_seen.set()
+
+        session = GalaxyRVRSession(
+            replace(GalaxyRVRConfig(), command_rate_hz=50),
+            status_changed,
+            transport_factory=Transport,
+            joystick_factory=Joystick,
+        )
+        session.start()
+
+        self.assertTrue(controls_seen.wait(1.0))
+        session.close()
+
+        self.assertTrue(any("RX7" in status.axis_summary for status in statuses))
+        self.assertTrue(any("RT9" in status.axis_summary for status in statuses))
+
     def test_controller_disconnect_and_close_send_motor_stop(self) -> None:
         frames: list[bytes] = []
         disconnected = threading.Event()
@@ -306,59 +413,6 @@ class GalaxyRVRSessionTests(unittest.TestCase):
         self.assertEqual(motor_pairs[-1], (0, 0))
         self.assertFalse(session.status.rover_connected)
         self.assertFalse(session.status.controller_connected)
-        self.assertFalse(session.status.drive_armed)
-
-    def test_drive_stays_stopped_until_both_mapped_axes_are_centered(self) -> None:
-        frames: list[bytes] = []
-
-        class Transport:
-            def __init__(self, _config) -> None:
-                return None
-
-            def connect(self) -> None:
-                return None
-
-            def send_binary(self, frame: bytes) -> None:
-                frames.append(frame)
-
-            def poll(self) -> None:
-                return None
-
-            def close(self) -> None:
-                return None
-
-        class Joystick:
-            path = "/dev/input/js-test"
-
-            def __init__(self, _path) -> None:
-                return None
-
-            def open(self) -> None:
-                return None
-
-            def read_events(self):
-                return ()
-
-            def axis(self, number: int) -> float:
-                return 1.0 if number == 4 else 0.0
-
-            def close(self) -> None:
-                return None
-
-        config = replace(GalaxyRVRConfig(), command_rate_hz=50)
-        session = GalaxyRVRSession(
-            config,
-            Mock(),
-            transport_factory=Transport,
-            joystick_factory=Joystick,
-        )
-        session.start()
-        threading.Event().wait(0.15)
-        session.close()
-
-        self.assertGreater(len(frames), 2)
-        self.assertTrue(all((frame[4], frame[5]) == (0, 0) for frame in frames))
-        self.assertFalse(session.status.drive_armed)
 
     def test_snapshot_requests_are_single_flight(self) -> None:
         release = threading.Event()

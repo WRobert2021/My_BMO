@@ -126,7 +126,8 @@ class GalaxyRVRApp:
             f"Rover: {'connected' if status.rover_connected else 'waiting'}    "
             f"Controller: {'connected' if status.controller_connected else 'waiting'}\n"
             f"Motors: {status.left_power:+d} / {status.right_power:+d}    "
-            f"Camera: {status.servo_angle}°"
+            f"Camera: {status.servo_angle}°\n"
+            f"Axes: {status.axis_summary}"
         )
         if status.error:
             detail += f"\n{status.error}"

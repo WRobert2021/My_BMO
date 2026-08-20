@@ -181,7 +181,7 @@ Rectangle {
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
                         anchors.margins: 8
-                        height: 36
+                        height: 52
                         radius: 6
                         color: "#cc102a5e"
                         Label {
@@ -192,9 +192,10 @@ Rectangle {
                                   + (root.viewModel.right_power || 0)
                                   + "     CAMERA  "
                                   + (root.viewModel.servo_angle || 0)
-                                  + "°"
+                                  + "°\n"
+                                  + (root.viewModel.axis_summary || "")
                             color: "white"
-                            font.pixelSize: 15
+                            font.pixelSize: 13
                             font.bold: true
                         }
                     }

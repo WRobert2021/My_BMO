@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import base64
 import errno
+import fcntl
 import glob
 import hashlib
-import math
 import os
 import select
 import socket
@@ -229,6 +229,14 @@ class LinuxJoystick:
     BUTTON = 0x01
     AXIS = 0x02
     INITIAL = 0x80
+    JSIOCGAXES = 0x80016A11
+    JSIOCGAXMAP = 0x80406A32
+    ABS_Y = 0x01
+    ABS_Z = 0x02
+    ABS_RX = 0x03
+    ABS_RZ = 0x05
+    ABS_GAS = 0x09
+    ABS_BRAKE = 0x0A
 
     def __init__(self, configured_path: str) -> None:
         self.configured_path = configured_path
@@ -236,6 +244,7 @@ class LinuxJoystick:
         self.file_descriptor: int | None = None
         self.axes: dict[int, float] = {}
         self.buttons: dict[int, bool] = {}
+        self.axis_codes: dict[int, int] = {}
 
     def open(self) -> None:
         self.close()
@@ -255,10 +264,37 @@ class LinuxJoystick:
                 continue
             self.file_descriptor = descriptor
             self.path = candidate
+            self._load_axis_codes()
             return
         if last_error is not None:
             raise last_error
         raise FileNotFoundError("No Bluetooth controller was found.")
+
+    def _load_axis_codes(self) -> None:
+        """Read Linux semantic axis codes while retaining numeric fallbacks."""
+        descriptor = self.file_descriptor
+        if descriptor is None:
+            return
+        axis_count = bytearray(1)
+        axis_map = bytearray(64)
+        try:
+            fcntl.ioctl(descriptor, self.JSIOCGAXES, axis_count, True)
+            fcntl.ioctl(descriptor, self.JSIOCGAXMAP, axis_map, True)
+        except OSError:
+            self.axis_codes.clear()
+            return
+        self.axis_codes = {
+            number: axis_map[number]
+            for number in range(min(axis_count[0], len(axis_map)))
+        }
+
+    def axis_number(self, semantic_codes: tuple[int, ...], fallback: int) -> int:
+        """Resolve a configured control from the kernel's semantic axis map."""
+        for semantic_code in semantic_codes:
+            for number, mapped_code in self.axis_codes.items():
+                if mapped_code == semantic_code:
+                    return number
+        return fallback
 
     def read_events(self) -> tuple[tuple[str, int, float | bool], ...]:
         descriptor = self.file_descriptor
@@ -294,6 +330,7 @@ class LinuxJoystick:
         self.path = None
         self.axes.clear()
         self.buttons.clear()
+        self.axis_codes.clear()
         if descriptor is not None:
             try:
                 os.close(descriptor)
@@ -307,7 +344,6 @@ class GalaxyRVRStatus:
 
     rover_connected: bool = False
     controller_connected: bool = False
-    drive_armed: bool = False
     controller_path: str = ""
     state: str = "Starting remote..."
     error: str = ""
@@ -316,6 +352,7 @@ class GalaxyRVRStatus:
     servo_angle: int = 90
     taking_photo: bool = False
     last_photo: str = ""
+    axis_summary: str = ""
 
     def to_json(self) -> dict[str, object]:
         return asdict(self)
@@ -365,17 +402,28 @@ def next_servo_angle(
     rt_value: float,
     elapsed_seconds: float,
     config: GalaxyRVRConfig,
+    *,
+    lt_rest_value: float | None = None,
+    rt_rest_value: float | None = None,
 ) -> int:
     """Move camera tilt from LT/RT while enforcing configured hard limits."""
     lt_pressed = (
-        lt_value < -config.trigger_threshold
-        if config.lt_axis_inverted
-        else lt_value > config.trigger_threshold
+        abs(lt_value - lt_rest_value) > config.trigger_threshold
+        if lt_rest_value is not None
+        else (
+            lt_value < -config.trigger_threshold
+            if config.lt_axis_inverted
+            else lt_value > config.trigger_threshold
+        )
     )
     rt_pressed = (
-        rt_value < -config.trigger_threshold
-        if config.rt_axis_inverted
-        else rt_value > config.trigger_threshold
+        abs(rt_value - rt_rest_value) > config.trigger_threshold
+        if rt_rest_value is not None
+        else (
+            rt_value < -config.trigger_threshold
+            if config.rt_axis_inverted
+            else rt_value > config.trigger_threshold
+        )
     )
     direction = int(lt_pressed) - int(rt_pressed)
     if not config.servo_up_increases_angle:
@@ -461,8 +509,6 @@ class GalaxyRVRSession:
         self._lock = threading.Lock()
         self._status = GalaxyRVRStatus(servo_angle=config.servo_start_angle)
         self._last_snap_pressed = False
-        self._drive_armed = False
-        self._centered_drive_ticks = 0
 
     @property
     def status(self) -> GalaxyRVRStatus:
@@ -473,8 +519,6 @@ class GalaxyRVRSession:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
-        self._drive_armed = False
-        self._centered_drive_ticks = 0
         self._thread = threading.Thread(
             target=self._run,
             name="galaxy-rvr-control",
@@ -493,6 +537,11 @@ class GalaxyRVRSession:
         joystick: Any | None = None
         next_connect = 0.0
         next_controller = 0.0
+        left_y_axis = self.config.left_y_axis
+        right_x_axis = self.config.right_x_axis
+        lt_axis = self.config.lt_axis
+        rt_axis = self.config.rt_axis
+        trigger_rest: dict[str, float] = {}
         last_tick = time.monotonic()
         interval = 1.0 / self.config.command_rate_hz
         self._publish(state="Waiting for rover and controller...")
@@ -504,16 +553,12 @@ class GalaxyRVRSession:
                     try:
                         candidate.connect()
                         transport = candidate
-                        if joystick is not None:
-                            self._drive_armed = False
-                            self._centered_drive_ticks = 0
                         self._publish(
                             rover_connected=True,
-                            drive_armed=self._drive_armed,
                             state=(
                                 "Rover connected; waiting for controller..."
                                 if joystick is None
-                                else "Center both drive sticks to arm."
+                                else "Ready to drive."
                             ),
                             error="",
                         )
@@ -533,14 +578,30 @@ class GalaxyRVRSession:
                     try:
                         candidate.open()
                         joystick = candidate
-                        self._drive_armed = False
-                        self._centered_drive_ticks = 0
+                        resolve_axis = getattr(candidate, "axis_number", None)
+                        if callable(resolve_axis):
+                            left_y_axis = resolve_axis(
+                                (LinuxJoystick.ABS_Y,),
+                                self.config.left_y_axis,
+                            )
+                            right_x_axis = resolve_axis(
+                                (LinuxJoystick.ABS_RX,),
+                                self.config.right_x_axis,
+                            )
+                            lt_axis = resolve_axis(
+                                (LinuxJoystick.ABS_Z, LinuxJoystick.ABS_BRAKE),
+                                self.config.lt_axis,
+                            )
+                            rt_axis = resolve_axis(
+                                (LinuxJoystick.ABS_RZ, LinuxJoystick.ABS_GAS),
+                                self.config.rt_axis,
+                            )
+                        trigger_rest.clear()
                         self._publish(
                             controller_connected=True,
-                            drive_armed=False,
                             controller_path=str(candidate.path or "controller"),
                             state=(
-                                "Center both drive sticks to arm."
+                                "Ready to drive."
                                 if transport is not None
                                 else "Controller ready; waiting for rover..."
                             ),
@@ -564,13 +625,11 @@ class GalaxyRVRSession:
                         joystick = None
                         next_controller = now + self.config.reconnect_seconds
                         self._last_snap_pressed = False
-                        self._drive_armed = False
-                        self._centered_drive_ticks = 0
+                        trigger_rest.clear()
                         if transport is not None:
                             self._safe_stop(transport)
                         self._publish(
                             controller_connected=False,
-                            drive_armed=False,
                             controller_path="",
                             state="Controller disconnected; rover stopped.",
                             error=str(exc) or "Controller disconnected.",
@@ -592,38 +651,35 @@ class GalaxyRVRSession:
                 last_tick = now
                 left = right = 0
                 servo = self.status.servo_angle
+                axis_summary = ""
                 if joystick is not None:
-                    left_y = joystick.axis(self.config.left_y_axis)
-                    right_x = joystick.axis(self.config.right_x_axis)
-                    if not self._drive_armed:
-                        neutral_limit = max(self.config.deadzone, 0.08)
-                        if (
-                            abs(left_y) <= neutral_limit
-                            and abs(right_x) <= neutral_limit
-                        ):
-                            self._centered_drive_ticks += 1
-                            required_ticks = max(
-                                2,
-                                math.ceil(self.config.command_rate_hz * 0.25),
-                            )
-                            if self._centered_drive_ticks >= required_ticks:
-                                self._drive_armed = True
-                        else:
-                            self._centered_drive_ticks = 0
-                    if self._drive_armed:
-                        left, right = mix_drive(
-                            left_y,
-                            right_x,
-                            deadzone=self.config.deadzone,
-                            max_power=self.config.max_motor_power,
-                            steering_scale=self.config.steering_scale,
-                        )
+                    left_y = joystick.axis(left_y_axis)
+                    right_x = joystick.axis(right_x_axis)
+                    lt_value = joystick.axis(lt_axis)
+                    rt_value = joystick.axis(rt_axis)
+                    trigger_rest.setdefault("lt", lt_value)
+                    trigger_rest.setdefault("rt", rt_value)
+                    left, right = mix_drive(
+                        left_y,
+                        right_x,
+                        deadzone=self.config.deadzone,
+                        max_power=self.config.max_motor_power,
+                        steering_scale=self.config.steering_scale,
+                    )
                     servo = next_servo_angle(
                         servo,
-                        joystick.axis(self.config.lt_axis),
-                        joystick.axis(self.config.rt_axis),
+                        lt_value,
+                        rt_value,
                         elapsed,
                         self.config,
+                        lt_rest_value=trigger_rest["lt"],
+                        rt_rest_value=trigger_rest["rt"],
+                    )
+                    axis_summary = (
+                        f"LY{left_y_axis} {left_y:+.2f}  "
+                        f"RX{right_x_axis} {right_x:+.2f}  "
+                        f"LT{lt_axis} {lt_value:+.2f}  "
+                        f"RT{rt_axis} {rt_value:+.2f}"
                     )
 
                 if transport is not None:
@@ -641,25 +697,21 @@ class GalaxyRVRSession:
                             error=str(exc) or type(exc).__name__,
                             left_power=0,
                             right_power=0,
-                            drive_armed=self._drive_armed,
                             servo_angle=servo,
+                            axis_summary=axis_summary,
                         )
                     else:
                         self._publish(
                             state=(
                                 "Rover connected; waiting for controller..."
                                 if joystick is None
-                                else (
-                                    "Ready to drive."
-                                    if self._drive_armed
-                                    else "Center both drive sticks to arm."
-                                )
+                                else "Ready to drive."
                             ),
                             error="",
                             left_power=left,
                             right_power=right,
-                            drive_armed=self._drive_armed,
                             servo_angle=servo,
+                            axis_summary=axis_summary,
                         )
                 self._stop.wait(interval)
         finally:
@@ -671,11 +723,11 @@ class GalaxyRVRSession:
             self._publish(
                 rover_connected=False,
                 controller_connected=False,
-                drive_armed=False,
                 controller_path="",
                 state="Remote closed; rover stopped.",
                 left_power=0,
                 right_power=0,
+                axis_summary="",
             )
 
     def _safe_stop(self, transport: Any) -> None:
