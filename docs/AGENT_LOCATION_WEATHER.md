@@ -17,9 +17,11 @@ validation cycle.
 
 Copy `config/example.weather.json` to the ignored `config/weather.json` to set
 the ordered location carousel. Set `"debug": true` while verifying graphics.
-The legacy renderer's small **D** control provides its historical visual
-selectors. The QML production view ignores that legacy-only preview flag and
-always shows live forecast data. Keep debug disabled for normal deployment.
+The QML production view's small **D** control opens selectors for every weather
+condition, season, day period, and moon phase. These selectors alter only the
+local visual preview; **Live** returns to provider data without mutating the
+forecast cache. The legacy renderer retains the same debugging behavior. Keep
+debug disabled for normal deployment.
 
 These are external services. A named-place lookup sends the spoken place name
 to Nominatim, and every weather lookup sends coordinates to Open-Meteo. Keep a

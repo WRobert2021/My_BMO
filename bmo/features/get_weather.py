@@ -44,7 +44,7 @@ WeatherAppFactory = Callable[..., Any]
 
 
 def _create_weather_app(*args: Any, **kwargs: Any) -> Any:
-    """Construct the Tk weather view only when its menu item is launched."""
+    """Use the active hosted Weather view, with lazy Tk fallback."""
     hosted = create_hosted_view("weather", args, kwargs)
     if hosted is not NOT_HOSTED:
         return hosted

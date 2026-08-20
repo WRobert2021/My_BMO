@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -18,6 +18,9 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
+from bmo.features.weather_config import WeatherLocationConfig  # noqa: E402
+from bmo.features.weather_view import WeatherPageData  # noqa: E402
+from bmo.location import Location  # noqa: E402
 from bmo.menu_catalog import MenuCatalog, MenuOwner  # noqa: E402
 from bmo.menu_model import IconMenuItem  # noqa: E402
 from bmo.qt.app import (  # noqa: E402
@@ -27,7 +30,42 @@ from bmo.qt.app import (  # noqa: E402
 )
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.qt.view_host import QtViewHost  # noqa: E402
+from bmo.qt.views.weather import QtWeatherView  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
+from bmo.weather import HourlyWeather, WeatherSnapshot  # noqa: E402
+
+
+def weather_snapshot(**changes: object) -> WeatherSnapshot:
+    values: dict[str, object] = {
+        "location": Location("Tomball, Texas", 30.0972, -95.6161),
+        "imperial": True,
+        "observed_at": "2026-08-10T11:15",
+        "temperature": 87,
+        "apparent_temperature": 96,
+        "weather_code": 2,
+        "high": 93,
+        "low": 75,
+        "precipitation_probability_max": 45,
+        "humidity": 72,
+        "wind_speed": 9,
+        "wind_gusts": 18,
+        "is_day": True,
+        "sunrise": "2026-08-10T06:30",
+        "sunset": "2026-08-10T20:00",
+        "hourly": tuple(
+            HourlyWeather(
+                f"2026-08-10T{hour:02}:00",
+                88 + index,
+                91 + index,
+                (0, 2, 61, 0)[index],
+                (5, 10, 30, 0)[index],
+                True,
+            )
+            for index, hour in enumerate((12, 14, 16, 20))
+        ),
+    }
+    values.update(changes)
+    return WeatherSnapshot(**values)  # type: ignore[arg-type]
 
 
 class QtFaceControllerTests(unittest.TestCase):
@@ -269,6 +307,131 @@ class QtFaceControllerTests(unittest.TestCase):
         self.assertEqual(actions, [("go", "now")])
 
 
+class QtWeatherViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QGuiApplication.instance() or QGuiApplication(
+            ["pytest-qt-weather"]
+        )
+
+    @staticmethod
+    def make_controller(root: Path) -> QtFaceController:
+        return QtFaceController(
+            config=CompactFaceConfig(
+                states={
+                    "idle": CompactFaceState(Path("missing/idle"), 500),
+                    "speaking": CompactFaceState(Path("missing/speaking"), 50),
+                }
+            ),
+            project_root=root,
+            start_timer=False,
+        )
+
+    def test_adapter_restores_complete_animated_scene_contract(self) -> None:
+        location = WeatherLocationConfig("home", "Tomball", "Tomball, Texas")
+        page = WeatherPageData(weather_snapshot())
+        announce = Mock(return_value=True)
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self.make_controller(Path(directory))
+            host = QtViewHost(controller)
+            with patch("bmo.qt.views.weather.threading.Thread") as thread:
+                view = QtWeatherView(
+                    host,
+                    locations=(location,),
+                    default_index=0,
+                    page_provider=Mock(return_value=page),
+                    announce=announce,
+                    cancel_announcements=Mock(),
+                    announcements_available=True,
+                    season_style="auto",
+                    animations=True,
+                    debug=True,
+                    announce_warnings=False,
+                    on_close=Mock(),
+                )
+                thread.call_args.kwargs["target"]()
+                state = view.payload()
+
+                self.assertEqual(state["status"], "ready")
+                self.assertEqual(state["condition"], "partly")
+                self.assertEqual(state["season"], "summer")
+                self.assertEqual(state["time"], "midday")
+                self.assertEqual(len(state["hours"]), 4)
+                self.assertTrue(state["animations"])
+                self.assertTrue(state["debug"])
+
+                view.handle_action("weather_speak", "feels")
+                spoken, completed = announce.call_args.args
+                self.assertIn("your body may feel", spoken)
+                self.assertEqual(view.payload()["speaking_key"], "feels")
+                completed()
+                self.assertIsNone(view.payload()["speaking_key"])
+                view.close()
+
+    def test_navigation_keeps_location_results_isolated(self) -> None:
+        home = WeatherLocationConfig("home", "Home", "Tomball, Texas")
+        school = WeatherLocationConfig("school", "School", "Austin, Texas")
+        pages = {
+            "home": WeatherPageData(weather_snapshot(temperature=87)),
+            "school": WeatherPageData(
+                weather_snapshot(
+                    location=Location("Austin, Texas", 30.2672, -97.7431),
+                    temperature=70,
+                )
+            ),
+        }
+        provider = Mock(side_effect=lambda location: pages[location.id])
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self.make_controller(Path(directory))
+            host = QtViewHost(controller)
+            with patch("bmo.qt.views.weather.threading.Thread") as thread:
+                view = QtWeatherView(
+                    host,
+                    locations=(home, school),
+                    default_index=0,
+                    page_provider=provider,
+                    announce=Mock(return_value=False),
+                    cancel_announcements=Mock(),
+                    announcements_available=False,
+                    on_close=Mock(),
+                )
+                first_target = thread.call_args.kwargs["target"]
+                view.handle_action("weather_next", "")
+                second_target = thread.call_args.kwargs["target"]
+                second_target()
+                first_target()
+
+                state = view.payload()
+                self.assertEqual(state["location"], "Austin, Texas")
+                self.assertEqual(state["temperature"], 70)
+                self.assertFalse(state["speech_available"])
+                view.close()
+
+    def test_provider_failure_keeps_retryable_weather_surface(self) -> None:
+        location = WeatherLocationConfig("home", "Home", "Tomball, Texas")
+        with tempfile.TemporaryDirectory() as directory:
+            controller = self.make_controller(Path(directory))
+            host = QtViewHost(controller)
+            with patch("bmo.qt.views.weather.threading.Thread") as thread:
+                view = QtWeatherView(
+                    host,
+                    locations=(location,),
+                    default_index=0,
+                    page_provider=Mock(side_effect=RuntimeError("private detail")),
+                    announce=Mock(return_value=False),
+                    cancel_announcements=Mock(),
+                    announcements_available=False,
+                    on_close=Mock(),
+                )
+                thread.call_args.kwargs["target"]()
+                state = view.payload()
+
+                self.assertEqual(state["status"], "error")
+                self.assertIn("tap to retry", state["message"])
+                self.assertNotIn("private detail", state["message"])
+                view.close()
+
+
 class QtQmlShellTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -286,6 +449,53 @@ class QtQmlShellTests(unittest.TestCase):
 
         self.assertTrue(engine.rootObjects())
         engine.deleteLater()
+
+    def test_weather_qml_contains_full_scene_and_debug_catalog(self) -> None:
+        qml_root = QML_PATH.parent
+        view = (qml_root / "WeatherView.qml").read_text(encoding="utf-8")
+        scene = (qml_root / "WeatherScene.qml").read_text(encoding="utf-8")
+        icon = (qml_root / "WeatherIcon.qml").read_text(encoding="utf-8")
+
+        for condition in (
+            "sunny",
+            "mostly-clear",
+            "partly",
+            "overcast",
+            "fog",
+            "drizzle",
+            "heavy-rain",
+            "freezing-rain",
+            "storm",
+            "heavy-snow",
+            "sleet",
+            "hail",
+            "wind",
+            "hot",
+            "cold",
+            "mixed",
+            "severe",
+        ):
+            self.assertIn(f'"{condition}"', view)
+        for season in ("spring", "summer", "fall", "winter"):
+            self.assertIn(f'"{season}"', scene)
+        for period in ("morning", "midday", "afternoon", "sunset", "night"):
+            self.assertIn(f'"{period}"', view)
+        for phase in (
+            "full",
+            "new",
+            "waxing-crescent",
+            "first-quarter",
+            "waxing-gibbous",
+            "waning-gibbous",
+            "last-quarter",
+            "waning-crescent",
+        ):
+            self.assertIn(f'"{phase}"', view + icon)
+        self.assertIn("controller.frameSource", view)
+        self.assertIn("DragHandler", view)
+        self.assertIn("clip: true", scene)
+        self.assertNotIn("☀", view + scene + icon)
+        self.assertNotIn("🌧", view + scene + icon)
 
     def test_preview_menu_uses_namespaced_project_icon_references(self) -> None:
         items = preview_menu_catalog().items

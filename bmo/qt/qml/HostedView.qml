@@ -19,6 +19,7 @@ Rectangle {
         anchors.top: parent.top
         height: 62
         color: "#102a5e"
+        visible: controller.viewKind !== "weather"
 
         Label {
             anchors.left: parent.left
@@ -44,7 +45,7 @@ Rectangle {
     Loader {
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: header.bottom
+        anchors.top: controller.viewKind === "weather" ? parent.top : header.bottom
         anchors.bottom: parent.bottom
         sourceComponent: {
             switch (controller.viewKind) {
@@ -382,51 +383,9 @@ Rectangle {
 
     Component {
         id: weatherView
-        Item {
-            Column {
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 7
-                Row {
-                    width: parent.width
-                    spacing: 10
-                    Button { width: 70; height: 42; text: "◀"; onClicked: root.send("weather_previous") }
-                    Label { width: parent.width - 310; height: 42; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.location || "Weather"; color: "#102a5e"; font.pixelSize: 22; font.bold: true }
-                    Button { width: 70; height: 42; text: "▶"; onClicked: root.send("weather_next") }
-                    Button { width: 120; height: 42; text: "REFRESH"; onClicked: root.send("weather_refresh") }
-                }
-                BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: root.viewModel.loading === true; visible: running }
-                MessageText { text: root.viewModel.error || ""; visible: text !== "" }
-                Row {
-                    visible: root.viewModel.loading !== true && (root.viewModel.error || "") === ""
-                    width: parent.width
-                    spacing: 25
-                    Column {
-                        width: 325
-                        Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.temperature || "--"; font.pixelSize: 66; font.bold: true; color: "#1578d3" }
-                        Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.condition || ""; font.pixelSize: 22; font.bold: true; color: "#102a5e" }
-                        Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.highLow || ""; font.pixelSize: 16; color: "#58708c" }
-                        Button { anchors.horizontalCenter: parent.horizontalCenter; width: 180; height: 46; text: "READ FORECAST"; enabled: root.viewModel.canAnnounce === true; onClicked: root.send("weather_announce") }
-                    }
-                    Column {
-                        width: 400
-                        spacing: 7
-                        Repeater {
-                            model: root.viewModel.details || []
-                            delegate: Rectangle {
-                                required property var modelData
-                                width: 400; height: 45; radius: 8; color: "white"; border.color: "#b7d7e8"
-                                Label { anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: "#58708c"; font.bold: true }
-                                Label { anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; text: modelData.value; color: "#102a5e"; font.pixelSize: 18; font.bold: true }
-                            }
-                        }
-                        Repeater {
-                            model: root.viewModel.alerts || []
-                            delegate: Label { required property var modelData; width: 400; wrapMode: Text.Wrap; text: "⚠ " + modelData.event + ": " + modelData.headline; color: "#b3261e"; font.bold: true }
-                        }
-                    }
-                }
-            }
+        WeatherView {
+            controller: root.controller
+            viewModel: root.viewModel
         }
     }
 

@@ -63,8 +63,9 @@ The application keeps `agent.py` as the stable startup command while implementat
   registration, local-date attention refresh, and menu persistence actions.
 - `bmo.features.calendar_view` — immutable occurrence and editor records at the
   Calendar presentation boundary.
-- `bmo.features.weather_view` — immutable forecast and alert page records at
-  the Weather presentation boundary.
+- `bmo.features.weather_view` — immutable forecast/alert page records plus the
+  toolkit-neutral season, day-period, moon, condition, and hourly scene
+  contract at the Weather presentation boundary.
 - `bmo.features.calendar_store` — versioned event and acknowledgment JSON,
   recurrence expansion, occurrence exceptions, and built-in US holidays.
 - `bmo.features.calendar_config` — private calendar-file validation without
@@ -132,8 +133,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   fullscreen image actions, and BMO vision-state presentation.
 - `bmo.ui.learning` — 800x480 learner sessions, replayable BMO instruction,
   touch exercises, teacher-plan controls, and progress presentation.
-- `bmo.ui.weather` — asynchronous location carousel, stale-response guards,
-  secure loopback bridge, owned Chromium lifecycle, and SVG forecast state.
+- `bmo.ui.weather` — legacy Tk fallback location carousel, secure loopback
+  bridge, owned Chromium lifecycle, and compatibility state wrapper.
 - `bmo.qt.controller` — Qt properties, signals, real face-frame animation,
   camera overlay state, HUD text, shared menu pages, hosted-view data, global
   overlays, selection events, and gesture translation without importing Tk.
@@ -142,12 +143,18 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.qt.view_host` — active feature/mode view lifecycle and app-factory host.
 - `bmo.qt.views` — adapters from extension-owned callbacks and typed records to
   serializable QML payloads and actions.
+- `bmo.qt.views.weather` — asynchronous per-location weather cache, stale-token
+  guards, dynamic scene refresh, scoped narration, and warning announcement
+  policy for the production QML view.
 - `bmo.qt.app` — production Qt Quick engine, runtime wiring, PTT/interrupt/menu
   dispatch, quiet-hours poll, and coordinated shutdown. It also retains a
   resource-free preview entry point for tests.
 - `bmo/qt/qml/Main.qml` — fullscreen 800x480 face, menu, HUD, attention,
   quiet-hours, typed-debug, overlay, and kiosk shortcut surface.
 - `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
+- `bmo/qt/qml/WeatherView.qml`, `WeatherScene.qml`, and `WeatherIcon.qml` —
+  production child-friendly Weather layout, seasonal/condition animation, and
+  dependency-free vector-style Canvas art.
 
 ## Neutral shared ownership
 
@@ -431,25 +438,16 @@ plan completion is reported separately from accuracy, and mastery requires
 multiple recent observations. Learner data never enters conversation memory or
 interaction archives.
 
-The weather tool contributes `graphics/Icons/weather.png` by reference while
-retaining its existing voice/model action. Opening its icon starts a separate
-800×480 Chromium kiosk surface over the same originating Tk menu. Horizontal
-swipes wrap
-through the weather-owned ordered location tuple instead of navigating the
-underlying menu. Each location is loaded on a bounded daemon worker; the Tk
-thread polls a result queue, caches successful pages for the view lifetime, and
-accepts a result only when its per-location request token is current. A late
-worker can therefore finish safely after navigation or close without touching
-destroyed widgets or replacing newer data.
-
-Because Chromium cannot instantiate the Tk component, `WeatherWebBridge`
-builds a narrow JSON adapter from the same validated `CompactFaceConfig`. The
-adapter injects canonical bounds, timing, and a current-frame endpoint into the
-local HTML before it is served. The host selects the runtime frame; the bridge
-normalizes and publishes that one raster, so CSS and JavaScript contain no
-independent face coordinates, state choice, or frame list. Weather therefore
-matches the 108×65 Tk viewport while remaining failure-isolated behind its
-tokenized loopback bridge.
+The weather tool contributes `graphics/icons/weather.png` by reference while
+retaining its existing voice/model action. In production, opening its icon
+creates a hosted QML adapter and an 800×480 Qt Quick scene inside the existing
+application window. It starts no browser, server, temporary profile, or second
+event loop. Horizontal swipes and header controls wrap through the
+weather-owned ordered location tuple instead of navigating the underlying
+menu. Each location is loaded on a bounded daemon worker and cached for the
+view lifetime. Per-location tokens prevent late workers from replacing newer
+data or touching a closed view; failures remain retryable and independent of
+other features.
 
 `WeatherSnapshot` is the immutable neutral data boundary used by both the
 historical short spoken report and the GUI. Open-Meteo supplies current values,
@@ -458,36 +456,32 @@ values. The report calls `precipitation_probability_max` the “highest hourly
 rain chance today”; it is not rainfall volume. The scene composes season,
 day/night, primary WMO condition, and measured modifiers such as heat, cold,
 humidity, and high gusts. Seasons affect only scenery—winter never implies
-snow. The 800×480 presentation uses weather-owned HTML, CSS, and inline SVG:
-layered seasonal ground, animated condition particles, childlike current and
-hourly icons, and locally calculated eight-phase moon art. Forecast cards use
-real alpha transparency. The close control samples the current frame selected
-by the application animation loop through the feature's narrow face provider.
-The loopback bridge normalizes that frame with the shared compact-face adapter
-and exposes only the resulting 108×65 raster; the browser owns neither face
-state nor animation sequencing and falls back to a simple inline face whenever
-the current host frame is unavailable. The hourly strip drops
+snow. `bmo.features.weather_view` serializes this toolkit-neutral contract once
+for QML and the temporary legacy renderer. The production presentation uses
+weather-owned Qt Quick items and Canvas art: layered seasonal ground, spring
+petals, fall leaves, animated rain/snow/hail, wind and lightning, childlike
+current/hourly icons, and locally calculated eight-phase moon art. Forecast
+cards use real alpha transparency. Its close control displays
+`QtFaceController.frameSource`, the same frame selected by the global
+application animation loop. Scoped Weather speech therefore animates the exact
+same BMO face without a parallel face provider or timer. The hourly strip drops
 past local forecast points as the view remains open, and each cached location
 is refreshed on a bounded fifteen-minute interval so its remaining hours and
 day period advance without reopening the menu. All tap speech uses
 deterministic templates rather than a model.
 
-Browser actions cross a feature-owned HTTP bridge bound only to a random
-`127.0.0.1` port. A per-view path token, strict origin and action validation,
-bounded request bodies, a restrictive content-security policy, and a dedicated
-temporary Chromium profile isolate the surface from the LAN and from the
-user's browser data. The credential store is explicitly set to the temporary
-profile's basic store so Chromium cannot block the kiosk with a desktop keyring
-dialog. Closing Weather stops the Chromium process group, server thread,
-timers, and scoped speech. A browser-ready signal and periodic heartbeat close
-an unresponsive or blank kiosk and return to the menu. If Chromium cannot
-start, the feature reports the failure without affecting voice weather or
-another feature.
+Closing production Weather stops its QTimer, invalidates pending workers,
+cancels feature-scoped speech, and returns through the shared hosted-view
+lifecycle. QML actions cross only the existing in-process Qt signal boundary.
+The explicit `tk_agent.py` fallback retains the tokenized loopback Chromium
+implementation for its temporary validation cycle, including its isolated
+profile, heartbeat, and process/server cleanup.
 
 Setting private weather configuration `debug` to true exposes a collapsible
-browser-only preview panel for every visual condition, season, day period, and
-moon phase. Preview selection never mutates provider data or the Python cache;
-Live Weather clears the override. Debug controls remain absent when disabled.
+QML preview panel for every visual condition, season, day period, and moon
+phase. Preview selection never mutates provider data or the Python cache; Live
+Weather clears the override. Debug controls remain absent when disabled. The
+legacy renderer retains equivalent selectors.
 
 Optional National Weather Service alerts are fetched by forecast coordinates
 and cached independently. An alert-provider error is reported generically and
@@ -505,9 +499,10 @@ that a native or Python dependency works on the deployment target. New
 dependencies must satisfy the compatibility and justification policy in
 `AGENTS.md` before they are added.
 
-The weather view requires the Raspberry Pi OS `chromium` system package. The
-setup script installs and verifies its executable; no Python webview package is
-added. Chromium runs only while the weather view is open.
+The production weather view uses the project's existing PySide6/Qt Quick
+runtime and adds no dependency. Raspberry Pi OS Chromium is needed only by the
+temporary `tk_agent.py` fallback weather renderer and runs only while that
+legacy view is open.
 
 Calendar persistence, recurrence, color selection, and quiet-hours enforcement
 use only Python's standard library and existing Tk/Pillow packages. The system

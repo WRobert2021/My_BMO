@@ -105,7 +105,7 @@ configuration list.
 | `bmo/features/calendar_config.py` | Calendar-owned private configuration. |
 | `bmo/features/calendar_store.py` | Event/acknowledgement storage, recurrence expansion, occurrence overrides, and US holidays. |
 | `bmo/features/calendar_view.py` | Toolkit-neutral calendar occurrence and editor records shared with presentation adapters. |
-| `bmo/features/weather_view.py` | Toolkit-neutral weather-page records shared with presentation adapters. |
+| `bmo/features/weather_view.py` | Toolkit-neutral weather-page records and condition/season/time/moon/hourly scene contract shared with presentation adapters. |
 | `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
 | `bmo/features/galaxy_rvr.py` | Menu-only Bluetooth gamepad remote, GalaxyRVR LAN protocol, camera snapshots, and safe-stop lifecycle. |
 | `bmo/features/galaxy_rvr_config.py` | GalaxyRVR-owned private network, photo, controller mapping, motion, camera, and timeout configuration. |
@@ -160,15 +160,18 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/album.py` | Thumbnail pages, fullscreen photos, Back/Wastebasket/BMO actions, and vision presentation. |
 | `bmo/ui/galaxy_rvr.py` | Legacy Tk GalaxyRVR remote status view over the feature-owned controller session. |
 | `bmo/ui/learning.py` | Learner sessions, generic activity rendering, teacher controls, plan/profile management, reports, and scoped speech. |
-| `bmo/ui/weather.py` | Forecast-to-view state, asynchronous carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
-| `bmo/ui/weather_web/index.html` | Weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
+| `bmo/ui/weather.py` | Legacy Tk fallback weather carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
+| `bmo/ui/weather_web/index.html` | Legacy weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
 | `bmo/qt/controller.py` | Qt properties/signals for face frames, overlays, HUD, menus, hosted views, attentions, quiet hours, and kiosk gestures. |
 | `bmo/qt/presentation.py` | Queued Qt implementation of the runtime presentation port. |
 | `bmo/qt/view_host.py` | Feature/mode app-factory host and active QML view lifecycle. |
-| `bmo/qt/views/` | QML adapters for Timer, Calendar, Weather, Album, Learning, Pup Pairs, and Twenty Questions. |
+| `bmo/qt/views/` | QML adapters for Timer, Calendar, Weather, Album, Learning, Pup Pairs, and Twenty Questions; the Weather adapter owns async cache/refresh and scoped narration. |
 | `bmo/qt/app.py` | Production Qt Quick engine, runtime wiring, shutdown, and isolated preview ownership. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 face, menu, global overlays, debug input, and hosted-view surface. |
-| `bmo/qt/qml/HostedView.qml` | Touch presentation for every built-in feature and interaction mode. |
+| `bmo/qt/qml/HostedView.qml` | Touch presentation host for every built-in feature and interaction mode. |
+| `bmo/qt/qml/WeatherView.qml` | Production 800x480 child-friendly Weather layout, interaction, live face, carousel, and debug panel. |
+| `bmo/qt/qml/WeatherScene.qml` | Seasonal/day-period ground, particles, and animated weather effects. |
+| `bmo/qt/qml/WeatherIcon.qml` | Dependency-free Canvas current/hourly condition and eight-phase moon art. |
 
 ## Configuration examples
 

@@ -47,6 +47,11 @@ PySide6 and Qt Quick/QML and the remaining physical-kiosk acceptance work.
 15. **Production switch** — `agent.py`, `qt_agent.py`, `start_agent.sh`, and the
     desktop launcher use Qt. `typed_agent.py` is also Qt. `tk_agent.py` is the
     explicit temporary rollback path.
+16. **Weather visual parity** — the production hosted Weather view now owns its
+    full QML scene: seasonal ground, day periods, moon phases, condition
+    particles, large current/hourly Canvas art, transparent narration cards,
+    location carousel, exact live BMO face, and non-mutating debug previews.
+    The production path starts no Chromium process or loopback bridge.
 
 ## Ownership after the switch
 
@@ -68,7 +73,9 @@ runtime and Qt presentation path.
 Run the full suite plus physical-kiosk checks for cold start, repeated
 menu/view cycles, PTT, touch and VNC, quiet hours, attentions, every enabled
 feature/mode, interrupted speech, clean exit, restart, memory persistence, and
-long-running stability. Record the Qt scene-graph backend, frame
+long-running stability. Weather acceptance must cover every debug condition,
+season, day period, moon phase, left/right location swipe, tap narration, and
+animated face/particle cleanup. Record the Qt scene-graph backend, frame
 responsiveness, RAM use, worker cleanup, and absence of orphan audio processes.
 
 Keep `tk_agent.py` for one validation cycle. Remove the fallback and dead Tk

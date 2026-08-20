@@ -260,14 +260,14 @@ shown in `config/example.features.json`:
   decorate the normal idle face; missing art cannot prevent startup.
 - The weather feature contributes `graphics/icons/weather.png` by reference
   and keeps the existing spoken “what is the weather” action. Its full-screen
-  child-friendly view renders weather-owned HTML/CSS/SVG through a dedicated
-  Chromium kiosk process. It animates sun, moon phases, cloud, fog, rain,
-  sleet, snow, thunder, hail, wind, seasonal scenery, and day/night layers.
-  Chromium uses a temporary profile and a tokenized loopback-only bridge;
-  it bypasses desktop credential stores because the kiosk never accepts or
-  retains credentials. Closing Weather stops both resources and reveals the
-  unchanged Tk menu. A renderer heartbeat automatically returns to the menu if
-  Chromium ever opens without a working weather page.
+  child-friendly production view renders directly in Qt Quick/QML. It animates
+  sun, eight moon phases, cloud, fog, rain, sleet, snow, thunder, hail, wind,
+  spring/fall particles, seasonal ground, and morning-through-night layers.
+  It uses the application's exact live BMO face frame, so Weather narration
+  animates the same upper-right face. It opens no browser or local port and
+  closing Weather releases its refresh timer and scoped speech. The explicit
+  `tk_agent.py` fallback retains the older temporary-profile Chromium view for
+  its validation cycle.
   Temperature,
   feels-like, high/low, precipitation chance, condition, alert, and hourly
   cards are tappable BMO announcements. Swiping left or right wraps through

@@ -37,7 +37,7 @@ from bmo.features.weather_narration import (
     narrate_temperature,
     season_for,
 )
-from bmo.features.weather_view import WeatherPageData
+from bmo.features.weather_view import WeatherPageData, weather_view_state
 from bmo.ui.compact_face import (
     CompactFace,
     CompactFaceConfig,
@@ -399,51 +399,19 @@ def weather_web_state(
     subtitle: str = "",
     speaking_key: str | None = None,
 ) -> dict[str, Any]:
-    """Serialize immutable weather data into the local page's narrow contract."""
-    snapshot = data.snapshot
-    period = day_period_for(snapshot, local_now)
-    visual = _visual_condition(data)
-    season = season_for(
-        snapshot.location.latitude,
-        local_now.month,
-        season_style,
-    ).value
-    hours = select_upcoming_hours(snapshot, local_now)
-    serialized_hours = [
-        {
-            "key": f"hour:{index}",
-            "time": _format_hour(hour.time),
-            "temperature": round(hour.temperature),
-            "icon": _hour_icon(hour),
-        }
-        for index, hour in enumerate(hours)
-    ]
-    alert = data.alerts[0] if data.alerts else None
-    flavor = _condition_flavor(data, period, visual)
-    return {
-        "status": "ready",
-        "location": snapshot.location.name,
-        "condition": visual,
-        "condition_name": _condition_title(data, period, visual),
-        "modifier": _condition_modifier(data, period, visual, local_now),
-        "speech": subtitle or flavor,
-        "temperature": round(snapshot.temperature),
-        "feels": round(snapshot.apparent_temperature),
-        "high": round(snapshot.high),
-        "low": round(snapshot.low),
-        "rain": round(snapshot.precipitation_probability_max),
-        "time": period,
-        "season": season,
-        "phase": moon_phase_for(local_now).replace("_", "-"),
-        "hours": serialized_hours,
-        "page_index": page_index,
-        "page_count": page_count,
-        "alert": alert.event if alert is not None else None,
-        "animations": animations,
-        "debug": debug,
-        "speech_available": speech_available,
-        "speaking_key": speaking_key,
-    }
+    """Compatibility wrapper for the legacy Chromium renderer."""
+    return weather_view_state(
+        data,
+        local_now,
+        season_style=season_style,
+        animations=animations,
+        debug=debug,
+        speech_available=speech_available,
+        page_index=page_index,
+        page_count=page_count,
+        subtitle=subtitle,
+        speaking_key=speaking_key,
+    )
 
 
 class _WeatherHTTPServer(ThreadingHTTPServer):
