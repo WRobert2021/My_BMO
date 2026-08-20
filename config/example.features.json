@@ -86,6 +86,13 @@
       }
     },
     {
+      "module": "bmo.features.galaxy_rvr",
+      "enabled": true,
+      "settings": {
+        "config_path": "config/galaxy_rvr.json"
+      }
+    },
+    {
       "module": "bmo.features.say_hello",
       "enabled": false,
       "settings": {

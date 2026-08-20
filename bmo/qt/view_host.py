@@ -50,6 +50,7 @@ class QtViewHost(QObject):
         from bmo.qt.views import (
             QtAlbumView,
             QtCalendarView,
+            QtGalaxyRVRView,
             QtLearningView,
             QtMatchingGameView,
             QtTimerView,
@@ -62,6 +63,7 @@ class QtViewHost(QObject):
             ("calendar", QtCalendarView),
             ("weather", QtWeatherView),
             ("album", QtAlbumView),
+            ("galaxy_rvr", QtGalaxyRVRView),
             ("learning", QtLearningView),
             ("matching_game", QtMatchingGameView),
             ("twenty_questions", QtTwentyQuestionsView),

@@ -191,6 +191,7 @@ class QtFaceControllerTests(unittest.TestCase):
             "bmo.features.set_timer",
             "bmo.features.album",
             "bmo.features.learning",
+            "bmo.features.galaxy_rvr",
             "bmo.modes.twenty_questions",
             "bmo.modes.matching_game",
         )

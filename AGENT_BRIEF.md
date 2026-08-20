@@ -107,6 +107,8 @@ configuration list.
 | `bmo/features/calendar_view.py` | Toolkit-neutral calendar occurrence and editor records shared with presentation adapters. |
 | `bmo/features/weather_view.py` | Toolkit-neutral weather-page records shared with presentation adapters. |
 | `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
+| `bmo/features/galaxy_rvr.py` | Menu-only Bluetooth gamepad remote, GalaxyRVR LAN protocol, camera snapshots, and safe-stop lifecycle. |
+| `bmo/features/galaxy_rvr_config.py` | GalaxyRVR-owned private network, photo, controller mapping, motion, camera, and timeout configuration. |
 
 ## Learning feature modules
 
@@ -156,6 +158,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/calendar.py` | Day/month/year views, event editor, recurrence controls, event scrolling, and narration actions. |
 | `bmo/ui/quiet_hours.py` | Fullscreen sleeping cover and four-digit touch keypad. |
 | `bmo/ui/album.py` | Thumbnail pages, fullscreen photos, Back/Wastebasket/BMO actions, and vision presentation. |
+| `bmo/ui/galaxy_rvr.py` | Legacy Tk GalaxyRVR remote status view over the feature-owned controller session. |
 | `bmo/ui/learning.py` | Learner sessions, generic activity rendering, teacher controls, plan/profile management, reports, and scoped speech. |
 | `bmo/ui/weather.py` | Forecast-to-view state, asynchronous carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
 | `bmo/ui/weather_web/index.html` | Weather kiosk HTML/CSS/JavaScript renderer, SVG scenes, hourly cards, bridge polling, touch/swipe actions, and debug preview. |
@@ -176,6 +179,7 @@ Modes are longer interactions that temporarily own user input.
 | `config/example.weather.json` | Units, locations, carousel default, visual flags, and optional alerts. |
 | `config/example.calendar.json` | Calendar data/overlay paths, categories, holidays, and spoken notes. |
 | `config/example.learning.json` | Learning data/art paths, teacher area, session/mastery limits, fonts, speech, and debug seed. |
+| `config/example.galaxy_rvr.json` | GalaxyRVR LAN address, controller mapping, motion/servo limits, camera preview, photo storage, and timeouts. |
 | `config/example.quiet_hours.json` | Schedule, weekdays, passcode, and sleeping-face path. |
 | `config/example.compact_face.json` | Compact-face state directories and animation timing. |
 
@@ -196,6 +200,7 @@ Modes are longer interactions that temporarily own user input.
 | Calendar | `tests/test_calendar.py` |
 | Camera | `tests/test_camera.py` |
 | Album | `tests/test_album.py` |
+| GalaxyRVR remote | `tests/test_galaxy_rvr.py` |
 | Learning | `tests/test_learning_curriculum.py`, `tests/test_learning_feature.py`, `tests/test_learning_store.py`, `tests/test_learning_ui.py` |
 | Matching game | `tests/test_matching_game.py` |
 | Twenty Questions | `tests/test_twenty_questions.py` |

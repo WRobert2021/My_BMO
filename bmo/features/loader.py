@@ -25,6 +25,7 @@ DEFAULT_ROUTABLE_FEATURE_MODULES = (
 DEFAULT_MENU_FEATURE_MODULES = (
     "bmo.features.album",
     "bmo.features.learning",
+    "bmo.features.galaxy_rvr",
 )
 DEFAULT_FEATURE_MODULES = (
     *DEFAULT_ROUTABLE_FEATURE_MODULES,

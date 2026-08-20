@@ -55,6 +55,7 @@ Rectangle {
             case "twenty_questions": return twentyView
             case "matching_game": return matchingView
             case "learning": return learningView
+            case "galaxy_rvr": return galaxyRvrView
             default: return unknownView
             }
         }
@@ -66,6 +67,149 @@ Rectangle {
         wrapMode: Text.Wrap
         color: "#b3261e"
         font.pixelSize: 14
+    }
+
+    Component {
+        id: galaxyRvrView
+        Item {
+            id: galaxyPage
+            property int previewToken: 0
+
+            Timer {
+                interval: Math.max(100, root.viewModel.previewIntervalMs || 250)
+                running: root.viewModel.previewEnabled === true
+                         && root.viewModel.rover_connected === true
+                         && root.viewModel.taking_photo !== true
+                repeat: true
+                triggeredOnStart: true
+                onTriggered: parent.previewToken += 1
+            }
+
+            Row {
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 14
+
+                Rectangle {
+                    width: 490
+                    height: parent.height
+                    radius: 10
+                    color: "#102a5e"
+                    border.color: "#b7d7e8"
+
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        visible: root.viewModel.previewEnabled === true
+                                 && root.viewModel.rover_connected === true
+                        source: visible
+                                ? root.viewModel.captureUrl + "?t=" + galaxyPage.previewToken
+                                : ""
+                        cache: false
+                        asynchronous: true
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    Column {
+                        anchors.centerIn: parent
+                        width: parent.width - 40
+                        spacing: 10
+                        visible: root.viewModel.previewEnabled !== true
+                                 || root.viewModel.rover_connected !== true
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: root.viewModel.rover_connected === true
+                                  ? "CAMERA PREVIEW DISABLED"
+                                  : "WAITING FOR GALAXYRVR"
+                            color: "white"
+                            font.pixelSize: 21
+                            font.bold: true
+                        }
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                            text: "Configured rover: " + (root.viewModel.host || "")
+                            color: "#bde7ff"
+                            font.pixelSize: 15
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 8
+                        height: 36
+                        radius: 6
+                        color: "#cc102a5e"
+                        Label {
+                            anchors.centerIn: parent
+                            text: "MOTORS  "
+                                  + (root.viewModel.left_power || 0)
+                                  + " / "
+                                  + (root.viewModel.right_power || 0)
+                                  + "     CAMERA  "
+                                  + (root.viewModel.servo_angle || 0)
+                                  + "°"
+                            color: "white"
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+                    }
+                }
+
+                Column {
+                    width: parent.width - 504
+                    spacing: 8
+
+                    Label {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        text: root.viewModel.state || "Starting remote..."
+                        color: "#102a5e"
+                        font.pixelSize: 18
+                        font.bold: true
+                    }
+                    Label {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        visible: (root.viewModel.error || "") !== ""
+                        text: root.viewModel.error || ""
+                        color: "#b3261e"
+                        font.pixelSize: 13
+                    }
+                    Repeater {
+                        model: root.viewModel.controls || []
+                        delegate: Label {
+                            required property string modelData
+                            width: 260
+                            wrapMode: Text.Wrap
+                            text: "• " + modelData
+                            color: "#58708c"
+                            font.pixelSize: 14
+                        }
+                    }
+                    Button {
+                        width: parent.width
+                        height: 48
+                        text: root.viewModel.taking_photo ? "SAVING..." : "SNAP PHOTO (A)"
+                        enabled: root.viewModel.taking_photo !== true
+                                 && root.viewModel.rover_connected === true
+                        onClicked: root.send("galaxy_rvr_snapshot")
+                    }
+                    Label {
+                        width: parent.width
+                        elide: Text.ElideMiddle
+                        visible: (root.viewModel.last_photo || "") !== ""
+                        text: "Saved: " + (root.viewModel.last_photo || "")
+                        color: "#3b8e63"
+                        font.pixelSize: 12
+                    }
+                }
+            }
+        }
     }
 
     Component {

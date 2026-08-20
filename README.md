@@ -170,6 +170,9 @@ Configuration is split by audience:
 - `config/learning.json` is owned only by the menu-launched Pre-K learning
   feature. It controls its contained data/art roots, teacher PIN, session and
   mastery limits, readable fonts, and scoped speech/replay behavior.
+- `config/galaxy_rvr.json` is owned only by the menu-launched GalaxyRVR
+  remote. It selects the rover's local IPv4 address, photo folder, Linux
+  joystick mapping, motor/servo limits, camera preview, and timeouts.
 - `config/compact_face.json` is owned by the neutral UI layer. It maps runtime
   states to contained PNG directories under `faces/` and controls the one
   shared refresh/layout specification used by Menu, features, modes, and
@@ -188,6 +191,7 @@ cp config/example.weather.json config/weather.json
 cp config/example.calendar.json config/calendar.json
 cp config/example.quiet_hours.json config/quiet_hours.json
 cp config/example.learning.json config/learning.json
+cp config/example.galaxy_rvr.json config/galaxy_rvr.json
 cp config/example.compact_face.json config/compact_face.json
 ```
 
@@ -311,6 +315,18 @@ shown in `config/example.features.json`:
   existing view-scoped Piper voice; no model, microphone, direct phrase, or
   separate TTS path is exposed. See [the Learning guide](docs/AGENT_LEARNING.md) for
   configuration, scoring, storage recovery, and lesson-extension details.
+- The menu-only GalaxyRVR feature uses `graphics/icons/rc_remote.png`. Pair a
+  Bluetooth controller in Raspberry Pi OS before opening the view; the remote
+  reads `/dev/input/js*` directly and adds no Python dependency. The default
+  mapping is left-stick Y for forward/backward, right-stick X for steering,
+  LT/RT for camera tilt, and A for a photo. It connects to SunFounder's
+  firmware-2.x WebSocket on port `30102`, previews/captures from camera port
+  `9000`, retries transient disconnects, and sends a motor stop whenever the
+  controller disappears or the view closes. Copy
+  `config/example.galaxy_rvr.json` to `config/galaxy_rvr.json`, set `host` to
+  the rover's LAN address, and adjust the axis/button numbers if the controller
+  exposes a different Linux mapping. Photos are saved atomically under the
+  configured `photo_directory`.
 
 A **mode** is a long-lived interaction, such as Twenty Questions or the Pup
 Pairs UI. Modes have an active/inactive lifecycle and choose whether input uses

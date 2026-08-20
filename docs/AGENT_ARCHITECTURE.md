@@ -39,6 +39,10 @@ The application keeps `agent.py` as the stable startup command while implementat
   recording, and vision follow-up results.
 - `bmo.features.album` — menu-only photo discovery, root-containment checks,
   FreeDesktop Wastebasket moves, and album-view registration.
+- `bmo.features.galaxy_rvr` — menu-only Linux joystick polling, dependency-free
+  GalaxyRVR WebSocket control, camera snapshots, reconnects, and safe stops.
+- `bmo.features.galaxy_rvr_config` — private rover address, controller mapping,
+  motion, servo, preview, photo, and timeout validation.
 - `bmo.features.learning` — menu-only Pre-K curriculum registration, private
   configuration, deterministic lesson engine, and local learner-data ownership.
 - `bmo.features.learning.curriculum` — validated, prerequisite-aware literacy,
@@ -382,6 +386,20 @@ the full-screen image with BMO in the upper-right corner, and queues a generic
 vision turn on the normal interaction worker. The feature never receives
 `BotGUI`, model objects, or an interaction archive.
 
+The GalaxyRVR feature contributes `graphics/icons/rc_remote.png` by reference
+and likewise has no voice, model, prompt, alias, or executable-tool surface.
+Opening it starts one feature-owned daemon worker that reads the paired
+Bluetooth controller through Linux `/dev/input/js*`, connects directly to the
+official rover firmware's binary WebSocket protocol, and reports immutable
+status into the hosted Qt or legacy Tk view. Left-stick Y supplies throttle,
+right-stick X supplies differential steering, LT/RT move the camera servo, and
+the A button asynchronously downloads a JPEG to the configured photo folder.
+The UI may poll the camera's HTTP capture endpoint for a bounded live preview.
+Controller or network loss stops both motors; closing the view sends a final
+stop, releases the device and socket, and leaves other features untouched.
+All network, mapping, motion, camera, and retry choices belong to the ignored
+`config/galaxy_rvr.json`, documented by `config/example.galaxy_rvr.json`.
+
 The Learning feature contributes `graphics/icons/learning.png` by reference
 and likewise has no voice, model, prompt, alias, direct-matching, or executable
 tool surface. It opens only from the touch menu. Its 800x480 Tk canvas presents
@@ -516,6 +534,13 @@ learner data or the teacher PIN. Optional artwork lookups are contained under
 `graphics/learning`, but the current repository policy keeps `graphics/`
 read-only, so the feature has complete original Canvas-drawn fallbacks.
 
+GalaxyRVR control uses only the Python standard library and the Linux joystick
+character-device API, so it adds no package or system dependency. Bluetooth
+pairing remains owned by Raspberry Pi OS. Control frames are small masked RFC
+6455 binary messages sent to firmware port 30102; camera captures use the
+firmware's HTTP `/capture` endpoint on port 9000 and are size-bounded before an
+atomic local write. The rover must be on the same IPv4 LAN as the kiosk.
+
 The same Python entry point is used on macOS and Raspberry Pi. The Python
 virtual environment owns Python packages only. Whisper.cpp, Piper and its voice
 models, and the wake-word model are project-local native/model artifacts;
@@ -563,7 +588,7 @@ Features and modes solve different routing problems:
 ### Feature module contract
 
 The `features` list lives in `config/features.json`. Omitting the key loads the
-nine modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+ten modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
 default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.
