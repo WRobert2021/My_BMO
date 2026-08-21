@@ -307,8 +307,9 @@ Their registries expose those contributions in configuration order, and
 `BotGUI` maps them to generic five-column, three-row icon-grid pages without
 checking concrete extension names. Each page holds up to fifteen actions;
 additional actions are placed on later swipeable pages. Grid cells render only
-their alpha-preserving icons, without tile backgrounds, borders, or labels;
-each invisible cell remains the full touch target. A mode tap queues the
+their alpha-preserving icons without labels or boxed tile borders; Qt places a
+low-opacity circular color halo behind each icon while Tk retains the plain
+icon treatment. Each invisible cell remains the full touch target. A mode tap queues the
 selected mode for the normal interaction worker, interrupting wake-word waiting
 without starting mode lifecycle work on Tk's event thread; completion is posted
 back to the presentation dispatcher before the originating menu is revealed. A
@@ -737,6 +738,14 @@ speaking; a different mode still cannot replace the active owner. Both adapters'
 `show_in_menu` settings default to `true`; setting
 the Twenty Questions value to `false` hides only its menu entry and leaves
 voice launch enabled.
+
+Pup Pairs exposes its core-owned minimum and artwork-derived maximum pair count
+to the Qt view. Large minus and plus controls change that value one pair at a
+time, and the portrait grid retains at least a 64-pixel-wide full-card touch
+target even at the maximum 28-card board. Winner announcements use the shared
+speech queue's completion callback to restore the compact face to idle; a new
+round invalidates an older announcement callback so it cannot overwrite the
+new round's face state.
 
 Twenty Questions reads `data/20_questions/data.jsonl` only when a game starts.
 The strict loader keeps that base catalog immutable and builds an inverted

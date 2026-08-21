@@ -1495,8 +1495,14 @@ class BotGUI:
             {"role": "assistant", "content": assistant_text}
         )
 
-    def enqueue_speech(self, text: str) -> None:
+    def enqueue_speech(
+        self,
+        text: str,
+        on_complete: Callable[[], None] | None = None,
+    ) -> None:
         if self._quiet_hours_locked():
+            if on_complete is not None:
+                self._dispatch_ui(on_complete)
             return
         speech_path = (
             self.current_interaction.speech_path()
@@ -1504,7 +1510,13 @@ class BotGUI:
             else None
         )
         with self.tts_queue_lock:
-            self.tts_queue.append(_SpeechQueueItem(text, speech_path))
+            self.tts_queue.append(
+                _SpeechQueueItem(
+                    text,
+                    speech_path,
+                    on_complete=on_complete,
+                )
+            )
 
     def _enqueue_scoped_speech(
         self,

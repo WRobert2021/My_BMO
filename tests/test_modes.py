@@ -824,6 +824,8 @@ class MatchingGameModeTests(unittest.TestCase):
             states[-1],
             (BotStates.SPEAKING, "BMO is announcing the winner."),
         )
+        created["on_player_change"]("complete")
+        self.assertEqual(states[-1], (BotStates.IDLE, "Game over."))
         created["on_player_change"]("human")
         self.assertEqual(states[-1], (BotStates.IDLE, "Your turn."))
 

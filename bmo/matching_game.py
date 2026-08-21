@@ -336,7 +336,7 @@ class MatchingGameApp:
         *,
         embedded: bool = False,
         on_close: Callable[[], None] | None = None,
-        announce: Callable[[str], None] | None = None,
+        announce: Callable[[str, Callable[[], None] | None], None] | None = None,
         face_provider: Callable[[], Image.Image | None] | None = None,
         on_player_change: Callable[[str], None] | None = None,
         history: MatchingGameHistory | None = None,
@@ -927,7 +927,14 @@ class MatchingGameApp:
         if self.announce:
             if self.on_player_change:
                 self.on_player_change("speaking")
-            self.announce(spoken)
+            self.announce(
+                spoken,
+                lambda: (
+                    self.on_player_change("complete")
+                    if self.on_player_change
+                    else None
+                ),
+            )
         self.win_items = [
             self.canvas.create_rectangle(
                 177,

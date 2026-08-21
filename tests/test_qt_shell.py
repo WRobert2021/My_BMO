@@ -552,6 +552,7 @@ class QtQmlShellTests(unittest.TestCase):
         self.assertNotIn('text: "Selected:', source)
         self.assertNotIn("bmoUi.menuSelection", source)
         self.assertIn('objectName: "menuCompactFace"', source)
+        self.assertIn('objectName: "menuIconHalo"', source)
         self.assertIn("anchors.horizontalCenter: parent.horizontalCenter", source)
         self.assertIn('color: "#fff3d3"', source)
 
@@ -576,11 +577,100 @@ class QtQmlShellTests(unittest.TestCase):
             qml,
         )
         self.assertIn("property int cardColumns: cardCount <= 16 ? 4", qml)
+        self.assertIn("Math.max(64", qml)
+        self.assertIn('root.send("matching_pair_delta", -1)', qml)
+        self.assertIn('root.send("matching_pair_delta", 1)', qml)
+        self.assertNotIn("model: [4, 6, 8]", qml)
         self.assertIn('objectName: "hostedCompactFace"', qml)
         self.assertIn("x: 684", qml)
         self.assertIn("y: 5", qml)
         self.assertIn("width: 108", qml)
         self.assertIn("height: 65", qml)
+
+    def test_matching_pair_controls_step_and_clamp_to_available_art(self) -> None:
+        host = Mock()
+        view = QtMatchingGameView(
+            host,
+            history=MatchingGameHistory(path=None),
+        )
+
+        view.handle_action("matching_pair_delta", "-1")
+        self.assertEqual(view.pair_count, 5)
+        for _index in range(20):
+            view.handle_action("matching_pair_delta", "-1")
+        self.assertEqual(view.pair_count, 4)
+        self.assertEqual(len(view.model.cards), 8)
+
+        for _index in range(20):
+            view.handle_action("matching_pair_delta", "1")
+        self.assertEqual(view.pair_count, 14)
+        self.assertEqual(len(view.model.cards), 28)
+
+    def test_matching_winner_announcement_restores_face_when_speech_finishes(
+        self,
+    ) -> None:
+        completions: list[object] = []
+        players: list[str] = []
+        spoken: list[str] = []
+
+        def announce(text: str, on_complete: object) -> None:
+            spoken.append(text)
+            completions.append(on_complete)
+
+        view = QtMatchingGameView(
+            Mock(),
+            history=MatchingGameHistory(path=None),
+            announce=announce,
+            on_player_change=players.append,
+        )
+        view.model.matched = {card.card_id for card in view.model.cards}
+        view.model.scores["human"] = view.pair_count
+
+        self.assertTrue(view._finish_if_complete())
+        self.assertEqual(players, ["speaking"])
+        self.assertIn("You win", spoken[0])
+
+        completion = completions[0]
+        self.assertTrue(callable(completion))
+        completion()
+        self.assertEqual(players[-1], "complete")
+
+    def test_new_matching_round_ignores_old_announcement_completion(self) -> None:
+        completions: list[object] = []
+        players: list[str] = []
+        view = QtMatchingGameView(
+            Mock(),
+            history=MatchingGameHistory(path=None),
+            announce=lambda _text, done: completions.append(done),
+            on_player_change=players.append,
+        )
+        view.model.matched = {card.card_id for card in view.model.cards}
+
+        self.assertTrue(view._finish_if_complete())
+        view.handle_action("matching_restart", "")
+        completion = completions[0]
+        self.assertTrue(callable(completion))
+        completion()
+
+        self.assertEqual(players[-1], "human")
+
+    def test_runtime_speech_queue_retains_mode_completion_callback(self) -> None:
+        import threading
+
+        from bmo.runtime import AssistantRuntime
+
+        runtime = AssistantRuntime.__new__(AssistantRuntime)
+        runtime.kiosk_access = Mock()
+        runtime.kiosk_access.is_locked.return_value = False
+        runtime.current_interaction = None
+        runtime.tts_queue = []
+        runtime.tts_queue_lock = threading.Lock()
+        completion = Mock()
+
+        runtime.enqueue_speech("Winner announcement", completion)
+
+        self.assertEqual(runtime.tts_queue[0].text, "Winner announcement")
+        self.assertIs(runtime.tts_queue[0].on_complete, completion)
 
     def test_weather_qml_contains_full_scene_and_debug_catalog(self) -> None:
         qml_root = QML_PATH.parent

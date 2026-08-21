@@ -17,6 +17,8 @@ SpeakResponse = Callable[[str, str | None], None]
 RememberTurn = Callable[[str, str], None]
 Chat = Callable[..., Any]
 DispatchUi = Callable[[Callable[[], None]], None]
+AnnouncementComplete = Callable[[], None]
+Announce = Callable[[str, AnnouncementComplete | None], None]
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,7 @@ class ModeRuntimeContext:
     remember_turn: RememberTurn
     wait_for_tts: Callable[[], None]
     set_state: SetState
-    announce: Callable[[str], None]
+    announce: Announce
     face_provider: Callable[[], Image.Image | None]
     dispatch_ui: DispatchUi | None = None
 

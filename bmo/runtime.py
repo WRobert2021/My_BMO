@@ -749,12 +749,20 @@ class AssistantRuntime:
             )
         )
 
-    def enqueue_speech(self, text: str) -> None:
+    def enqueue_speech(
+        self,
+        text: str,
+        on_complete: Callable[[], None] | None = None,
+    ) -> None:
         if self.quiet_hours_locked():
+            if on_complete is not None:
+                self.presentation.call_soon(on_complete)
             return
         path = self.current_interaction.speech_path() if self.current_interaction else None
         with self.tts_queue_lock:
-            self.tts_queue.append(_SpeechQueueItem(text, path))
+            self.tts_queue.append(
+                _SpeechQueueItem(text, path, on_complete=on_complete)
+            )
 
     def _enqueue_scoped_speech(
         self,

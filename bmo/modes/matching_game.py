@@ -137,6 +137,8 @@ class MatchingGameMode:
     def _handle_player_change(self, player: str) -> None:
         if player == "speaking":
             self.set_state(BotStates.SPEAKING, "BMO is announcing the winner.")
+        elif player == "complete":
+            self.set_state(BotStates.IDLE, "Game over.")
         elif player == "bmo":
             self.set_state(BotStates.THINKING, "BMO's turn.")
         else:

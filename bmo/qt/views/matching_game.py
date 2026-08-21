@@ -13,6 +13,7 @@ from bmo.matching_game_core import (
     CHARACTER_FILES,
     MatchingGameHistory,
     MatchingGameModel,
+    MIN_PAIR_COUNT,
     PAW_PATROL_DIR,
 )
 from bmo.qt.views.base import QtHostedView
@@ -34,7 +35,7 @@ class QtMatchingGameView(QtHostedView):
         face_provider: Any = None,
     ) -> None:
         del embedded, face_provider
-        self.announce = announce or (lambda _text: None)
+        self.announce = announce or self._complete_silent_announcement
         self.on_player_change = on_player_change or (lambda _player: None)
         self.history = history or MatchingGameHistory()
         self.pair_count = self.history.pair_count
@@ -43,6 +44,7 @@ class QtMatchingGameView(QtHostedView):
         self.status = "Your turn."
         self.locked = False
         self._recorded = False
+        self._announcement_token = 0
         super().__init__(host, on_close=on_close or (lambda: None))
 
     def payload(self) -> dict[str, object]:
@@ -64,6 +66,8 @@ class QtMatchingGameView(QtHostedView):
             "complete": self.model.complete,
             "locked": self.locked,
             "pairCount": self.pair_count,
+            "minPairCount": MIN_PAIR_COUNT,
+            "maxPairCount": len(CHARACTER_FILES),
         }
 
     def handle_action(self, action: str, value: str) -> None:
@@ -74,15 +78,21 @@ class QtMatchingGameView(QtHostedView):
                 return
         elif action == "matching_restart":
             self._new_game(self.pair_count)
-        elif action == "matching_difficulty":
+        elif action == "matching_pair_delta":
             try:
-                self._new_game(self.history.set_pair_count(int(value)))
+                delta = int(value)
             except ValueError:
                 return
+            if delta not in (-1, 1):
+                return
+            self._new_game(
+                self.history.set_pair_count(self.pair_count + delta)
+            )
         else:
             super().handle_action(action, value)
 
     def _new_game(self, pair_count: int) -> None:
+        self._announcement_token += 1
         self.pair_count = pair_count
         self.model.set_characters(CHARACTER_FILES[:pair_count])
         self.bmo.reset()
@@ -180,10 +190,32 @@ class QtMatchingGameView(QtHostedView):
                 moves=self.model.moves,
                 seconds=self.model.elapsed_seconds,
             )
+        self._announcement_token += 1
+        announcement_token = self._announcement_token
         self.on_player_change("speaking")
-        self.announce(spoken)
+        self.announce(
+            spoken,
+            lambda: self._finish_winner_announcement(announcement_token),
+        )
         self.refresh()
         return True
+
+    def _finish_winner_announcement(self, announcement_token: int) -> None:
+        if (
+            self.closed
+            or announcement_token != self._announcement_token
+            or not self.model.complete
+        ):
+            return
+        self.on_player_change("complete")
+
+    @staticmethod
+    def _complete_silent_announcement(
+        _text: str,
+        on_complete: Any = None,
+    ) -> None:
+        if callable(on_complete):
+            on_complete()
 
 
 __all__ = ["QtMatchingGameView"]

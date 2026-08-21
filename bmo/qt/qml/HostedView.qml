@@ -549,7 +549,7 @@ Rectangle {
 
                     Column {
                         anchors.fill: parent
-                        anchors.margins: 11
+                        anchors.margins: 10
                         spacing: 9
 
                         Label {
@@ -645,34 +645,78 @@ Rectangle {
 
                         Row {
                             width: parent.width
-                            spacing: 5
+                            spacing: 4
 
-                            Repeater {
-                                model: [4, 6, 8]
+                            Rectangle {
+                                width: 44
+                                height: 48
+                                radius: 11
+                                color: decrementPairs.pressed ? "#cce9ee" : "#edf6f8"
+                                border.color: "#9dcfd8"
+                                border.width: 2
+                                opacity: root.viewModel.pairCount > root.viewModel.minPairCount ? 1.0 : 0.45
 
-                                delegate: Rectangle {
-                                    required property int modelData
-                                    width: 45
-                                    height: 39
-                                    radius: 9
-                                    color: root.viewModel.pairCount === modelData ? "#5bc9c2" : "#edf6f8"
-                                    border.color: root.viewModel.pairCount === modelData ? "#268f8b" : "#b8d9df"
-                                    border.width: 2
+                                Label {
+                                    anchors.fill: parent
+                                    text: "−"
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    color: "#102a5e"
+                                    font.bold: true
+                                    font.pixelSize: 26
+                                }
 
-                                    Label {
-                                        anchors.fill: parent
-                                        text: modelData
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                        color: "#102a5e"
-                                        font.bold: true
-                                        font.pixelSize: 15
-                                    }
+                                MouseArea {
+                                    id: decrementPairs
+                                    anchors.fill: parent
+                                    enabled: root.viewModel.pairCount > root.viewModel.minPairCount
+                                    onClicked: root.send("matching_pair_delta", -1)
+                                }
+                            }
 
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        onClicked: root.send("matching_difficulty", modelData)
-                                    }
+                            Rectangle {
+                                width: 48
+                                height: 48
+                                radius: 11
+                                color: "#5bc9c2"
+                                border.color: "#268f8b"
+                                border.width: 2
+
+                                Label {
+                                    anchors.fill: parent
+                                    text: root.viewModel.pairCount || 0
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    color: "#102a5e"
+                                    font.bold: true
+                                    font.pixelSize: 20
+                                }
+                            }
+
+                            Rectangle {
+                                width: 44
+                                height: 48
+                                radius: 11
+                                color: incrementPairs.pressed ? "#cce9ee" : "#edf6f8"
+                                border.color: "#9dcfd8"
+                                border.width: 2
+                                opacity: root.viewModel.pairCount < root.viewModel.maxPairCount ? 1.0 : 0.45
+
+                                Label {
+                                    anchors.fill: parent
+                                    text: "+"
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    color: "#102a5e"
+                                    font.bold: true
+                                    font.pixelSize: 24
+                                }
+
+                                MouseArea {
+                                    id: incrementPairs
+                                    anchors.fill: parent
+                                    enabled: root.viewModel.pairCount < root.viewModel.maxPairCount
+                                    onClicked: root.send("matching_pair_delta", 1)
                                 }
                             }
                         }
@@ -701,10 +745,10 @@ Rectangle {
                         columns: matchingPage.cardColumns
                         rowSpacing: 6
                         columnSpacing: 6
-                        property real cardWidth: Math.floor(Math.min(
+                        property real cardWidth: Math.max(64, Math.floor(Math.min(
                             (parent.width - 24 - (columns - 1) * columnSpacing) / columns,
                             ((parent.height - 20 - (matchingPage.cardRows - 1) * rowSpacing) / matchingPage.cardRows) / 1.38
-                        ))
+                        )))
                         property real cardHeight: Math.floor(cardWidth * 1.38)
                         width: columns * cardWidth + (columns - 1) * columnSpacing
                         height: matchingPage.cardRows * cardHeight + (matchingPage.cardRows - 1) * rowSpacing

@@ -242,10 +242,22 @@ ApplicationWindow {
 
             delegate: Item {
                 required property var modelData
+                required property int index
                 x: modelData.x
                 y: modelData.y
                 width: modelData.width
                 height: modelData.height
+
+                Rectangle {
+                    objectName: "menuIconHalo"
+                    anchors.centerIn: parent
+                    width: 122
+                    height: 122
+                    radius: 61
+                    color: index % 3 === 0 ? "#5bc9c2"
+                          : index % 3 === 1 ? "#f2c84b" : "#f08aa6"
+                    opacity: 0.16
+                }
 
                 Image {
                     id: menuIcon
