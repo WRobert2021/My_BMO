@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer, QUrl
 
 from bmo.matching_game_core import (
     BmoMemoryPlayer,
+    CARD_BACK_PATH,
     CHARACTER_FILES,
     MatchingGameHistory,
     MatchingGameModel,
@@ -46,6 +47,7 @@ class QtMatchingGameView(QtHostedView):
 
     def payload(self) -> dict[str, object]:
         return {
+            "cardBackSource": QUrl.fromLocalFile(str(CARD_BACK_PATH.resolve())),
             "cards": [
                 {
                     "id": card.card_id,

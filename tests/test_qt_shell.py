@@ -23,6 +23,7 @@ from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
 from bmo.features.weather_config import WeatherLocationConfig  # noqa: E402
 from bmo.features.weather_view import WeatherPageData  # noqa: E402
 from bmo.location import Location  # noqa: E402
+from bmo.matching_game_core import MatchingGameHistory  # noqa: E402
 from bmo.menu_catalog import MenuCatalog, MenuOwner  # noqa: E402
 from bmo.menu_model import IconMenuItem  # noqa: E402
 from bmo.qt.app import (  # noqa: E402
@@ -32,6 +33,7 @@ from bmo.qt.app import (  # noqa: E402
 )
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.qt.view_host import QtViewHost  # noqa: E402
+from bmo.qt.views.matching_game import QtMatchingGameView  # noqa: E402
 from bmo.qt.views.weather import QtWeatherView  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
 from bmo.weather import HourlyWeather, WeatherSnapshot  # noqa: E402
@@ -544,6 +546,7 @@ class QtQmlShellTests(unittest.TestCase):
         source = QML_PATH.read_text(encoding="utf-8")
 
         self.assertIn('text: "BMO MENU"', source)
+        self.assertIn('text: "Pick an adventure!"', source)
         self.assertIn('width: modelData.iconSize', source)
         self.assertIn('height: modelData.iconSize', source)
         self.assertNotIn('text: "Selected:', source)
@@ -551,6 +554,33 @@ class QtQmlShellTests(unittest.TestCase):
         self.assertIn('objectName: "menuCompactFace"', source)
         self.assertIn("anchors.horizontalCenter: parent.horizontalCenter", source)
         self.assertIn('color: "#fff3d3"', source)
+
+    def test_matching_view_uses_project_card_back_and_balanced_grid(self) -> None:
+        host = Mock()
+        view = QtMatchingGameView(
+            host,
+            history=MatchingGameHistory(path=None),
+        )
+
+        payload = view.payload()
+        qml = (QML_PATH.parent / "HostedView.qml").read_text(encoding="utf-8")
+
+        self.assertTrue(
+            payload["cardBackSource"].toLocalFile().endswith(
+                "graphics/card_backs/card_back.png"
+            )
+        )
+        self.assertIn(
+            "source: modelData.revealed ? modelData.source "
+            ": root.viewModel.cardBackSource",
+            qml,
+        )
+        self.assertIn("property int cardColumns: cardCount <= 16 ? 4", qml)
+        self.assertIn('objectName: "hostedCompactFace"', qml)
+        self.assertIn("x: 684", qml)
+        self.assertIn("y: 5", qml)
+        self.assertIn("width: 108", qml)
+        self.assertIn("height: 65", qml)
 
     def test_weather_qml_contains_full_scene_and_debug_catalog(self) -> None:
         qml_root = QML_PATH.parent

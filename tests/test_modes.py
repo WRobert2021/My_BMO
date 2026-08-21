@@ -267,6 +267,44 @@ class ModeRegistryTests(unittest.TestCase):
 
         self.assertEqual(mode.started_with, ["touch start phrase"])
 
+    def test_repeated_tap_on_active_menu_mode_is_idempotent(self) -> None:
+        mode = StubMode("game", "spoken start phrase")
+        mode.menu_item = ModeMenuItem(
+            name="game",
+            label="Game",
+            icon_path=Path("graphics/icons/game.png"),
+            start_request="touch start phrase",
+        )
+        registry = ModeRegistry((mode,))
+
+        registry.start_menu_item("game")
+        registry.start_menu_item("game")
+
+        self.assertEqual(mode.started_with, ["touch start phrase"])
+
+    def test_active_mode_still_rejects_a_different_menu_mode(self) -> None:
+        first = StubMode("first", "start first")
+        first.menu_item = ModeMenuItem(
+            name="first",
+            label="First",
+            icon_path=Path("graphics/icons/first.png"),
+            start_request="touch first",
+        )
+        second = StubMode("second", "start second")
+        second.menu_item = ModeMenuItem(
+            name="second",
+            label="Second",
+            icon_path=Path("graphics/icons/second.png"),
+            start_request="touch second",
+        )
+        registry = ModeRegistry((first, second))
+
+        registry.start_menu_item("first")
+
+        with self.assertRaisesRegex(RuntimeError, "already active"):
+            registry.start_menu_item("second")
+        self.assertEqual(second.started_with, [])
+
     def test_mode_menu_item_must_match_registered_mode_name(self) -> None:
         mode = StubMode("game", "start game")
         mode.menu_item = ModeMenuItem(

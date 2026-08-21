@@ -190,6 +190,35 @@ ApplicationWindow {
             font.letterSpacing: 0.8
         }
 
+        Text {
+            x: 188
+            y: 22
+            text: "Pick an adventure!"
+            color: "#bdeef0"
+            font.pixelSize: 15
+            font.bold: true
+        }
+
+        Row {
+            x: 520
+            y: 25
+            spacing: 13
+
+            Repeater {
+                model: ["#f2c84b", "#f08aa6", "#5bc9c2"]
+
+                delegate: Rectangle {
+                    required property string modelData
+                    width: 9
+                    height: 9
+                    radius: 2
+                    rotation: 45
+                    color: modelData
+                    opacity: 0.90
+                }
+            }
+        }
+
         Row {
             x: 25
             y: 48

@@ -207,8 +207,15 @@ class ModeRegistry:
         with self._lock:
             mode = self._modes.get(normalized)
             item = self._menu_items.get(normalized)
+            active_mode = self._current_mode()
         if mode is None or item is None:
             raise LookupError(f"No registered mode menu item named '{normalized}'.")
+        # Touchscreens can deliver another tap while a mode's introduction is
+        # still speaking and its view has not covered the retained menu yet.
+        # Treat that repeated request as the same idempotent launch, while
+        # continuing to reject attempts to replace a different active mode.
+        if active_mode is mode:
+            return
         self.start(mode, item.start_request)
 
     def is_active(self) -> bool:

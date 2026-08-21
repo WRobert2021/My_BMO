@@ -731,7 +731,10 @@ modes cannot leave stale menu pages. The matching-game adapter contributes the
 existing `graphics/icons/matching_game.png` asset by reference. The Twenty
 Questions adapter contributes `graphics/icons/20_questions.png` by reference
 and starts its embedded touch canvas when selected. Spoken launches remain
-voice-driven. Both adapters' `show_in_menu` settings default to `true`; setting
+voice-driven. A repeated touch launch of the mode that already owns input is
+idempotent, covering touchscreen taps received while its introduction is still
+speaking; a different mode still cannot replace the active owner. Both adapters'
+`show_in_menu` settings default to `true`; setting
 the Twenty Questions value to `false` hides only its menu entry and leaves
 voice launch enabled.
 

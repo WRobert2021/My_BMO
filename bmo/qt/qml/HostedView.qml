@@ -31,14 +31,20 @@ Rectangle {
             font.bold: true
         }
 
-        Button {
-            anchors.right: parent.right
-            anchors.rightMargin: 14
-            anchors.verticalCenter: parent.verticalCenter
-            width: 118
-            height: 44
-            text: "BACK"
-            onClicked: controller.requestViewClose()
+        Image {
+            objectName: "hostedCompactFace"
+            x: 684
+            y: 5
+            width: 108
+            height: 65
+            source: controller.frameSource
+            fillMode: Image.PreserveAspectFit
+            cache: false
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: controller.requestViewClose()
+            }
         }
     }
 
@@ -507,32 +513,248 @@ Rectangle {
     Component {
         id: matchingView
         Item {
-            Row {
-                anchors.fill: parent; anchors.margins: 10; spacing: 10
-                Column {
-                    width: 140; spacing: 8
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "YOU  " + (root.viewModel.humanScore || 0); color: "#1578d3"; font.pixelSize: 22; font.bold: true }
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "BMO  " + (root.viewModel.bmoScore || 0); color: "#102a5e"; font.pixelSize: 22; font.bold: true }
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: root.viewModel.status || ""; color: "#58708c"; font.bold: true }
-                    Button { width: parent.width; height: 48; text: "NEW GAME"; onClicked: root.send("matching_restart") }
-                    Row { spacing: 4; Repeater { model: [4, 6, 8]; delegate: Button { required property int modelData; width: 43; height: 40; text: modelData; onClicked: root.send("matching_difficulty", modelData) } } }
+            id: matchingPage
+            property int cardCount: (root.viewModel.cards || []).length
+            property int cardColumns: cardCount <= 16 ? 4
+                                      : cardCount <= 20 ? 5
+                                      : cardCount <= 24 ? 6 : 7
+            property int cardRows: Math.max(1, Math.ceil(cardCount / cardColumns))
+
+            Rectangle {
+                anchors.fill: parent
+                color: "#e8f8fb"
+
+                Rectangle {
+                    x: -30; y: 282; width: 112; height: 112; radius: 56
+                    color: "#65cfc6"; opacity: 0.10
                 }
-                GridLayout {
-                    width: 630; height: parent.height
-                    columns: (root.viewModel.cards || []).length > 12 ? 8 : 6
-                    rowSpacing: 5; columnSpacing: 5
-                    Repeater {
-                        model: root.viewModel.cards || []
-                        delegate: Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true; Layout.fillHeight: true
-                            Layout.minimumWidth: 65; Layout.minimumHeight: 72
-                            radius: 8
-                            color: modelData.revealed ? "#f3cf31" : "#1578d3"
-                            border.color: modelData.matched ? "#198754" : "white"; border.width: modelData.matched ? 4 : 2
-                            Image { anchors.fill: parent; anchors.margins: 5; source: modelData.source; fillMode: Image.PreserveAspectFit; visible: modelData.revealed }
-                            Label { anchors.centerIn: parent; text: "?"; color: "white"; font.pixelSize: 34; font.bold: true; visible: !modelData.revealed }
-                            MouseArea { anchors.fill: parent; enabled: !root.viewModel.locked; onClicked: root.send("matching_card", modelData.id) }
+                Rectangle {
+                    x: 690; y: -34; width: 120; height: 120; radius: 60
+                    color: "#f4cf58"; opacity: 0.13
+                }
+            }
+
+            Row {
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 10
+
+                Rectangle {
+                    width: 164
+                    height: parent.height
+                    radius: 16
+                    color: "#fbfeff"
+                    border.color: "#acdbe5"
+                    border.width: 2
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 11
+                        spacing: 9
+
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: "SCORE"
+                            color: "#58708c"
+                            font.pixelSize: 13
+                            font.bold: true
+                            font.letterSpacing: 1.2
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 6
+
+                            Repeater {
+                                model: [
+                                    { label: "YOU", score: root.viewModel.humanScore || 0, color: "#1578d3" },
+                                    { label: "BMO", score: root.viewModel.bmoScore || 0, color: "#102a5e" }
+                                ]
+
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: 68
+                                    height: 62
+                                    radius: 11
+                                    color: modelData.color
+
+                                    Column {
+                                        anchors.centerIn: parent
+                                        spacing: 1
+                                        Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.label; color: "white"; font.pixelSize: 12; font.bold: true }
+                                        Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.score; color: "white"; font.pixelSize: 24; font.bold: true }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 65
+                            radius: 11
+                            color: "#eaf5ff"
+                            border.color: "#bdd9ed"
+
+                            Label {
+                                anchors.fill: parent
+                                anchors.margins: 7
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                wrapMode: Text.Wrap
+                                text: root.viewModel.status || ""
+                                color: "#365d72"
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 46
+                            radius: 11
+                            color: newGameTap.pressed ? "#e8b72f" : "#f3ca4d"
+                            border.color: "#d9aa26"
+                            border.width: 2
+
+                            Label {
+                                anchors.fill: parent
+                                text: "NEW GAME"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                color: "#102a5e"
+                                font.bold: true
+                                font.pixelSize: 14
+                            }
+
+                            MouseArea {
+                                id: newGameTap
+                                anchors.fill: parent
+                                onClicked: root.send("matching_restart")
+                            }
+                        }
+
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: "HOW MANY PAIRS?"
+                            color: "#58708c"
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+
+                        Row {
+                            width: parent.width
+                            spacing: 5
+
+                            Repeater {
+                                model: [4, 6, 8]
+
+                                delegate: Rectangle {
+                                    required property int modelData
+                                    width: 45
+                                    height: 39
+                                    radius: 9
+                                    color: root.viewModel.pairCount === modelData ? "#5bc9c2" : "#edf6f8"
+                                    border.color: root.viewModel.pairCount === modelData ? "#268f8b" : "#b8d9df"
+                                    border.width: 2
+
+                                    Label {
+                                        anchors.fill: parent
+                                        text: modelData
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                        color: "#102a5e"
+                                        font.bold: true
+                                        font.pixelSize: 15
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: root.send("matching_difficulty", modelData)
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            width: parent.width
+                            horizontalAlignment: Text.AlignHCenter
+                            text: (root.viewModel.moves || 0) + ((root.viewModel.moves || 0) === 1 ? " move" : " moves")
+                            color: "#6f8796"
+                            font.pixelSize: 12
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width - 174
+                    height: parent.height
+                    radius: 16
+                    color: "#d8f0f5"
+                    border.color: "#acdbe5"
+                    border.width: 2
+
+                    Grid {
+                        id: cardBoard
+                        anchors.centerIn: parent
+                        columns: matchingPage.cardColumns
+                        rowSpacing: 6
+                        columnSpacing: 6
+                        property real cardWidth: Math.floor(Math.min(
+                            (parent.width - 24 - (columns - 1) * columnSpacing) / columns,
+                            ((parent.height - 20 - (matchingPage.cardRows - 1) * rowSpacing) / matchingPage.cardRows) / 1.38
+                        ))
+                        property real cardHeight: Math.floor(cardWidth * 1.38)
+                        width: columns * cardWidth + (columns - 1) * columnSpacing
+                        height: matchingPage.cardRows * cardHeight + (matchingPage.cardRows - 1) * rowSpacing
+
+                        Repeater {
+                            model: root.viewModel.cards || []
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: cardBoard.cardWidth
+                                height: cardBoard.cardHeight
+                                radius: Math.max(7, width * 0.10)
+                                color: modelData.revealed ? "#f8d75d" : "#ffffff"
+                                border.color: modelData.matched ? "#2b9b67" : "#ffffff"
+                                border.width: modelData.matched ? 4 : 2
+                                clip: true
+
+                                Image {
+                                    anchors.fill: parent
+                                    anchors.margins: modelData.revealed ? 5 : 3
+                                    source: modelData.revealed ? modelData.source : root.viewModel.cardBackSource
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: false
+                                }
+
+                                Rectangle {
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 3
+                                    width: Math.min(22, parent.width * 0.28)
+                                    height: width
+                                    radius: width / 2
+                                    color: "#2b9b67"
+                                    visible: modelData.matched
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        text: "✓"
+                                        color: "white"
+                                        font.pixelSize: Math.max(11, parent.width * 0.65)
+                                        font.bold: true
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: !root.viewModel.locked && !modelData.matched
+                                    onClicked: root.send("matching_card", modelData.id)
+                                }
+                            }
                         }
                     }
                 }
