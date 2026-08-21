@@ -135,25 +135,77 @@ ApplicationWindow {
 
     Rectangle {
         id: menu
+        objectName: "mainMenu"
         anchors.fill: parent
         color: "#e7f7ff"
         visible: bmoUi.menuVisible && !bmoUi.viewVisible
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "#e8fbff" }
+            GradientStop { position: 0.62; color: "#e7f7ff" }
+            GradientStop { position: 1.0; color: "#fff3d3" }
+        }
 
         Rectangle {
+            x: -46
+            y: 84
+            width: 126
+            height: 126
+            radius: 63
+            color: "#5bc9c2"
+            opacity: 0.10
+        }
+
+        Rectangle {
+            x: 730
+            y: 346
+            width: 116
+            height: 116
+            radius: 58
+            color: "#f2c84b"
+            opacity: 0.16
+        }
+
+        Rectangle {
+            id: menuHeader
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             height: 62
             color: "#102a5e"
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#102a5e" }
+                GradientStop { position: 0.72; color: "#164b78" }
+                GradientStop { position: 1.0; color: "#187a85" }
+            }
         }
 
         Text {
             x: 24
-            y: 15
-            text: "MENU"
+            y: 12
+            text: "BMO MENU"
             color: "white"
-            font.pixelSize: 24
+            font.pixelSize: 25
             font.bold: true
+            font.letterSpacing: 0.8
+        }
+
+        Row {
+            x: 25
+            y: 48
+            spacing: 5
+
+            Repeater {
+                model: ["#5bc9c2", "#f2c84b", "#f08aa6"]
+
+                delegate: Rectangle {
+                    required property string modelData
+                    width: 7
+                    height: 7
+                    radius: 3.5
+                    color: modelData
+                }
+            }
         }
 
         Repeater {
@@ -168,9 +220,10 @@ ApplicationWindow {
 
                 Image {
                     id: menuIcon
+                    objectName: "menuIcon"
                     anchors.centerIn: parent
-                    width: 88
-                    height: 88
+                    width: modelData.iconSize
+                    height: modelData.iconSize
                     source: modelData.iconSource
                     fillMode: Image.PreserveAspectFit
                     asynchronous: false
@@ -193,6 +246,7 @@ ApplicationWindow {
         }
 
         Image {
+            objectName: "menuCompactFace"
             x: 684
             y: 5
             width: 108
@@ -202,27 +256,26 @@ ApplicationWindow {
             cache: false
         }
 
-        Text {
-            x: 300
-            y: 452
-            width: 100
-            horizontalAlignment: Text.AlignHCenter
-            text: bmoUi.menuPageLabel
-            color: "#58708c"
-            font.pixelSize: 12
-            font.bold: true
-        }
+        Rectangle {
+            objectName: "menuPagePill"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 8
+            width: 78
+            height: 24
+            radius: 12
+            color: "#f7fdff"
+            border.color: "#9bd7e5"
+            border.width: 1
+            visible: bmoUi.menuPageLabel !== ""
 
-        Text {
-            x: 418
-            y: 452
-            width: 350
-            horizontalAlignment: Text.AlignRight
-            elide: Text.ElideRight
-            text: bmoUi.menuSelection === "" ? "" : "Selected: " + bmoUi.menuSelection
-            color: "#58708c"
-            font.pixelSize: 12
-            font.bold: true
+            Text {
+                anchors.centerIn: parent
+                text: bmoUi.menuPageLabel
+                color: "#365d72"
+                font.pixelSize: 12
+                font.bold: true
+            }
         }
 
         MouseArea {

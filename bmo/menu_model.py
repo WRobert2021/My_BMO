@@ -44,7 +44,7 @@ class IconMenuPage:
     COLUMNS = 5
     ROWS = 3
     CAPACITY = COLUMNS * ROWS
-    ICON_SIZE = 88
+    ICON_SIZE = 108
     HORIZONTAL_PADDING = 7
     VERTICAL_PADDING = 6
 

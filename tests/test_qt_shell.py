@@ -14,9 +14,10 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QUrl  # noqa: E402
+from PySide6.QtCore import QPointF, QRectF, QUrl  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
+from PySide6.QtQuick import QQuickItem  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
 from bmo.features.weather_config import WeatherLocationConfig  # noqa: E402
@@ -149,6 +150,7 @@ class QtFaceControllerTests(unittest.TestCase):
 
             self.assertEqual(len(controller.menuItems), 15)
             self.assertEqual(controller.menuPageLabel, "1 / 2")
+            self.assertEqual(controller.menuItems[0]["iconSize"], 108)
             controller.menuPressed(50, 100)
             controller.menuReleased(50, 100)
             controller.menuPressed(700, 300)
@@ -157,7 +159,6 @@ class QtFaceControllerTests(unittest.TestCase):
             self.assertEqual(selected, ["feature:item-0"])
             self.assertEqual(requests[0].owner, MenuOwner.FEATURE)
             self.assertEqual(requests[0].name, "item-0")
-            self.assertEqual(controller.menuSelection, "Item 0")
             self.assertEqual(len(controller.menuItems), 2)
             self.assertEqual(controller.menuPageLabel, "2 / 2")
 
@@ -479,6 +480,77 @@ class QtQmlShellTests(unittest.TestCase):
 
         self.assertTrue(engine.rootObjects())
         engine.deleteLater()
+
+    def test_loaded_menu_icons_do_not_overlap_and_face_geometry_is_fixed(
+        self,
+    ) -> None:
+        controller = QtFaceController(
+            start_timer=False,
+            menu_catalog=preview_menu_catalog(),
+        )
+        controller.show_menu()
+        engine = QQmlApplicationEngine()
+        engine.rootContext().setContextProperty("bmoUi", controller)
+        engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+        root = engine.rootObjects()[0]
+        root.showNormal()
+        root.resize(800, 480)
+        self.app.processEvents()
+
+        scene = root.contentItem()
+        face = root.findChild(QQuickItem, "menuCompactFace")
+        page_pill = root.findChild(QQuickItem, "menuPagePill")
+
+        def descendants(item: QQuickItem) -> list[QQuickItem]:
+            found: list[QQuickItem] = []
+            for child in item.childItems():
+                found.append(child)
+                found.extend(descendants(child))
+            return found
+
+        icons = [
+            item for item in descendants(scene)
+            if item.objectName() == "menuIcon"
+        ]
+        icon_rects = []
+        for icon in icons:
+            origin = icon.mapToItem(scene, QPointF(0, 0))
+            icon_rects.append(
+                QRectF(origin.x(), origin.y(), icon.width(), icon.height())
+            )
+
+        self.assertIsNotNone(face)
+        self.assertIsNotNone(page_pill)
+        self.assertEqual((face.x(), face.y()), (684.0, 5.0))
+        self.assertEqual((face.width(), face.height()), (108.0, 65.0))
+        self.assertEqual((root.width(), root.height()), (800, 480))
+        self.assertEqual((page_pill.x(), page_pill.y()), (361.0, 448.0))
+        self.assertEqual((page_pill.width(), page_pill.height()), (78.0, 24.0))
+        self.assertEqual(len(icons), 7)
+        self.assertTrue(
+            all(
+                (icon.width(), icon.height()) == (108.0, 108.0)
+                for icon in icons
+            )
+        )
+        for index, rect in enumerate(icon_rects):
+            for other in icon_rects[index + 1 :]:
+                self.assertFalse(rect.intersects(other))
+
+        engine.deleteLater()
+        self.app.processEvents()
+
+    def test_main_menu_uses_clean_compact_kid_friendly_layout(self) -> None:
+        source = QML_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('text: "BMO MENU"', source)
+        self.assertIn('width: modelData.iconSize', source)
+        self.assertIn('height: modelData.iconSize', source)
+        self.assertNotIn('text: "Selected:', source)
+        self.assertNotIn("bmoUi.menuSelection", source)
+        self.assertIn('objectName: "menuCompactFace"', source)
+        self.assertIn("anchors.horizontalCenter: parent.horizontalCenter", source)
+        self.assertIn('color: "#fff3d3"', source)
 
     def test_weather_qml_contains_full_scene_and_debug_catalog(self) -> None:
         qml_root = QML_PATH.parent

@@ -124,6 +124,24 @@ class IconMenuPageTests(unittest.TestCase):
         self.assertEqual(page.action_at((702, 386), self.BOUNDS), "game-14")
         self.assertIsNone(page.action_at((790, 300), self.BOUNDS))
 
+    def test_larger_icons_fit_the_grid_without_overlapping(self) -> None:
+        first = IconMenuPage.tile_bounds(0, self.BOUNDS)
+        second = IconMenuPage.tile_bounds(1, self.BOUNDS)
+        below = IconMenuPage.tile_bounds(5, self.BOUNDS)
+        first_center = ((first[0] + first[2]) // 2, (first[1] + first[3]) // 2)
+        second_center_x = (second[0] + second[2]) // 2
+        below_center_y = (below[1] + below[3]) // 2
+
+        self.assertEqual(IconMenuPage.ICON_SIZE, 108)
+        self.assertGreater(
+            second_center_x - first_center[0],
+            IconMenuPage.ICON_SIZE,
+        )
+        self.assertGreater(
+            below_center_y - first_center[1],
+            IconMenuPage.ICON_SIZE,
+        )
+
     @patch("bmo.ui.menu.ImageTk.PhotoImage", return_value=object())
     @patch("bmo.ui.menu.Image.open")
     def test_icon_rendering_is_unframed_and_preserves_png_alpha(

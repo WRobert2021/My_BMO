@@ -38,7 +38,6 @@ class QtFaceController(QObject):
     menuVisibleChanged = Signal()
     menuItemsChanged = Signal()
     menuPageLabelChanged = Signal()
-    menuSelectionChanged = Signal()
     viewVisibleChanged = Signal()
     viewKindChanged = Signal()
     viewTitleChanged = Signal()
@@ -88,7 +87,6 @@ class QtFaceController(QObject):
         self._menu_visible = False
         self._menu_items_payload: list[dict[str, object]] = []
         self._menu_page_label = ""
-        self._menu_selection = ""
         self._view_visible = False
         self._view_kind = ""
         self._view_title = ""
@@ -180,10 +178,6 @@ class QtFaceController(QObject):
     @Property(str, notify=menuPageLabelChanged)
     def menuPageLabel(self) -> str:  # noqa: N802
         return self._menu_page_label
-
-    @Property(str, notify=menuSelectionChanged)
-    def menuSelection(self) -> str:  # noqa: N802
-        return self._menu_selection
 
     @Property(bool, notify=viewVisibleChanged)
     def viewVisible(self) -> bool:  # noqa: N802
@@ -302,8 +296,6 @@ class QtFaceController(QObject):
         self._menu_catalog = catalog
         self._menu_pages = IconMenuPage.paginate(catalog.items)
         self._menu_navigator = MenuNavigator(max(1, len(self._menu_pages)))
-        self._menu_selection = ""
-        self.menuSelectionChanged.emit()
         self._refresh_menu_page()
 
     def _refresh_menu_page(self) -> None:
@@ -327,6 +319,7 @@ class QtFaceController(QObject):
                         "y": top,
                         "width": right - left,
                         "height": bottom - top,
+                        "iconSize": IconMenuPage.ICON_SIZE,
                     }
                 )
             label = (
@@ -497,10 +490,7 @@ class QtFaceController(QObject):
         action = page.action_at(point, MENU_BOUNDS)
         if action is None:
             return
-        selected = next(item for item in page.items if item.name == action)
         request = self._menu_catalog.request_for(action)
-        self._menu_selection = selected.label
-        self.menuSelectionChanged.emit()
         self.menuItemSelected.emit(action)
         self.menuSelectionRequested.emit(request)
 
