@@ -213,23 +213,13 @@ Item {
                 }
                 Text {
                     visible: Number(root.model.page_count || 0) > 1
-                    x: 618; y: 21; text: "‹"; color: "#477269"; font.pixelSize: 24; font.bold: true
+                    x: 600; y: 21; text: "‹"; color: "#477269"; font.pixelSize: 24; font.bold: true
                     MouseArea { anchors.fill: parent; anchors.margins: -9; onClicked: root.send("weather_previous") }
                 }
                 Text {
                     visible: Number(root.model.page_count || 0) > 1
-                    x: 728; y: 21; text: "›"; color: "#477269"; font.pixelSize: 24; font.bold: true
+                    x: 624; y: 21; text: "›"; color: "#477269"; font.pixelSize: 24; font.bold: true
                     MouseArea { anchors.fill: parent; anchors.margins: -9; onClicked: root.send("weather_next") }
-                }
-                Image {
-                    id: bmoFace
-                    x: 635; y: 6; width: 91; height: 52
-                    source: root.controller.frameSource
-                    fillMode: Image.PreserveAspectFit
-                    cache: false
-                    asynchronous: false
-                    Rectangle { anchors.fill: parent; color: "#68c8bb"; border.color: "#153f39"; border.width: 3; radius: 8; z: -1 }
-                    MouseArea { anchors.fill: parent; onClicked: root.controller.requestViewClose() }
                 }
             }
 
@@ -367,6 +357,23 @@ Item {
                         root.swipeDy = activeTranslation.y
                     }
                 }
+            }
+        }
+
+        // Match the canonical compact-face viewport used by the main menu.
+        // Expression frames change inside it without moving or resizing it.
+        Image {
+            id: bmoFace
+            objectName: "weatherCompactFace"
+            x: 684; y: 5; width: 108; height: 65
+            source: root.controller.frameSource
+            fillMode: Image.PreserveAspectFit
+            cache: false
+            asynchronous: false
+            z: 250
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.controller.requestViewClose()
             }
         }
 

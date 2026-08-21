@@ -462,9 +462,10 @@ weather-owned Qt Quick items and Canvas art: layered seasonal ground, spring
 petals, fall leaves, animated rain/snow/hail, wind and lightning, childlike
 current/hourly icons, and locally calculated eight-phase moon art. Forecast
 cards use real alpha transparency. Its close control displays
-`QtFaceController.frameSource`, the same frame selected by the global
-application animation loop. Scoped Weather speech therefore animates the exact
-same BMO face without a parallel face provider or timer. The hourly strip drops
+`QtFaceController.frameSource` in the same fixed 108x65 compact-face viewport
+used by the main menu, so expression frames never reposition or resize the
+miniature face. Scoped Weather speech therefore animates the exact same BMO
+face without a parallel face provider or timer. The hourly strip drops
 past local forecast points as the view remains open, and each cached location
 is refreshed on a bounded fifteen-minute interval so its remaining hours and
 day period advance without reopening the menu. All tap speech uses

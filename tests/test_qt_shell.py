@@ -522,6 +522,9 @@ class QtQmlShellTests(unittest.TestCase):
         ):
             self.assertIn(f'"{phase}"', view + icon)
         self.assertIn("controller.frameSource", view)
+        self.assertIn('objectName: "weatherCompactFace"', view)
+        self.assertIn("x: 684; y: 5; width: 108; height: 65", view)
+        self.assertNotIn("x: 635; y: 6; width: 91; height: 52", view)
         self.assertIn("DragHandler", view)
         self.assertIn("weather_debug_speak", view)
         self.assertIn("hourlyForecasts.width / Math.max", view)
