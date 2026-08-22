@@ -20,6 +20,7 @@ Rectangle {
         height: 62
         color: "#102a5e"
         visible: controller.viewKind !== "weather"
+        z: 5
 
         Label {
             anchors.left: parent.left
@@ -397,74 +398,9 @@ Rectangle {
 
     Component {
         id: calendarView
-        Item {
-            Column {
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 8
-                Row {
-                    visible: root.viewModel.mode !== "editor"
-                    width: parent.width; spacing: 8
-                    Button { width: 62; height: 42; text: "◀"; onClicked: root.send("calendar_previous") }
-                    Label { width: parent.width - 350; height: 42; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.dateLabel || ""; color: "#102a5e"; font.pixelSize: 20; font.bold: true }
-                    Button { width: 62; height: 42; text: "▶"; onClicked: root.send("calendar_next") }
-                    Button { width: 90; height: 42; text: "TODAY"; onClicked: root.send("calendar_today") }
-                    Button { width: 105; height: 42; text: "READ DAY"; onClicked: root.send("calendar_announce") }
-                }
-                Row {
-                    visible: root.viewModel.mode !== "editor"
-                    width: parent.width; spacing: 8
-                    Button { width: 150; height: 44; text: "+ ADD EVENT"; onClicked: root.send("calendar_add") }
-                    Button { width: 150; height: 44; text: "EDIT SELECTED"; enabled: (root.viewModel.selectedId || "") !== "" && root.viewModel.selectedReadOnly !== true; onClicked: root.send("calendar_edit") }
-                    Button { width: 190; height: 44; text: "DELETE OCCURRENCE"; enabled: (root.viewModel.selectedId || "") !== "" && root.viewModel.selectedReadOnly !== true; onClicked: root.send("calendar_delete", "occurrence") }
-                    Button { width: 150; height: 44; text: "DELETE SERIES"; enabled: (root.viewModel.selectedId || "") !== "" && root.viewModel.selectedReadOnly !== true; onClicked: root.send("calendar_delete", "series") }
-                }
-                MessageText { text: root.viewModel.error || ""; visible: text !== "" }
-                ListView {
-                    visible: root.viewModel.mode !== "editor"
-                    width: parent.width; height: parent.height - y; spacing: 6; clip: true
-                    model: root.viewModel.events || []
-                    delegate: Rectangle {
-                        required property var modelData
-                        width: ListView.view.width; height: 62; radius: 8
-                        color: root.viewModel.selectedId === modelData.id ? "#cfeeff" : "white"
-                        border.color: modelData.color || "#1578d3"; border.width: 3
-                        Label { anchors.left: parent.left; anchors.leftMargin: 14; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; color: "#102a5e"; font.pixelSize: 18; font.bold: true }
-                        Label { anchors.right: parent.right; anchors.rightMargin: 15; anchors.verticalCenter: parent.verticalCenter; text: modelData.time + (modelData.frequency !== "none" ? "  •  " + modelData.frequency : ""); color: "#58708c" }
-                        MouseArea { anchors.fill: parent; onClicked: root.send("calendar_select", modelData.id) }
-                    }
-                    Label { anchors.centerIn: parent; visible: parent.count === 0; text: "Nothing scheduled for this day."; color: "#58708c"; font.pixelSize: 18 }
-                }
-                Column {
-                    id: calendarEditor
-                    visible: root.viewModel.mode === "editor"
-                    width: parent.width; spacing: 7
-                    property var editor: root.viewModel.editor || {}
-                    function resetFields() {
-                        calendarName.text = editor.name || ""
-                        calendarDate.text = editor.date || ""
-                        calendarAllDay.checked = editor.allDay !== false
-                        calendarStart.text = editor.startTime || "09:00"
-                        calendarEnd.text = editor.endTime || "10:00"
-                        calendarRepeat.currentIndex = Math.max(0, calendarRepeat.model.indexOf(editor.frequency || "none"))
-                        calendarCategory.currentIndex = Math.max(0, calendarCategory.model.indexOf(editor.category || ""))
-                        calendarColor.text = editor.color || "#1578d3"
-                        calendarNotes.text = editor.notes || ""
-                    }
-                    onVisibleChanged: if (visible) Qt.callLater(resetFields)
-                    Row { spacing: 8; TextField { id: calendarName; width: 400; height: 44; placeholderText: "Event name"; text: parent.parent.editor.name || "" } TextField { id: calendarDate; width: 180; height: 44; placeholderText: "YYYY-MM-DD"; text: parent.parent.editor.date || "" } CheckBox { id: calendarAllDay; height: 44; text: "All day"; checked: parent.parent.editor.allDay !== false } }
-                    Row { spacing: 8; Label { width: 80; height: 42; verticalAlignment: Text.AlignVCenter; text: "Start"; color: "#58708c" } TextField { id: calendarStart; width: 130; height: 42; text: parent.parent.editor.startTime || "09:00"; enabled: !calendarAllDay.checked } Label { width: 60; height: 42; verticalAlignment: Text.AlignVCenter; text: "End"; color: "#58708c" } TextField { id: calendarEnd; width: 130; height: 42; text: parent.parent.editor.endTime || "10:00"; enabled: !calendarAllDay.checked } Label { width: 75; height: 42; verticalAlignment: Text.AlignVCenter; text: "Repeat"; color: "#58708c" } ComboBox { id: calendarRepeat; width: 160; height: 42; model: ["none","daily","weekly","monthly","yearly"] } }
-                    Row { spacing: 8; Label { width: 80; height: 42; verticalAlignment: Text.AlignVCenter; text: "Category"; color: "#58708c" } ComboBox { id: calendarCategory; width: 220; height: 42; model: root.viewModel.categories || [] } Label { width: 55; height: 42; verticalAlignment: Text.AlignVCenter; text: "Color"; color: "#58708c" } TextField { id: calendarColor; width: 140; height: 42; text: parent.parent.editor.color || "#1578d3" } }
-                    TextField { id: calendarNotes; width: parent.width; height: 44; placeholderText: "Notes"; text: parent.editor.notes || "" }
-                    Row {
-                        spacing: 8
-                        function save(scope) { root.send("calendar_save", JSON.stringify({name: calendarName.text, date: calendarDate.text, allDay: calendarAllDay.checked, startTime: calendarStart.text, endTime: calendarEnd.text, category: calendarCategory.currentText, color: calendarColor.text, notes: calendarNotes.text, frequency: calendarRepeat.currentText, scope: scope})) }
-                        Button { width: 160; height: 48; text: "SAVE SERIES"; onClicked: parent.save("series") }
-                        Button { visible: (root.viewModel.editor || {}).recurring === true; width: 190; height: 48; text: "SAVE OCCURRENCE"; onClicked: parent.save("occurrence") }
-                        Button { width: 130; height: 48; text: "CANCEL"; onClicked: root.send("calendar_cancel_edit") }
-                    }
-                }
-            }
+        CalendarView {
+            controller: root.controller
+            viewModel: root.viewModel
         }
     }
 

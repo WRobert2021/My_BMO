@@ -12,7 +12,12 @@ from typing import Literal
 
 from PIL import Image
 
-from bmo.features.calendar_view import CalendarEdit, CalendarViewEvent
+from bmo.features.calendar_view import (
+    CALENDAR_COLOR_PALETTE,
+    CALENDAR_MONTH_COLORS,
+    CalendarEdit,
+    CalendarViewEvent,
+)
 from bmo.ui.compact_face import CompactFace
 from bmo.ui.scrolling import VerticalScrollController
 
@@ -20,20 +25,6 @@ from bmo.ui.scrolling import VerticalScrollController
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 480
 
-CALENDAR_COLOR_PALETTE = (
-    ("Ocean", "#1578D3"),
-    ("Teal", "#16847D"),
-    ("Leaf", "#3B8E63"),
-    ("Sun", "#E0A800"),
-    ("Orange", "#D96B27"),
-    ("Coral", "#D9545D"),
-    ("Berry", "#A83E7C"),
-    ("Purple", "#7051B8"),
-    ("Navy", "#29466F"),
-    ("Slate", "#607D8B"),
-    ("Brown", "#795548"),
-    ("Black", "#303030"),
-)
 BACKGROUND = "#EAF8F8"
 INK = "#16324F"
 MUTED = "#5D7185"
@@ -42,20 +33,7 @@ NAVY = "#12325B"
 TEAL = "#087B79"
 BLUE = "#376FBA"
 RED = "#B93643"
-MONTH_COLORS = (
-    "#8F2942",
-    "#704B9A",
-    "#2E8588",
-    "#517F9C",
-    "#21754F",
-    "#A85469",
-    "#B52D43",
-    "#668C25",
-    "#315BA4",
-    "#BE6425",
-    "#9A741B",
-    "#287A74",
-)
+MONTH_COLORS = CALENDAR_MONTH_COLORS
 
 
 EventProvider = Callable[[date, date], Iterable[CalendarViewEvent]]

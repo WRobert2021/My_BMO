@@ -245,9 +245,10 @@ shown in `config/example.features.json`:
   provides day, month, and birthstone-colored year views. Day rows swipe
   vertically when more than four events exist; month dots use each event's
   chosen color and stay within their day cell. The editor supports categories,
-  unrestricted colors, all-day or timed events, notes, and weekly/monthly/yearly
-  recurrence with occurrence-or-series edit/delete choices. Requested common
-  US holidays can be included as read-only events.
+  a touch picker with twelve quick colors and a continuous hue strip, all-day
+  or timed events, notes, and weekly/monthly/yearly recurrence. Repeating edits
+  and deletes open a focused occurrence-or-series choice. Requested common US
+  holidays can be included as read-only events.
 - Spoken questions such as “what's on my calendar tomorrow?” and “what is my
   schedule next week?” receive deterministic summaries. Voice routing is
   intentionally read-only: adding, editing, and deleting events requires the

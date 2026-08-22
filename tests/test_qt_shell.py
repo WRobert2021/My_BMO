@@ -9,17 +9,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import date, time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPointF, QRectF, QUrl  # noqa: E402
 from PySide6.QtGui import QGuiApplication  # noqa: E402
-from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
-from PySide6.QtQuick import QQuickItem  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
+from bmo.features.calendar_view import CalendarViewEvent  # noqa: E402
 from bmo.features.weather_config import WeatherLocationConfig  # noqa: E402
 from bmo.features.weather_view import WeatherPageData  # noqa: E402
 from bmo.location import Location  # noqa: E402
@@ -33,6 +32,7 @@ from bmo.qt.app import (  # noqa: E402
 )
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.qt.view_host import QtViewHost  # noqa: E402
+from bmo.qt.views.calendar import QtCalendarView  # noqa: E402
 from bmo.qt.views.matching_game import QtMatchingGameView  # noqa: E402
 from bmo.qt.views.weather import QtWeatherView  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
@@ -465,82 +465,346 @@ class QtWeatherViewTests(unittest.TestCase):
                 view.close()
 
 
+class QtCalendarViewTests(unittest.TestCase):
+    def make_view(
+        self,
+        events: tuple[CalendarViewEvent, ...],
+    ) -> tuple[QtCalendarView, Mock, Mock]:
+        save = Mock()
+        delete = Mock()
+
+        def event_provider(start: date, end: date) -> tuple[CalendarViewEvent, ...]:
+            return tuple(
+                event
+                for event in events
+                if start <= event.occurrence_date <= end
+            )
+
+        view = QtCalendarView(
+            Mock(),
+            event_provider=event_provider,
+            save_event=save,
+            delete_event=delete,
+            summary_provider=lambda start, end: f"Plans from {start} to {end}",
+            categories=("Family", "School", "Holiday"),
+            announce=Mock(return_value=True),
+            on_close=Mock(),
+            today_provider=lambda: date(2026, 8, 12),
+        )
+        return view, save, delete
+
+    @staticmethod
+    def event(
+        index: int,
+        occurrence_date: date,
+        *,
+        frequency: str = "none",
+    ) -> CalendarViewEvent:
+        return CalendarViewEvent(
+            event_id=f"event-{index}",
+            occurrence_id=f"event-{index}@{occurrence_date.isoformat()}",
+            name=f"Event {index}",
+            occurrence_date=occurrence_date,
+            all_day=False,
+            start_time=time(8 + index % 10),
+            end_time=time(9 + index % 10),
+            color=("#1578D3", "#D9545D", "#3B8E63")[index % 3],
+            category="Family",
+            frequency=frequency,
+            weekdays=(0, 2) if frequency == "weekly" else (),
+            recurrence_count=6 if frequency == "weekly" else None,
+        )
+
+    def test_day_month_and_year_payloads_restore_dots_and_counts(self) -> None:
+        today = date(2026, 8, 12)
+        events = tuple(self.event(index, today) for index in range(12)) + (
+            self.event(20, date(2026, 9, 2)),
+        )
+        view, _save, _delete = self.make_view(events)
+
+        self.assertEqual(len(view.payload()["events"]), 12)
+        view.handle_action("calendar_show_month", "")
+        month = view.payload()
+        today_cell = next(
+            item for item in month["monthDays"] if item["date"] == "2026-08-12"
+        )
+
+        self.assertEqual(month["mode"], "month")
+        self.assertEqual(len(month["monthDays"]), 42)
+        self.assertEqual(len(today_cell["dots"]), 9)
+        self.assertEqual(today_cell["overflow"], 3)
+
+        view.handle_action("calendar_show_year", "")
+        year = view.payload()
+
+        self.assertEqual(year["mode"], "year")
+        self.assertEqual(len(year["yearMonths"]), 12)
+        self.assertEqual(year["yearMonths"][7]["eventCount"], 12)
+        self.assertEqual(year["yearMonths"][8]["eventCount"], 1)
+
+    def test_editor_restores_color_recurrence_and_series_scope(self) -> None:
+        recurring = self.event(1, date(2026, 8, 12), frequency="weekly")
+        view, save, delete = self.make_view((recurring,))
+        view.handle_action("calendar_select", recurring.occurrence_id)
+        view.handle_action("calendar_edit", "")
+
+        editor = view.payload()["editor"]
+        self.assertEqual(editor["weekdays"], [0, 2])
+        self.assertEqual(editor["repeatEndKind"], "count")
+        self.assertGreaterEqual(len(view.payload()["colorPalette"]), 12)
+
+        view.handle_action(
+            "calendar_request_save",
+            json.dumps(
+                {
+                    "name": "Team practice",
+                    "date": "2026-08-12",
+                    "allDay": False,
+                    "startTime": "15:00",
+                    "endTime": "16:30",
+                    "category": "Family",
+                    "color": "#7051B8",
+                    "notes": "Bring water",
+                    "frequency": "weekly",
+                    "weekdays": [0, 2, 5],
+                    "repeatEndKind": "count",
+                    "repeatEndValue": "8",
+                    "monthlyOverflow": "last_day",
+                }
+            ),
+        )
+
+        self.assertEqual(view.mode, "scope")
+        save.assert_not_called()
+        self.assertIn("whole series", view.payload()["scopePrompt"])
+
+        view.handle_action("calendar_scope", "occurrence")
+
+        saved_edit, selected, scope = save.call_args.args
+        self.assertIs(selected, recurring)
+        self.assertEqual(scope, "occurrence")
+        self.assertEqual(saved_edit.weekdays, (0, 2, 5))
+        self.assertEqual(saved_edit.recurrence_count, 8)
+        self.assertEqual(saved_edit.color, "#7051B8")
+        self.assertEqual(view.mode, "day")
+
+        view.handle_action("calendar_select", recurring.occurrence_id)
+        view.handle_action("calendar_request_delete", "")
+        self.assertEqual(view.mode, "scope")
+        delete.assert_not_called()
+        view.handle_action("calendar_scope", "series")
+        delete.assert_called_once_with(recurring, "series")
+
+    def test_calendar_qml_keeps_shared_face_geometry_and_uses_dedicated_views(self) -> None:
+        hosted = (QML_PATH.parent / "HostedView.qml").read_text(encoding="utf-8")
+        calendar_qml = (QML_PATH.parent / "CalendarView.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('objectName: "hostedCompactFace"', hosted)
+        self.assertIn("x: 684", hosted)
+        self.assertIn("y: 5", hosted)
+        self.assertIn("width: 108", hosted)
+        self.assertIn("height: 65", hosted)
+        self.assertIn("CalendarView {", hosted)
+        for object_name in (
+            "calendarDayView",
+            "calendarDayEvents",
+            "calendarMonthView",
+            "calendarYearView",
+            "calendarEditorFlick",
+            "calendarColorPicker",
+            "calendarHuePicker",
+            "calendarScopeDialog",
+        ):
+            self.assertIn(f'objectName: "{object_name}"', calendar_qml)
+        self.assertIn('root.send("calendar_request_delete")', calendar_qml)
+        self.assertIn('root.send("calendar_request_save"', calendar_qml)
+        self.assertIn("Qt.hsla", calendar_qml)
+        self.assertNotIn('model: ["none","daily"', calendar_qml)
+
+
 class QtQmlShellTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QGuiApplication.instance() or QGuiApplication(["pytest-qml-shell"])
 
     def test_main_qml_loads_with_controller_context(self) -> None:
-        controller = QtFaceController(
-            start_timer=False,
-            menu_catalog=preview_menu_catalog(),
+        script = r'''
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from bmo.qt.app import QML_PATH, preview_menu_catalog
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["main-qml-load"])
+controller = QtFaceController(start_timer=False, menu_catalog=preview_menu_catalog())
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+raise SystemExit(0 if engine.rootObjects() else 1)
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        engine = QQmlApplicationEngine()
-        engine.rootContext().setContextProperty("bmoUi", controller)
 
-        engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-        self.assertTrue(engine.rootObjects())
-        engine.deleteLater()
+    def test_calendar_qml_instantiates_inside_bounds_without_moving_face(self) -> None:
+        script = r'''
+import json
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from bmo.qt.app import QML_PATH
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["calendar-qml-geometry"])
+controller = QtFaceController(start_timer=False)
+controller.show_view("calendar", "Calendar", {
+    "mode": "day",
+    "date": "2026-08-12",
+    "dateLabel": "Wednesday, August 12, 2026",
+    "navigationLabel": "Wednesday, August 12, 2026",
+    "accentColor": "#668C25",
+    "events": [],
+    "monthDays": [],
+    "yearMonths": [],
+    "weekdayLabels": ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+    "selectedId": "",
+    "selectedReadOnly": False,
+    "selectedRecurring": False,
+    "categories": ["Family"],
+    "colorPalette": [{"name": "Ocean", "color": "#1578D3"}],
+    "error": "",
+    "editor": {},
+    "scopeKind": "",
+    "scopePrompt": "",
+})
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+window = engine.rootObjects()[0]
+window.showNormal()
+window.resize(800, 480)
+app.processEvents()
+face = window.findChild(QQuickItem, "hostedCompactFace")
+calendar_root = window.findChild(QQuickItem, "calendarRoot")
+day_view = window.findChild(QQuickItem, "calendarDayView")
+print(json.dumps({
+    "face": [face.x(), face.y(), face.width(), face.height()],
+    "calendar": [calendar_root.width(), calendar_root.height()],
+    "day": [day_view.x(), day_view.y(), day_view.width(), day_view.height()],
+}))
+window.close()
+controller.stop()
+engine.deleteLater()
+app.processEvents()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        geometry = json.loads(result.stdout.strip())
+        self.assertEqual(geometry["face"], [684.0, 5.0, 108.0, 65.0])
+        self.assertEqual(geometry["calendar"], [800.0, 418.0])
+        self.assertLessEqual(
+            geometry["day"][0] + geometry["day"][2],
+            geometry["calendar"][0],
+        )
+        self.assertLessEqual(
+            geometry["day"][1] + geometry["day"][3],
+            geometry["calendar"][1],
+        )
 
     def test_loaded_menu_icons_do_not_overlap_and_face_geometry_is_fixed(
         self,
     ) -> None:
-        controller = QtFaceController(
-            start_timer=False,
-            menu_catalog=preview_menu_catalog(),
+        script = r'''
+import json
+from PySide6.QtCore import QPointF, QRectF, QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from bmo.qt.app import QML_PATH, preview_menu_catalog
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["menu-qml-geometry"])
+controller = QtFaceController(start_timer=False, menu_catalog=preview_menu_catalog())
+controller.show_menu()
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+root = engine.rootObjects()[0]
+root.showNormal()
+root.resize(800, 480)
+app.processEvents()
+scene = root.contentItem()
+face = root.findChild(QQuickItem, "menuCompactFace")
+page_pill = root.findChild(QQuickItem, "menuPagePill")
+
+def descendants(item):
+    found = []
+    for child in item.childItems():
+        found.append(child)
+        found.extend(descendants(child))
+    return found
+
+icons = [item for item in descendants(scene) if item.objectName() == "menuIcon"]
+rects = []
+for icon in icons:
+    origin = icon.mapToItem(scene, QPointF(0, 0))
+    rects.append(QRectF(origin.x(), origin.y(), icon.width(), icon.height()))
+overlaps = any(
+    rect.intersects(other)
+    for index, rect in enumerate(rects)
+    for other in rects[index + 1:]
+)
+print(json.dumps({
+    "face": [face.x(), face.y(), face.width(), face.height()],
+    "pill": [page_pill.x(), page_pill.y(), page_pill.width(), page_pill.height()],
+    "window": [root.width(), root.height()],
+    "iconCount": len(icons),
+    "iconSizes": [[icon.width(), icon.height()] for icon in icons],
+    "overlaps": overlaps,
+}))
+window = root
+window.close()
+controller.stop()
+engine.deleteLater()
+app.processEvents()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
         )
-        controller.show_menu()
-        engine = QQmlApplicationEngine()
-        engine.rootContext().setContextProperty("bmoUi", controller)
-        engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
-        root = engine.rootObjects()[0]
-        root.showNormal()
-        root.resize(800, 480)
-        self.app.processEvents()
 
-        scene = root.contentItem()
-        face = root.findChild(QQuickItem, "menuCompactFace")
-        page_pill = root.findChild(QQuickItem, "menuPagePill")
-
-        def descendants(item: QQuickItem) -> list[QQuickItem]:
-            found: list[QQuickItem] = []
-            for child in item.childItems():
-                found.append(child)
-                found.extend(descendants(child))
-            return found
-
-        icons = [
-            item for item in descendants(scene)
-            if item.objectName() == "menuIcon"
-        ]
-        icon_rects = []
-        for icon in icons:
-            origin = icon.mapToItem(scene, QPointF(0, 0))
-            icon_rects.append(
-                QRectF(origin.x(), origin.y(), icon.width(), icon.height())
-            )
-
-        self.assertIsNotNone(face)
-        self.assertIsNotNone(page_pill)
-        self.assertEqual((face.x(), face.y()), (684.0, 5.0))
-        self.assertEqual((face.width(), face.height()), (108.0, 65.0))
-        self.assertEqual((root.width(), root.height()), (800, 480))
-        self.assertEqual((page_pill.x(), page_pill.y()), (361.0, 448.0))
-        self.assertEqual((page_pill.width(), page_pill.height()), (78.0, 24.0))
-        self.assertEqual(len(icons), 7)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        geometry = json.loads(result.stdout.strip())
+        self.assertEqual(geometry["face"], [684.0, 5.0, 108.0, 65.0])
+        self.assertEqual(geometry["pill"], [361.0, 448.0, 78.0, 24.0])
+        self.assertEqual(geometry["window"], [800, 480])
+        self.assertEqual(geometry["iconCount"], 7)
         self.assertTrue(
-            all(
-                (icon.width(), icon.height()) == (108.0, 108.0)
-                for icon in icons
-            )
+            all(size == [108.0, 108.0] for size in geometry["iconSizes"])
         )
-        for index, rect in enumerate(icon_rects):
-            for other in icon_rects[index + 1 :]:
-                self.assertFalse(rect.intersects(other))
-
-        engine.deleteLater()
-        self.app.processEvents()
+        self.assertFalse(geometry["overlaps"])
 
     def test_main_menu_uses_clean_compact_kid_friendly_layout(self) -> None:
         source = QML_PATH.read_text(encoding="utf-8")

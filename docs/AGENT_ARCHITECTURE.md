@@ -152,6 +152,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo/qt/qml/Main.qml` — fullscreen 800x480 face, menu, HUD, attention,
   quiet-hours, typed-debug, overlay, and kiosk shortcut surface.
 - `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
+- `bmo/qt/qml/CalendarView.qml` — production Calendar day/month/year layouts,
+  bounded colored event dots, scrollable editor, touch color palette, and
+  recurring occurrence/series decision surface.
 - `bmo/qt/qml/WeatherView.qml`, `WeatherScene.qml`, and `WeatherIcon.qml` —
   production child-friendly Weather layout, seasonal/condition animation, and
   dependency-free vector-style Canvas art.
@@ -347,23 +350,28 @@ cleans them up independently of other features.
 
 The calendar tool contributes `graphics/icons/calendar.png` by reference and
 opens only from its touch-menu item. It starts on the local current day, with
-explicit Day, Month, Year, Today, and Menu controls. Day navigation uses only
-previous/next arrows; more than four event rows remain inside a clipped,
+explicit Day, Month, Year, and Today controls; the canonical compact face
+returns to the menu. Day navigation uses only previous/next arrows; more than
+four event rows remain inside a clipped,
 vertically draggable viewport. Month cells place colored event dots beside the
 day number and then in bounded rows, displaying an overflow count only after
 the cell's safe capacity is full. The year view uses month-specific birthstone
-colors and opens a selected month. A live upper-right BMO face animates while
-calendar-owned announcements play.
+colors and opens a selected month. Production Qt uses a Calendar-owned QML
+surface over the neutral occurrence/editor records; the temporary fallback
+retains the Tk presentation. The shared upper-right BMO face remains at the
+canonical `x=684`, `y=5`, 108×65 bounds at every Calendar level and animates
+while calendar-owned announcements play.
 
-The touch editor owns event name, all-day or start/end times, category, a named
-touch color palette, notes, weekly/monthly/yearly recurrence, weekly
-day selection, repeat end date/count, and monthly short-month behavior. Irrelevant
-controls are hidden or disabled. Editing or deleting one repeated occurrence
-asks whether the change applies to that occurrence or the series. Occurrence
-overrides atomically store both the series exception and replacement. Built-in
-US holidays are read-only calendar rows. Calendar voice routing can summarize
-today, tomorrow, this/next week, weekends, months, dates, and named weekdays,
-but exposes no voice mutation path.
+The scrollable touch editor owns event name, all-day or start/end times,
+category, a named twelve-color quick palette plus a continuous touch hue
+picker, notes, weekly/monthly/yearly recurrence, weekly day selection, repeat
+end date/count, and monthly short-month behavior.
+Irrelevant controls are hidden or disabled. Editing or deleting one repeated
+occurrence opens one focused choice asking whether the change applies to that
+occurrence or the whole series. Occurrence overrides atomically store both the
+series exception and replacement. Built-in US holidays are read-only calendar
+rows. Calendar voice routing can summarize today, tomorrow, this/next week,
+weekends, months, dates, and named weekdays, but exposes no voice mutation path.
 
 At startup and each local date change, the feature publishes one typed
 attention for every unacknowledged current-day occurrence. `BotGUI` owns the
@@ -510,8 +518,9 @@ temporary `tk_agent.py` fallback weather renderer and runs only while that
 legacy view is open.
 
 Calendar persistence, recurrence, color selection, and quiet-hours enforcement
-use only Python's standard library and existing Tk/Pillow packages. The system
-local date and time are authoritative; there is no feature-level timezone.
+use only Python's standard library and the existing Qt Quick production/Tk
+fallback runtimes. The system local date and time are authoritative; there is
+no feature-level timezone.
 Calendar value objects require exact string, `date`, and `time` domain values;
 they reject `datetime` and values that would otherwise be silently stringified.
 Recurrence candidates are generated lazily, stop at the first exhausted count,
