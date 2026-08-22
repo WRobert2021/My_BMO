@@ -307,56 +307,9 @@ Rectangle {
 
     Component {
         id: albumView
-        Item {
-            Column {
-                anchors.fill: parent
-                anchors.margins: 14
-                spacing: 8
-                Row {
-                    width: parent.width
-                    spacing: 10
-                    Label { width: parent.width - 320; text: (root.viewModel.photoCount || 0) + " photos"; color: "#58708c"; font.pixelSize: 17; font.bold: true }
-                    Button { width: 90; height: 42; text: "◀"; enabled: !root.viewModel.detail; onClicked: root.send("album_previous") }
-                    Label { width: 90; height: 42; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.pageLabel || ""; color: "#102a5e"; font.bold: true }
-                    Button { width: 90; height: 42; text: "▶"; enabled: !root.viewModel.detail; onClicked: root.send("album_next") }
-                }
-                MessageText { text: root.viewModel.error || ""; visible: text !== "" }
-                Item {
-                    width: parent.width
-                    height: parent.height - y
-                    visible: root.viewModel.detail === true
-                    Image { anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom; width: parent.width - 210; source: root.viewModel.selectedSource || ""; fillMode: Image.PreserveAspectFit }
-                    Column {
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 190
-                        spacing: 12
-                        Button { width: parent.width; height: 52; text: "BACK TO PHOTOS"; onClicked: root.send("album_back") }
-                        Button { width: parent.width; height: 52; text: root.viewModel.busy ? "BMO IS LOOKING..." : "ASK BMO"; enabled: !root.viewModel.busy; onClicked: root.send("album_vision") }
-                        Button { width: parent.width; height: 52; text: "DELETE"; onClicked: root.send("album_delete") }
-                    }
-                }
-                GridLayout {
-                    visible: root.viewModel.detail !== true
-                    width: parent.width
-                    columns: 3
-                    rowSpacing: 8
-                    columnSpacing: 8
-                    Repeater {
-                        model: root.viewModel.photos || []
-                        delegate: Rectangle {
-                            required property var modelData
-                            Layout.preferredWidth: 246
-                            Layout.preferredHeight: 136
-                            color: "white"
-                            border.color: "#b7d7e8"
-                            radius: 8
-                            Image { anchors.fill: parent; anchors.margins: 5; source: modelData.source; fillMode: Image.PreserveAspectCrop }
-                            MouseArea { anchors.fill: parent; onClicked: root.send("album_select", modelData.path) }
-                        }
-                    }
-                }
-            }
+        AlbumView {
+            controller: root.controller
+            viewModel: root.viewModel
         }
     }
 

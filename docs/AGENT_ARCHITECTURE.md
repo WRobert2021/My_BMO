@@ -154,6 +154,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
 - `bmo/qt/qml/TimerView.qml` — Timer creation controls, live countdown list,
   cancellation, and touch scrolling.
+- `bmo/qt/qml/AlbumView.qml` — Album thumbnail grid, bounded page controls,
+  photo detail actions, and child-friendly empty and error states.
 - `bmo/qt/qml/CalendarView.qml` — production Calendar day/month/year layouts,
   bounded colored event dots, scrollable editor, touch color palette, and
   recurring occurrence/series decision surface.
@@ -394,15 +396,18 @@ kiosk unlocked.
 The album feature contributes `graphics/icons/album.png` by reference and has
 no voice, model, prompt, alias, or executable-tool surface. Its full-screen
 view recursively lists only resolved regular image files contained by the
-configured `photo_root`. The grid shows multiple images per page, retraces its
-pages with horizontal swipes, and retains the live BMO face in the upper-right
-corner. Selecting a thumbnail hides BMO and shows the image full screen; a
-second tap opens Back, Wastebasket, and BMO-analysis actions. Back restores the
-album, and Wastebasket uses the recoverable FreeDesktop `Trash/files` plus
-`Trash/info` layout. The analysis action validates containment again, restores
-the full-screen image with BMO in the upper-right corner, and queues a generic
-vision turn on the normal interaction worker. The feature never receives
-`BotGUI`, model objects, or an interaction archive.
+configured `photo_root`. The production Qt grid shows up to six captioned
+images per bounded page, while the legacy view also supports horizontal swipe
+navigation. Both retain the live BMO face at the canonical upper-right bounds.
+Selecting a Qt thumbnail opens a fitted photo stage with Back, Wastebasket,
+and BMO-analysis actions without moving the face; the legacy full-photo view
+temporarily hides BMO until its action surface opens. Back restores the album,
+and Wastebasket uses the recoverable FreeDesktop `Trash/files` plus
+`Trash/info` layout. The analysis action validates containment again and queues
+a generic vision turn on the normal interaction worker. Vision responses are
+presentation-only and are always narrated even when the vision model formats
+its description like JSON or prefixes it with an `Action:` label. The feature
+never receives `BotGUI`, model objects, or an interaction archive.
 
 The GalaxyRVR feature contributes `graphics/icons/rc_remote.png` by reference
 and likewise has no voice, model, prompt, alias, or executable-tool surface.

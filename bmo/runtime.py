@@ -632,7 +632,12 @@ class AssistantRuntime:
                     break
                 content = chunk["message"]["content"]
                 full_response += content
-                if '{"' in content or "action:" in content.lower():
+                # Image turns are presentation-only. Vision models sometimes
+                # describe a scene with JSON or an "Action:" label; treating
+                # that as a tool request suppresses the response and its TTS.
+                if image_path is None and (
+                    '{"' in content or "action:" in content.lower()
+                ):
                     action_mode = True
                     self.thinking_sound_active.clear()
                     continue

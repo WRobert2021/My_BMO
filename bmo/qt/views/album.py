@@ -58,8 +58,13 @@ class QtAlbumView(QtHostedView):
                 for path in visible
             ],
             "photoCount": len(photos),
+            "pageIndex": self.page,
+            "pageCount": page_count,
             "pageLabel": f"{self.page + 1} / {page_count}" if photos else "",
+            "hasPrevious": bool(photos) and self.page > 0,
+            "hasNext": bool(photos) and self.page + 1 < page_count,
             "selectedPath": str(self.selected or ""),
+            "selectedLabel": self.selected.name if self.selected is not None else "",
             "selectedSource": (
                 QUrl.fromLocalFile(str(self.selected.resolve()))
                 if self.selected is not None

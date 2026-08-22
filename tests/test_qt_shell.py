@@ -33,6 +33,7 @@ from bmo.qt.app import (  # noqa: E402
 )
 from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.qt.view_host import QtViewHost  # noqa: E402
+from bmo.qt.views.album import QtAlbumView  # noqa: E402
 from bmo.qt.views.calendar import QtCalendarView  # noqa: E402
 from bmo.qt.views.matching_game import QtMatchingGameView  # noqa: E402
 from bmo.qt.views.timer import QtTimerView  # noqa: E402
@@ -128,7 +129,6 @@ class QtFaceControllerTests(unittest.TestCase):
             controller.faceReleased(102, 101)
             controller.facePressed(700, 200)
             controller.faceReleased(100, 200)
-
         self.assertFalse(controller.hudVisible)
         self.assertTrue(controller.menuVisible)
         self.assertEqual(menu_requests, [True])
@@ -311,6 +311,98 @@ class QtFaceControllerTests(unittest.TestCase):
         self.assertTrue(controller.viewVisible)
         self.assertEqual(controller.viewData, {"ready": True})
         self.assertEqual(actions, [("go", "now")])
+
+
+class QtAlbumViewTests(unittest.TestCase):
+    def test_album_payload_exposes_bounded_page_navigation_and_caption(self) -> None:
+        host = Mock()
+        photos = tuple(Path(f"/tmp/photo-{index}.jpg") for index in range(5))
+        view = QtAlbumView(
+            host,
+            photo_provider=lambda: photos,
+            delete_photo=Mock(),
+            request_vision=Mock(),
+            photos_per_page=2,
+            on_close=Mock(),
+        )
+
+        first = view.payload()
+        self.assertEqual(first["pageIndex"], 0)
+        self.assertEqual(first["pageCount"], 3)
+        self.assertFalse(first["hasPrevious"])
+        self.assertTrue(first["hasNext"])
+
+        view.handle_action("album_next", "")
+        view.handle_action("album_next", "")
+        last = view.payload()
+        self.assertEqual(last["pageLabel"], "3 / 3")
+        self.assertTrue(last["hasPrevious"])
+        self.assertFalse(last["hasNext"])
+
+        view.handle_action("album_select", str(photos[-1]))
+        detail = view.payload()
+        self.assertEqual(detail["selectedLabel"], "photo-4.jpg")
+        self.assertTrue(detail["detail"])
+
+    def test_album_vision_sets_busy_until_runtime_completion(self) -> None:
+        host = Mock()
+        photo = Path("/tmp/photo.jpg")
+        request_vision = Mock()
+        view = QtAlbumView(
+            host,
+            photo_provider=lambda: (photo,),
+            delete_photo=Mock(),
+            request_vision=request_vision,
+            photos_per_page=6,
+            on_close=Mock(),
+        )
+        view.handle_action("album_select", str(photo))
+
+        view.handle_action("album_vision", "")
+
+        self.assertTrue(view.busy)
+        completion = request_vision.call_args.args[1]
+        completion()
+        self.assertFalse(view.busy)
+
+    def test_vision_action_labels_are_always_narrated(self) -> None:
+        from bmo.runtime import AssistantRuntime
+
+        runtime = AssistantRuntime.__new__(AssistantRuntime)
+        runtime.mode_registry = Mock()
+        runtime.vision_model = "vision-model"
+        runtime.text_model = "text-model"
+        runtime.set_state = Mock()
+        runtime.thinking_sound_active = Mock()
+        runtime._run_thinking_sound_loop = Mock()
+        runtime._logged_chat = Mock(
+            return_value=iter(
+                [{"message": {"content": "Action: a child is waving."}}]
+            )
+        )
+        runtime.interrupted = Mock()
+        runtime.interrupted.is_set.return_value = False
+        runtime.current_state = BotStates.THINKING
+        runtime.append_to_text = Mock()
+        runtime._stream_to_text = Mock()
+        runtime.enqueue_speech = Mock()
+        runtime._archive_assistant_text = Mock()
+        runtime._remember_turn = Mock()
+        runtime.wait_for_tts = Mock()
+
+        with patch("bmo.runtime.threading.Thread") as worker:
+            runtime.chat_and_respond(
+                "What do you see in this image?",
+                image_path="/tmp/photo.jpg",
+            )
+
+        runtime.enqueue_speech.assert_called_once_with(
+            "Action: a child is waving."
+        )
+        runtime._archive_assistant_text.assert_called_once_with(
+            "Action: a child is waving."
+        )
+        worker.return_value.start.assert_called_once_with()
 
 
 class QtTimerViewTests(unittest.TestCase):
@@ -713,6 +805,135 @@ raise SystemExit(0 if engine.rootObjects() else 1)
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_album_qml_fits_grid_and_detail_without_moving_face(self) -> None:
+        script = r'''
+import json
+from PySide6.QtCore import QPointF, QRectF, QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from bmo.qt.app import QML_PATH
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["album-qml-geometry"])
+controller = QtFaceController(start_timer=False)
+photos = [
+    {"path": f"/tmp/photo-{index}.jpg", "source": QUrl(), "label": f"photo-{index}.jpg"}
+    for index in range(6)
+]
+base = {
+    "photos": photos,
+    "photoCount": 6,
+    "pageIndex": 0,
+    "pageCount": 2,
+    "pageLabel": "1 / 2",
+    "hasPrevious": False,
+    "hasNext": True,
+    "selectedPath": "",
+    "selectedSource": QUrl(),
+    "selectedLabel": "",
+    "detail": False,
+    "busy": False,
+    "error": "",
+}
+controller.show_view("album", "Album", base)
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+window = engine.rootObjects()[0]
+window.showNormal()
+window.resize(800, 480)
+for _ in range(3):
+    app.processEvents()
+scene = window.contentItem()
+
+def find_visual(root, object_name):
+    pending = [root]
+    while pending:
+        item = pending.pop()
+        if item.objectName() == object_name:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError(f"Could not find visual item {object_name!r}")
+
+def scene_rect(item):
+    origin = item.mapToItem(scene, QPointF(0, 0))
+    return QRectF(origin.x(), origin.y(), item.width(), item.height())
+
+face_rect = scene_rect(find_visual(scene, "hostedCompactFace"))
+root_rect = scene_rect(find_visual(scene, "albumRoot"))
+summary_rect = scene_rect(find_visual(scene, "albumSummaryCard"))
+grid_rect = scene_rect(find_visual(scene, "albumPhotoGrid"))
+
+detail = dict(base)
+detail.update({
+    "selectedPath": "/tmp/photo-0.jpg",
+    "selectedLabel": "photo-0.jpg",
+    "detail": True,
+})
+controller.update_view(detail)
+for _ in range(3):
+    app.processEvents()
+stage_rect = scene_rect(find_visual(scene, "albumPhotoStage"))
+actions_rect = scene_rect(find_visual(scene, "albumActionPanel"))
+
+def values(rect):
+    return [rect.x(), rect.y(), rect.width(), rect.height()]
+
+print(json.dumps({
+    "face": values(face_rect),
+    "root": values(root_rect),
+    "summary": values(summary_rect),
+    "grid": values(grid_rect),
+    "stage": values(stage_rect),
+    "actions": values(actions_rect),
+}))
+window.close()
+controller.stop()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        geometry = json.loads(result.stdout.strip())
+        self.assertEqual(geometry["face"], [684.0, 5.0, 108.0, 65.0])
+        self.assertEqual(geometry["root"], [0.0, 62.0, 800.0, 418.0])
+        for key in ("summary", "grid", "stage", "actions"):
+            x, y, width, height = geometry[key]
+            self.assertGreaterEqual(x, 0)
+            self.assertGreaterEqual(y, 62)
+            self.assertLessEqual(x + width, 800)
+            self.assertLessEqual(y + height, 480)
+        stage_x, _stage_y, stage_width, _stage_height = geometry["stage"]
+        actions_x = geometry["actions"][0]
+        self.assertLessEqual(stage_x + stage_width, actions_x)
+
+    def test_album_qml_uses_restrained_kid_friendly_styling(self) -> None:
+        source = (QML_PATH.parent / "AlbumView.qml").read_text(
+            encoding="utf-8"
+        )
+        host_source = (QML_PATH.parent / "HostedView.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('objectName: "albumSummaryCard"', source)
+        self.assertIn('objectName: "albumPhotoGrid"', source)
+        self.assertIn('objectName: "albumActionPanel"', source)
+        self.assertIn('"WHAT DO YOU SEE?"', source)
+        self.assertIn('text: "MOVE TO WASTEBASKET"', source)
+        self.assertIn("AlbumView {", host_source)
+        self.assertIn('objectName: "hostedCompactFace"', host_source)
+        self.assertIn("x: 684", host_source)
+        self.assertIn("y: 5", host_source)
+        self.assertIn("width: 108", host_source)
+        self.assertIn("height: 65", host_source)
 
     def test_timer_qml_fits_at_kiosk_size_without_moving_face(self) -> None:
         script = r'''
