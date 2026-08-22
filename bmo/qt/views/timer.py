@@ -86,9 +86,14 @@ class QtTimerView(QtHostedView):
                 self.error = "BMO could not create that timer."
         elif action == "timer_cancel":
             try:
-                self.cancel_timer(int(value))
-            except ValueError:
+                timer_id = int(value)
+            except (TypeError, ValueError):
                 self.error = "That timer is no longer available."
+            else:
+                if self.cancel_timer(timer_id):
+                    self.error = ""
+                else:
+                    self.error = "That timer is no longer available."
         else:
             super().handle_action(action, value)
             return

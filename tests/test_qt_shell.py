@@ -19,6 +19,7 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
 from bmo.features.calendar_view import CalendarViewEvent  # noqa: E402
+from bmo.features.timer_view import TimerViewItem  # noqa: E402
 from bmo.features.weather_config import WeatherLocationConfig  # noqa: E402
 from bmo.features.weather_view import WeatherPageData  # noqa: E402
 from bmo.location import Location  # noqa: E402
@@ -34,6 +35,7 @@ from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.qt.view_host import QtViewHost  # noqa: E402
 from bmo.qt.views.calendar import QtCalendarView  # noqa: E402
 from bmo.qt.views.matching_game import QtMatchingGameView  # noqa: E402
+from bmo.qt.views.timer import QtTimerView  # noqa: E402
 from bmo.qt.views.weather import QtWeatherView  # noqa: E402
 from bmo.state import BotStates  # noqa: E402
 from bmo.weather import HourlyWeather, WeatherSnapshot  # noqa: E402
@@ -309,6 +311,63 @@ class QtFaceControllerTests(unittest.TestCase):
         self.assertTrue(controller.viewVisible)
         self.assertEqual(controller.viewData, {"ready": True})
         self.assertEqual(actions, [("go", "now")])
+
+
+class QtTimerViewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QGuiApplication.instance() or QGuiApplication(
+            ["pytest-qt-timer"]
+        )
+
+    def make_view(
+        self,
+        *,
+        items: tuple[TimerViewItem, ...] = (),
+        cancel_result: bool = True,
+    ) -> tuple[QtTimerView, Mock, QtFaceController]:
+        controller = QtFaceController(start_timer=False)
+        host = QtViewHost(controller)
+        cancel_timer = Mock(return_value=cancel_result)
+        view = QtTimerView(
+            host,
+            timer_provider=Mock(return_value=items),
+            cancel_timer=cancel_timer,
+            create_timer=Mock(return_value=True),
+            on_close=Mock(),
+        )
+        return view, cancel_timer, controller
+
+    def test_payload_preserves_timer_identity_and_live_countdown_text(self) -> None:
+        view, _cancel_timer, controller = self.make_view(
+            items=(TimerViewItem(4, "Pizza", 65.1),)
+        )
+        self.addCleanup(controller.stop)
+        self.addCleanup(view.close)
+
+        payload = view.payload()
+
+        self.assertEqual(
+            payload["items"],
+            [{"id": 4, "label": "Pizza", "remaining": "01:06"}],
+        )
+        self.assertEqual(payload["minutes"], 5)
+        self.assertFalse(payload["adding"])
+
+    def test_cancel_reports_stale_timer_and_clears_error_after_success(self) -> None:
+        view, cancel_timer, controller = self.make_view(cancel_result=False)
+        self.addCleanup(controller.stop)
+        self.addCleanup(view.close)
+
+        view.handle_action("timer_cancel", "99")
+
+        cancel_timer.assert_called_once_with(99)
+        self.assertEqual(view.error, "That timer is no longer available.")
+
+        cancel_timer.return_value = True
+        view.handle_action("timer_cancel", "4")
+
+        self.assertEqual(view.error, "")
 
 
 class QtWeatherViewTests(unittest.TestCase):
@@ -654,6 +713,136 @@ raise SystemExit(0 if engine.rootObjects() else 1)
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_timer_qml_fits_at_kiosk_size_without_moving_face(self) -> None:
+        script = r'''
+import json
+from PySide6.QtCore import QPointF, QRectF, QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from bmo.qt.app import QML_PATH
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["timer-qml-geometry"])
+controller = QtFaceController(start_timer=False)
+controller.show_view("timer", "Timers", {
+    "items": [
+        {
+            "id": 1,
+            "label": "Homework timer with a much longer name",
+            "remaining": "01:23",
+        },
+        {"id": 2, "label": "Pizza", "remaining": "12:45"},
+        {"id": 3, "label": "Timer 3", "remaining": "01:02:03"},
+        {"id": 4, "label": "Brush teeth", "remaining": "00:29"},
+    ],
+    "adding": True,
+    "hours": 12,
+    "minutes": 59,
+    "seconds": 59,
+    "error": "",
+})
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+window = engine.rootObjects()[0]
+window.showNormal()
+window.resize(800, 480)
+for _ in range(3):
+    app.processEvents()
+scene = window.contentItem()
+
+def find_visual(root, object_name):
+    pending = [root]
+    while pending:
+        item = pending.pop()
+        if item.objectName() == object_name:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError(f"Could not find visual item {object_name!r}")
+
+face = find_visual(scene, "hostedCompactFace")
+summary = find_visual(scene, "timerSummaryCard")
+editor = find_visual(scene, "timerAddEditor")
+timer_list = find_visual(scene, "timerList")
+label = find_visual(scene, "timerRowLabel")
+remaining = find_visual(scene, "timerRowRemaining")
+remove = find_visual(scene, "timerRemoveButton")
+
+def scene_rect(item):
+    origin = item.mapToItem(scene, QPointF(0, 0))
+    return QRectF(origin.x(), origin.y(), item.width(), item.height())
+
+summary_rect = scene_rect(summary)
+editor_rect = scene_rect(editor)
+list_rect = scene_rect(timer_list)
+face_rect = scene_rect(face)
+label_rect = scene_rect(label)
+remaining_rect = scene_rect(remaining)
+remove_rect = scene_rect(remove)
+print(json.dumps({
+    "face": [face_rect.x(), face_rect.y(), face_rect.width(), face_rect.height()],
+    "summary": [summary_rect.x(), summary_rect.y(), summary_rect.width(), summary_rect.height()],
+    "editor": [editor_rect.x(), editor_rect.y(), editor_rect.width(), editor_rect.height()],
+    "list": [list_rect.x(), list_rect.y(), list_rect.width(), list_rect.height()],
+    "labelRight": label_rect.right(),
+    "remainingLeft": remaining_rect.left(),
+    "remainingRight": remaining_rect.right(),
+    "removeLeft": remove_rect.left(),
+}))
+window.close()
+controller.stop()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        geometry = json.loads(result.stdout.strip())
+        self.assertEqual(geometry["face"], [684.0, 5.0, 108.0, 65.0])
+        for key in ("summary", "editor", "list"):
+            x, y, width, height = geometry[key]
+            self.assertGreaterEqual(x, 0)
+            self.assertGreaterEqual(y, 62)
+            self.assertLessEqual(x + width, 800)
+            self.assertLessEqual(y + height, 480)
+        self.assertLessEqual(
+            geometry["labelRight"],
+            geometry["remainingLeft"],
+        )
+        self.assertLessEqual(
+            geometry["remainingRight"],
+            geometry["removeLeft"],
+        )
+
+    def test_timer_qml_uses_touch_scrolling_and_restrained_kid_styling(
+        self,
+    ) -> None:
+        source = (QML_PATH.parent / "TimerView.qml").read_text(
+            encoding="utf-8"
+        )
+        host_source = (QML_PATH.parent / "HostedView.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('objectName: "timerSummaryCard"', source)
+        self.assertIn('objectName: "timerAddEditor"', source)
+        self.assertIn('objectName: "timerList"', source)
+        self.assertIn("ScrollIndicator.vertical", source)
+        self.assertIn("interactive: contentHeight > height", source)
+        self.assertIn('return "Ready for a countdown!"', source)
+        self.assertIn('text: "REMOVE"', source)
+        self.assertIn("TimerView {", host_source)
+        self.assertIn("x: 684", host_source)
+        self.assertIn("y: 5", host_source)
+        self.assertIn("width: 108", host_source)
+        self.assertIn("height: 65", host_source)
 
     def test_calendar_qml_instantiates_inside_bounds_without_moving_face(self) -> None:
         script = r'''

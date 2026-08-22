@@ -169,6 +169,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/qt/app.py` | Production Qt Quick engine, runtime wiring, shutdown, and isolated preview ownership. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 face, menu, global overlays, debug input, and hosted-view surface. |
 | `bmo/qt/qml/HostedView.qml` | Touch presentation host for every built-in feature and interaction mode. |
+| `bmo/qt/qml/TimerView.qml` | Production Timer creation controls, live countdown list, cancellation, and touch scrolling. |
 | `bmo/qt/qml/CalendarView.qml` | Production day/month/year Calendar, bounded event dots, recurrence editor, touch color picker, and occurrence/series choice. |
 | `bmo/qt/qml/WeatherView.qml` | Production 800x480 child-friendly Weather layout, interaction, live face, carousel, and debug panel. |
 | `bmo/qt/qml/WeatherScene.qml` | Seasonal/day-period ground, particles, and animated weather effects. |

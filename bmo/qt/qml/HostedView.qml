@@ -21,6 +21,21 @@ Rectangle {
         color: "#102a5e"
         visible: controller.viewKind !== "weather"
         z: 5
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#102a5e" }
+            GradientStop { position: 0.74; color: "#164b78" }
+            GradientStop { position: 1.0; color: "#187a85" }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 2
+            color: "#5bc9c2"
+            opacity: 0.85
+        }
 
         Label {
             anchors.left: parent.left
@@ -30,6 +45,27 @@ Rectangle {
             color: "white"
             font.pixelSize: 23
             font.bold: true
+            font.letterSpacing: 0.7
+        }
+
+        Row {
+            x: 612
+            y: 26
+            spacing: 11
+
+            Repeater {
+                model: ["#f2c84b", "#f08aa6", "#5bc9c2"]
+
+                delegate: Rectangle {
+                    required property string modelData
+                    width: 8
+                    height: 8
+                    radius: 2
+                    rotation: 45
+                    color: modelData
+                    opacity: 0.90
+                }
+            }
         }
 
         Image {
@@ -263,73 +299,9 @@ Rectangle {
 
     Component {
         id: timerView
-        Item {
-            Column {
-                anchors.fill: parent
-                anchors.margins: 16
-                spacing: 10
-                Row {
-                    width: parent.width
-                    spacing: 12
-                    Label {
-                        width: parent.width - 170
-                        text: (root.viewModel.items || []).length + " active"
-                        color: "#58708c"
-                        font.pixelSize: 18
-                        font.bold: true
-                    }
-                    Button {
-                        width: 150
-                        height: 46
-                        text: root.viewModel.adding ? "CANCEL" : "+ NEW TIMER"
-                        onClicked: root.send(root.viewModel.adding ? "timer_cancel_add" : "timer_add")
-                    }
-                }
-                Row {
-                    visible: root.viewModel.adding === true
-                    spacing: 8
-                    Repeater {
-                        model: ["hours", "minutes", "seconds"]
-                        delegate: Column {
-                            required property string modelData
-                            width: 126
-                            spacing: 2
-                            Label {
-                                width: parent.width
-                                horizontalAlignment: Text.AlignHCenter
-                                text: modelData.toUpperCase()
-                                color: "#58708c"
-                            }
-                            Row {
-                                spacing: 3
-                                Button { width: 36; height: 42; text: "−"; onClicked: root.send("timer_adjust", JSON.stringify({field: modelData, amount: -1})) }
-                                Label { width: 48; height: 42; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; text: root.viewModel[modelData] || 0; font.pixelSize: 22; font.bold: true; color: "#102a5e" }
-                                Button { width: 36; height: 42; text: "+"; onClicked: root.send("timer_adjust", JSON.stringify({field: modelData, amount: 1})) }
-                            }
-                        }
-                    }
-                    Button { width: 148; height: 70; text: "START"; onClicked: root.send("timer_create") }
-                }
-                MessageText { text: root.viewModel.error || ""; visible: text !== "" }
-                ListView {
-                    width: parent.width
-                    height: parent.height - y
-                    spacing: 8
-                    clip: true
-                    model: root.viewModel.items || []
-                    delegate: Rectangle {
-                        required property var modelData
-                        width: ListView.view.width
-                        height: 64
-                        radius: 10
-                        color: "white"
-                        border.color: "#b7d7e8"
-                        Label { anchors.left: parent.left; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: "#102a5e"; font.pixelSize: 18; font.bold: true }
-                        Label { anchors.right: cancel.left; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter; text: modelData.remaining; color: "#1578d3"; font.pixelSize: 24; font.bold: true }
-                        Button { id: cancel; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; width: 105; height: 46; text: "CANCEL"; onClicked: root.send("timer_cancel", modelData.id) }
-                    }
-                }
-            }
+
+        TimerView {
+            controller: root.controller
         }
     }
 

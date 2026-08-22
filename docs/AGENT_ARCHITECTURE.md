@@ -152,6 +152,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo/qt/qml/Main.qml` — fullscreen 800x480 face, menu, HUD, attention,
   quiet-hours, typed-debug, overlay, and kiosk shortcut surface.
 - `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
+- `bmo/qt/qml/TimerView.qml` — Timer creation controls, live countdown list,
+  cancellation, and touch scrolling.
 - `bmo/qt/qml/CalendarView.qml` — production Calendar day/month/year layouts,
   bounded colored event dots, scrollable editor, touch color palette, and
   recurring occurrence/series decision surface.
