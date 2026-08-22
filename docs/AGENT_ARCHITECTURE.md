@@ -425,15 +425,15 @@ All network, mapping, motion, camera, and retry choices belong to the ignored
 
 The Learning feature contributes `graphics/icons/learning.png` by reference
 and likewise has no voice, model, prompt, alias, direct-matching, or executable
-tool surface. It opens only from the touch menu. Its 800x480 Tk canvas presents
-data-driven Pre-K literacy, early-math, vocabulary, and general-readiness
-lessons, while a PIN-gated teacher area owns learner profiles, ordered plans,
-prerequisite warnings, and progress reports. Spoken instructions and feedback
-use only the view-scoped `FeatureMenuContext` announcement service, so they use
-the configured BMO Piper voice without giving the feature direct access to
-audio services. If scoped speech is unavailable, replay controls are visibly
-disabled and every visual exercise remains usable. Closing the view cancels its
-speech and reveals the unchanged originating menu page.
+tool surface. It opens only from the touch menu. Its production 800x480 QML
+surface presents data-driven Pre-K literacy, early-math, vocabulary, and
+general-readiness lessons, while a PIN-gated teacher area owns learner profiles,
+ordered plans, prerequisite warnings, and progress reports. Spoken instructions
+and feedback use only the view-scoped `FeatureMenuContext` announcement service,
+so they use the configured BMO Piper voice without giving the feature direct
+access to audio services. If scoped speech is unavailable, replay controls are
+visibly disabled and every visual exercise remains usable. Closing the view
+cancels its speech and reveals the unchanged originating menu page.
 
 Selecting a learner plan opens its assigned lessons instead of repeatedly
 starting at the beginning of the complete plan. Each lesson displays its
@@ -541,8 +541,9 @@ lives under `faces/calendar`, and calendar/quiet-hours settings live in
 Git-ignored; the tracked `config/example.calendar.json` and
 `config/example.quiet_hours.json` files document their schemas.
 
-Learning also uses only the standard library plus the existing Tk/Pillow
-surface. Private profiles, plans, sessions, and bounded attempt history live
+Learning also uses only the standard library plus the existing Qt Quick
+production surface and temporary Tk/Pillow fallback. Private profiles, plans,
+sessions, and bounded attempt history live
 under `data/learning` and are written with atomic replacement. Learning
 settings live in `config/learning.json`; the tracked
 `config/example.learning.json` documents the schema without exposing local

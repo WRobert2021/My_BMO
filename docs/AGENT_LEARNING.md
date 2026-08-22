@@ -108,6 +108,13 @@ The report formulas are deliberately explainable:
 The child view uses friendly progress and practice states. Percentages and
 detailed grades stay in the teacher area.
 
+The production Qt presentation keeps the shared miniature BMO face at the
+canonical upper-right `x=684`, `y=5`, 108×65 bounds on every Learning screen.
+Learning's dedicated QML surface uses restrained color accents, rounded touch
+cards, bounded scrolling grids, and quiet programmatic decoration. Dynamic
+learner, plan, and answer collections stay clipped within the 800×480 kiosk
+viewport instead of using unbounded flow layouts.
+
 ## Data ownership, recovery, and retention
 
 Learning creates nothing at import time. On its first successful save it

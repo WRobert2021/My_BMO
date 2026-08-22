@@ -806,6 +806,137 @@ raise SystemExit(0 if engine.rootObjects() else 1)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_learning_qml_fits_all_primary_surfaces_without_moving_face(self) -> None:
+        script = r'''
+import json
+from PySide6.QtCore import QPointF, QRectF, QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from bmo.qt.app import QML_PATH
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["learning-qml-geometry"])
+controller = QtFaceController(start_timer=False)
+controller.show_view("learning", "Learning", {
+    "screen": "teacher_profile",
+    "profiles": [{"id": "learner", "label": "Learner"}],
+    "profileName": "Learner",
+    "plans": [{"id": "plan", "label": "Plan", "lessons": 12, "enabled": True}],
+    "prompt": "Choose the two words that are the same.",
+    "choices": [
+        {"id": str(index), "label": chr(65 + index), "selected": False,
+         "assignment": "", "order": 0}
+        for index in range(26)
+    ],
+    "requiresSubmit": True,
+    "submitReady": True,
+    "progress": "3 / 8",
+    "feedback": "You compared every letter carefully.",
+    "tryAgain": False,
+    "canAnnounce": True,
+    "readOnly": False,
+    "error": "",
+    "teacherPin": "○ ○ ○ ○",
+    "teacherProfiles": [{"id": "learner", "label": "Learner", "archived": False}],
+    "teacherProfileName": "Learner",
+    "teacherPlans": [
+        {"id": "plan", "label": "A deliberately long learning plan name",
+         "enabled": True, "archived": False, "lessons": 12}
+    ],
+    "teacherPlanName": "A deliberately long learning plan name",
+    "report": {"title": "Learner", "grade": "84%", "completion": "62%",
+               "attempts": 124, "recent": "80%"},
+})
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+window = engine.rootObjects()[0]
+window.showNormal()
+window.resize(800, 480)
+for _ in range(5):
+    app.processEvents()
+scene = window.contentItem()
+
+def find_visual(root, object_name):
+    pending = [root]
+    while pending:
+        item = pending.pop()
+        if item.objectName() == object_name:
+            return item
+        pending.extend(item.childItems())
+    raise AssertionError(f"Could not find visual item {object_name!r}")
+
+def values(item):
+    origin = item.mapToItem(scene, QPointF(0, 0))
+    rect = QRectF(origin.x(), origin.y(), item.width(), item.height())
+    return [rect.x(), rect.y(), rect.width(), rect.height()]
+
+names = (
+    "learningRoot",
+    "learningProfilesGrid",
+    "learningPinPanel",
+    "learningTeacherProfilesGrid",
+    "learningTeacherPlansGrid",
+    "learningPlanCard",
+    "learningReportCards",
+    "learningPlansGrid",
+    "learningPrompt",
+    "learningLessonChoices",
+    "learningFeedbackBadge",
+)
+geometry = {name: values(find_visual(scene, name)) for name in names}
+geometry["face"] = values(find_visual(scene, "hostedCompactFace"))
+print(json.dumps(geometry))
+window.close()
+controller.stop()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        geometry = json.loads(result.stdout.strip())
+        self.assertEqual(geometry["face"], [684.0, 5.0, 108.0, 65.0])
+        self.assertEqual(geometry["learningRoot"], [0.0, 62.0, 800.0, 418.0])
+        for name, (x, y, width, height) in geometry.items():
+            if name == "face":
+                continue
+            with self.subTest(name=name):
+                self.assertGreaterEqual(x, 0)
+                self.assertGreaterEqual(y, 62)
+                self.assertLessEqual(x + width, 800)
+                self.assertLessEqual(y + height, 480)
+
+    def test_learning_qml_uses_bounded_lists_and_restrained_kid_styling(self) -> None:
+        learning = (QML_PATH.parent / "LearningView.qml").read_text(
+            encoding="utf-8"
+        )
+        hosted = (QML_PATH.parent / "HostedView.qml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("LearningView {", hosted)
+        self.assertIn('objectName: "learningRoot"', learning)
+        self.assertIn('objectName: "learningProfilesGrid"', learning)
+        self.assertIn('objectName: "learningTeacherPlansGrid"', learning)
+        self.assertIn('objectName: "learningLessonChoices"', learning)
+        self.assertIn("ScrollIndicator.vertical", learning)
+        self.assertIn("interactive: contentHeight > height", learning)
+        self.assertIn("component KidButton", learning)
+        self.assertIn("component PageHeading", learning)
+        self.assertNotIn("Flow {", learning)
+        self.assertIn('objectName: "hostedCompactFace"', hosted)
+        self.assertIn("x: 684", hosted)
+        self.assertIn("y: 5", hosted)
+        self.assertIn("width: 108", hosted)
+        self.assertIn("height: 65", hosted)
+
     def test_album_qml_fits_grid_and_detail_without_moving_face(self) -> None:
         script = r'''
 import json

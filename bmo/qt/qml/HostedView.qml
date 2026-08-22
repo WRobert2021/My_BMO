@@ -669,94 +669,9 @@ Rectangle {
 
     Component {
         id: learningView
-        Item {
-            Column {
-                anchors.fill: parent; anchors.margins: 14; spacing: 10
-                MessageText { text: root.viewModel.error || ""; visible: text !== "" }
-                Column {
-                    visible: root.viewModel.screen === "profiles"
-                    width: parent.width; spacing: 10
-                    Label { text: "Who is learning today?"; color: "#102a5e"; font.pixelSize: 27; font.bold: true }
-                    Flow { width: parent.width; spacing: 10; Repeater { model: root.viewModel.profiles || []; delegate: Button { required property var modelData; width: 220; height: 60; text: modelData.label; onClicked: root.send("learning_profile", modelData.id) } } }
-                    Button { width: 220; height: 52; text: "TEACHER AREA"; onClicked: root.send("learning_teacher") }
-                }
-                Column {
-                    visible: root.viewModel.screen === "teacher_pin"
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 420; spacing: 8
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Enter the 4-digit teacher PIN"; color: "#102a5e"; font.pixelSize: 24; font.bold: true }
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.teacherPin || "○ ○ ○ ○"; color: "#1578d3"; font.pixelSize: 25; font.bold: true }
-                    GridLayout {
-                        anchors.horizontalCenter: parent.horizontalCenter; columns: 3; rowSpacing: 5; columnSpacing: 5
-                        Repeater { model: ["1","2","3","4","5","6","7","8","9"]; delegate: Button { required property string modelData; Layout.preferredWidth: 82; Layout.preferredHeight: 48; text: modelData; onClicked: root.send("learning_teacher_digit", modelData) } }
-                        Button { Layout.preferredWidth: 82; Layout.preferredHeight: 48; text: "CLEAR"; onClicked: root.send("learning_teacher_clear") }
-                        Button { Layout.preferredWidth: 82; Layout.preferredHeight: 48; text: "0"; onClicked: root.send("learning_teacher_digit", "0") }
-                        Button { Layout.preferredWidth: 82; Layout.preferredHeight: 48; text: "BACK"; onClicked: root.send("learning_home") }
-                    }
-                }
-                Column {
-                    visible: root.viewModel.screen === "teacher_home"
-                    width: parent.width; spacing: 9
-                    Label { text: "Teacher area — learner profiles"; color: "#102a5e"; font.pixelSize: 25; font.bold: true }
-                    Flow { width: parent.width; spacing: 8; Repeater { model: root.viewModel.teacherProfiles || []; delegate: Button { required property var modelData; width: 220; height: 56; text: modelData.label + (modelData.archived ? " (archived)" : ""); onClicked: root.send("learning_teacher_profile", modelData.id) } } }
-                    Row { spacing: 8; TextField { id: newTeacherLearner; width: 360; height: 48; placeholderText: "New learner name" } Button { width: 170; height: 48; text: "ADD LEARNER"; enabled: !root.viewModel.readOnly; onClicked: { root.send("learning_create_profile", newTeacherLearner.text); newTeacherLearner.clear() } } }
-                    Button { width: 150; height: 44; text: "EXIT TEACHER"; onClicked: root.send("learning_home") }
-                }
-                Column {
-                    visible: root.viewModel.screen === "teacher_profile"
-                    width: parent.width; spacing: 8
-                    Label { text: "Learner: " + (root.viewModel.teacherProfileName || ""); color: "#102a5e"; font.pixelSize: 24; font.bold: true }
-                    Row { spacing: 8; TextField { id: renameTeacherLearner; width: 330; height: 46; placeholderText: "Rename learner" } Button { width: 150; height: 46; text: "RENAME"; enabled: !root.viewModel.readOnly; onClicked: { root.send("learning_rename_profile", renameTeacherLearner.text); renameTeacherLearner.clear() } } Button { width: 150; height: 46; text: "REPORT"; onClicked: root.send("learning_teacher_report") } }
-                    Flow { width: parent.width; spacing: 8; Repeater { model: root.viewModel.teacherPlans || []; delegate: Button { required property var modelData; width: 230; height: 56; text: modelData.label + (modelData.enabled ? "" : " (off)"); onClicked: root.send("learning_teacher_plan", modelData.id) } } }
-                    Row { spacing: 8; TextField { id: newLearningPlan; width: 350; height: 46; placeholderText: "New plan name" } Button { width: 170; height: 46; text: "CREATE PLAN"; enabled: !root.viewModel.readOnly; onClicked: { root.send("learning_create_plan", newLearningPlan.text); newLearningPlan.clear() } } Button { width: 120; height: 46; text: "BACK"; onClicked: root.send("learning_teacher_back") } }
-                }
-                Column {
-                    visible: root.viewModel.screen === "teacher_plan"
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 620; spacing: 15
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: root.viewModel.teacherPlanName || "Learning plan"; color: "#102a5e"; font.pixelSize: 28; font.bold: true }
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "This plan contains the validated lesson catalog."; color: "#58708c"; font.pixelSize: 16 }
-                    Row { anchors.horizontalCenter: parent.horizontalCenter; spacing: 12; Button { width: 190; height: 58; text: "ENABLE / DISABLE"; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_toggle_plan") } Button { width: 170; height: 58; text: "VIEW REPORT"; onClicked: root.send("learning_teacher_report") } Button { width: 140; height: 58; text: "BACK"; onClicked: root.send("learning_teacher_back") } }
-                }
-                Column {
-                    visible: root.viewModel.screen === "teacher_report"
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 650; spacing: 16
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Progress: " + ((root.viewModel.report || {}).title || ""); color: "#102a5e"; font.pixelSize: 26; font.bold: true }
-                    Row { anchors.horizontalCenter: parent.horizontalCenter; spacing: 10; Repeater { model: [{label:"GRADE", value:(root.viewModel.report || {}).grade || "0%"}, {label:"COMPLETE", value:(root.viewModel.report || {}).completion || "0%"}, {label:"ATTEMPTS", value:(root.viewModel.report || {}).attempts || 0}, {label:"RECENT", value:(root.viewModel.report || {}).recent || "0%"}]; delegate: Rectangle { required property var modelData; width: 145; height: 100; radius: 10; color: "white"; border.color: "#91b7c7"; Label { anchors.horizontalCenter: parent.horizontalCenter; y: 15; text: modelData.label; color: "#58708c"; font.bold: true } Label { anchors.horizontalCenter: parent.horizontalCenter; y: 48; text: modelData.value; color: "#102a5e"; font.pixelSize: 24; font.bold: true } } } }
-                    Button { anchors.horizontalCenter: parent.horizontalCenter; width: 160; height: 50; text: "BACK"; onClicked: root.send("learning_teacher_back") }
-                }
-                Column {
-                    visible: root.viewModel.screen === "plans"
-                    width: parent.width; spacing: 10
-                    Label { text: "Hello, " + (root.viewModel.profileName || "Learner") + "!"; color: "#102a5e"; font.pixelSize: 27; font.bold: true }
-                    Flow { width: parent.width; spacing: 10; Repeater { model: root.viewModel.plans || []; delegate: Button { required property var modelData; width: 240; height: 64; text: modelData.label; onClicked: root.send("learning_plan", modelData.id) } } }
-                    Button { width: 240; height: 58; text: "QUICK PRACTICE"; onClicked: root.send("learning_quick_start") }
-                    Button { width: 150; height: 46; text: "CHANGE LEARNER"; onClicked: root.send("learning_home") }
-                }
-                Column {
-                    visible: root.viewModel.screen === "lesson"
-                    width: parent.width; spacing: 9
-                    Row { width: parent.width; Label { width: parent.width - 170; text: root.viewModel.progress || ""; color: "#58708c"; font.bold: true } Button { width: 150; height: 42; text: "REPLAY"; enabled: root.viewModel.canAnnounce === true; onClicked: root.send("learning_replay") } }
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: root.viewModel.prompt || ""; color: "#102a5e"; font.pixelSize: 25; font.bold: true }
-                    Flow { width: parent.width; spacing: 9; Repeater { model: root.viewModel.choices || []; delegate: Button { required property var modelData; width: 180; height: 60; text: (modelData.order ? modelData.order + ". " : "") + modelData.label + (modelData.assignment ? " → " + modelData.assignment : ""); highlighted: modelData.selected === true || (modelData.assignment || "") !== ""; onClicked: root.send("learning_choice", modelData.id) } } }
-                    Button { visible: root.viewModel.requiresSubmit === true; enabled: root.viewModel.submitReady === true; width: 220; height: 54; anchors.horizontalCenter: parent.horizontalCenter; text: "CHECK ANSWER"; onClicked: root.send("learning_submit") }
-                    Button { width: 150; height: 44; text: "END LESSON"; onClicked: root.send("learning_back") }
-                }
-                Column {
-                    visible: root.viewModel.screen === "feedback"
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 620; spacing: 22
-                    Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: root.viewModel.feedback || ""; color: "#102a5e"; font.pixelSize: 28; font.bold: true }
-                    Button { anchors.horizontalCenter: parent.horizontalCenter; width: 260; height: 64; text: root.viewModel.tryAgain ? "TRY AGAIN" : "CONTINUE"; onClicked: root.send("learning_continue") }
-                }
-                Column {
-                    visible: root.viewModel.screen === "complete"
-                    anchors.horizontalCenter: parent.horizontalCenter; spacing: 22
-                    Label { text: "Great practice!"; color: "#198754"; font.pixelSize: 38; font.bold: true }
-                    Button { width: 260; height: 60; text: "BACK TO LEARNING"; onClicked: root.send("learning_back") }
-                }
-            }
+        LearningView {
+            controller: root.controller
+            viewModel: root.viewModel
         }
     }
 
