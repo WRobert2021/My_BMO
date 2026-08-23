@@ -4,5 +4,6 @@
     "song"
   ],
   "show_in_menu": true,
-  "player_command": "ffplay"
+  "player_command": "ffplay",
+  "state_path": "data/music/library.json"
 }

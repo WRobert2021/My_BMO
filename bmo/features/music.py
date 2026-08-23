@@ -8,11 +8,13 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import random
 import re
 import shutil
 import signal
 import struct
 import subprocess
+import time
 from typing import Any, Protocol
 
 from bmo.features.contracts import (
@@ -23,6 +25,7 @@ from bmo.features.contracts import (
     ToolResult,
 )
 from bmo.features.music_config import MusicConfig, load_music_config
+from bmo.features.music_store import MusicStore
 from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
@@ -44,7 +47,7 @@ FaceAnimationHook = Callable[[str], None]
 class MusicPlaybackBackend(Protocol):
     """Small playback surface shared by the Qt and legacy views."""
 
-    def play(self, path: Path) -> None: ...
+    def play(self, path: Path, start_seconds: float = 0.0) -> None: ...
 
     def is_running(self) -> bool: ...
 
@@ -60,10 +63,13 @@ class MusicTrack:
     """One playable track derived from Ogg comments, without track numbering."""
 
     path: Path
+    track_id: str
     title: str
     album: str
     artist: str
+    series: str
     genre: str
+    duration_seconds: float = 0.0
     artwork_mime: str = ""
     artwork: bytes = b""
 
@@ -168,6 +174,84 @@ def read_ogg_comments(path: str | Path) -> dict[str, tuple[str, ...]]:
     return {}
 
 
+def _ogg_codec_timing(data: bytes) -> tuple[int, int, int] | None:
+    """Return the codec stream serial, sample rate, and Opus pre-skip."""
+    partial: dict[int, bytearray] = {}
+    offset = 0
+    while offset + 27 <= len(data):
+        page = data.find(b"OggS", offset)
+        if page < 0 or page + 27 > len(data):
+            return None
+        if data[page + 4] != 0:
+            offset = page + 4
+            continue
+        page_flags = data[page + 5]
+        serial = struct.unpack_from("<I", data, page + 14)[0]
+        segment_count = data[page + 26]
+        table_end = page + 27 + segment_count
+        if table_end > len(data):
+            return None
+        lacing = data[page + 27 : table_end]
+        body_end = table_end + sum(lacing)
+        if body_end > len(data):
+            return None
+        packet = partial.setdefault(serial, bytearray())
+        if not (page_flags & 0x01) and packet:
+            packet.clear()
+        body_offset = table_end
+        for segment_length in lacing:
+            packet.extend(data[body_offset : body_offset + segment_length])
+            body_offset += segment_length
+            if segment_length >= 255:
+                continue
+            if packet.startswith(b"OpusHead") and len(packet) >= 12:
+                return serial, 48_000, struct.unpack_from("<H", packet, 10)[0]
+            if packet.startswith(b"\x01vorbis") and len(packet) >= 16:
+                sample_rate = struct.unpack_from("<I", packet, 12)[0]
+                return serial, sample_rate, 0
+            packet.clear()
+        offset = body_end
+    return None
+
+
+def read_ogg_duration(path: str | Path) -> float:
+    """Read Opus/Vorbis duration from its stream's final Ogg granule."""
+    supplied = Path(path)
+    with supplied.open("rb") as handle:
+        head = handle.read(64 * 1024)
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        tail_size = min(size, 256 * 1024)
+        handle.seek(size - tail_size)
+        tail = handle.read(tail_size)
+
+    timing = _ogg_codec_timing(head)
+    if timing is None:
+        return 0.0
+    codec_serial, sample_rate, pre_skip = timing
+    if sample_rate <= 0:
+        return 0.0
+
+    granule = -1
+    offset = 0
+    while True:
+        page = tail.find(b"OggS", offset)
+        if page < 0:
+            break
+        if (
+            page + 18 <= len(tail)
+            and tail[page + 4] == 0
+            and struct.unpack_from("<I", tail, page + 14)[0] == codec_serial
+        ):
+            candidate = struct.unpack_from("<Q", tail, page + 6)[0]
+            if candidate != 0xFFFFFFFFFFFFFFFF:
+                granule = max(granule, candidate)
+        offset = page + 4
+    if granule < 0:
+        return 0.0
+    return max(0.0, (granule - pre_skip) / sample_rate)
+
+
 def _decode_picture_block(value: str) -> tuple[str, bytes]:
     try:
         block = base64.b64decode(value, validate=True)
@@ -269,9 +353,11 @@ class MusicLibrary:
                         continue
                     fallback_title = _FILENAME_TRACK_PREFIX.sub("", resolved.stem)
                     artwork_mime, artwork = _extract_artwork(comments)
+                    track_id = resolved.relative_to(self.root).as_posix()
                     discovered.append(
                         MusicTrack(
                             path=resolved,
+                            track_id=track_id,
                             title=_first_comment(comments, "title", fallback_title),
                             album=_first_comment(
                                 comments,
@@ -279,7 +365,9 @@ class MusicLibrary:
                                 resolved.parent.name,
                             ),
                             artist=_first_comment(comments, "artist"),
+                            series=_first_comment(comments, "series"),
                             genre=genres[0],
+                            duration_seconds=read_ogg_duration(resolved),
                             artwork_mime=artwork_mime,
                             artwork=artwork,
                         )
@@ -325,22 +413,26 @@ class FFplayBackend:
             )
         return located
 
-    def play(self, path: Path) -> None:
+    def play(self, path: Path, start_seconds: float = 0.0) -> None:
         resolved = Path(path).resolve(strict=True)
-        if self.current_path == resolved and self.is_running():
+        start = max(0.0, float(start_seconds))
+        if self.current_path == resolved and self.is_running() and start <= 0.0:
             if self.paused:
                 self.resume()
             return
         self.stop()
+        arguments = [
+            self._executable(),
+            "-nodisp",
+            "-autoexit",
+            "-loglevel",
+            "error",
+        ]
+        if start > 0.0:
+            arguments.extend(("-ss", f"{start:.3f}"))
+        arguments.append(str(resolved))
         self._process = self._popen(
-            [
-                self._executable(),
-                "-nodisp",
-                "-autoexit",
-                "-loglevel",
-                "error",
-                str(resolved),
-            ],
+            arguments,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -387,23 +479,37 @@ class FFplayBackend:
 
 
 class MusicSession:
-    """Toolkit-neutral song selection, controls, repeat, and face hook."""
+    """Toolkit-neutral playback, progress, shuffle, and library state."""
 
     def __init__(
         self,
         tracks: tuple[MusicTrack, ...],
         backend: MusicPlaybackBackend,
         *,
+        store: MusicStore | None = None,
         face_animation_hook: FaceAnimationHook | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        random_source: Any | None = None,
     ) -> None:
         self.tracks = tracks
         self.backend = backend
+        self.store = store or MusicStore(None)
         self.selected_index: int | None = 0 if tracks else None
         self.playing_index: int | None = None
         self.state = "stopped"
         self.repeat = False
-        self.error = ""
+        self.error = self.store.error
         self._face_animation_hook = face_animation_hook
+        self._clock = clock
+        self._random = random_source or random.SystemRandom()
+        self._position_base = 0.0
+        self._position_started_at: float | None = None
+        self._position_track_index: int | None = self.selected_index
+        self._shuffle_queue: list[int] = []
+        self._shuffle_cursor = -1
+        self._index_by_id = {
+            track.track_id: index for index, track in enumerate(tracks)
+        }
 
     @property
     def selected_track(self) -> MusicTrack | None:
@@ -418,13 +524,42 @@ class MusicSession:
         return self.selected_track
 
     @property
+    def display_index(self) -> int | None:
+        if self.state in {"playing", "paused"} and self.playing_index is not None:
+            return self.playing_index
+        return self.selected_index
+
+    @property
+    def duration_seconds(self) -> float:
+        track = self.display_track
+        return track.duration_seconds if track is not None else 0.0
+
+    @property
+    def position_seconds(self) -> float:
+        display_index = self.display_index
+        if display_index is None or self._position_track_index != display_index:
+            return 0.0
+        position = self._position_base
+        if self.state == "playing" and self._position_started_at is not None:
+            position += max(0.0, self._clock() - self._position_started_at)
+        duration = self.duration_seconds
+        return min(position, duration) if duration > 0.0 else max(0.0, position)
+
+    @property
+    def shuffle_active(self) -> bool:
+        return bool(self._shuffle_queue)
+
+    @property
     def signature(self) -> tuple[object, ...]:
         return (
             self.selected_index,
             self.playing_index,
             self.state,
             self.repeat,
+            self.shuffle_active,
             self.error,
+            self.store.revision,
+            round(self.position_seconds, 1),
         )
 
     def _set_state(self, state: str) -> None:
@@ -447,53 +582,232 @@ class MusicSession:
             self.error = "That song is no longer available."
             return False
         self.selected_index = index
-        self.error = ""
+        if self.state == "stopped":
+            self._position_track_index = index
+            self._position_base = 0.0
+            self._position_started_at = None
+        self.error = self.store.error
         return True
 
-    def play_selected(self) -> bool:
+    def _play_selected(
+        self,
+        *,
+        preserve_shuffle: bool,
+        record_play: bool,
+        start_seconds: float | None = None,
+    ) -> bool:
         track = self.selected_track
         if track is None:
             self.error = "No songs with the configured genre were found."
             return False
+        if not preserve_shuffle:
+            self._shuffle_queue.clear()
+            self._shuffle_cursor = -1
+        start = (
+            self._position_base
+            if start_seconds is None and self._position_track_index == self.selected_index
+            else float(start_seconds or 0.0)
+        )
         try:
-            self.backend.play(track.path)
+            self.backend.play(track.path, start)
         except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
             self.error = str(exc) or "BMO could not play that song."
             self._set_state("stopped")
             return False
         self.playing_index = self.selected_index
-        self.error = ""
+        self._position_track_index = self.playing_index
+        self._position_base = max(0.0, start)
+        self._position_started_at = self._clock()
+        self.error = self.store.error
         self._set_state("playing")
+        if record_play:
+            self.store.record_play(track.track_id)
+            self.error = self.store.error
         return True
+
+    def play_selected(self) -> bool:
+        if self.state == "playing" and self.selected_index == self.playing_index:
+            return True
+        if self.state == "paused" and self.selected_index == self.playing_index:
+            return self.pause_or_resume()
+        return self._play_selected(preserve_shuffle=False, record_play=True)
 
     def pause_or_resume(self) -> bool:
         try:
             if self.state == "paused":
                 changed = self.backend.resume()
                 if changed:
+                    self._position_started_at = self._clock()
                     self._set_state("playing")
-            else:
+            elif self.state == "playing":
+                position = self.position_seconds
                 changed = self.backend.pause()
                 if changed:
+                    self._position_base = position
+                    self._position_started_at = None
                     self._set_state("paused")
+            else:
+                changed = False
         except OSError as exc:
             self.error = str(exc) or "BMO could not pause that song."
             return False
         return changed
 
+    def seek(self, seconds: float) -> bool:
+        track = self.display_track
+        display_index = self.display_index
+        if track is None or display_index is None or track.duration_seconds <= 0.0:
+            return False
+        target = min(max(0.0, float(seconds)), track.duration_seconds)
+        if self.state in {"playing", "paused"} and self.playing_index is not None:
+            was_paused = self.state == "paused"
+            try:
+                self.backend.play(track.path, target)
+                if was_paused:
+                    self.backend.pause()
+            except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                self.error = str(exc) or "BMO could not move within that song."
+                return False
+            self._position_track_index = self.playing_index
+            self._position_base = target
+            self._position_started_at = None if was_paused else self._clock()
+        else:
+            self._position_track_index = display_index
+            self._position_base = target
+            self._position_started_at = None
+        self.error = self.store.error
+        return True
+
     def stop(self) -> None:
         self.backend.stop()
+        self._position_track_index = self.selected_index
+        self._position_base = 0.0
+        self._position_started_at = None
+        self._shuffle_queue.clear()
+        self._shuffle_cursor = -1
         self._set_state("stopped")
 
     def toggle_repeat(self) -> None:
         self.repeat = not self.repeat
 
+    def shuffle_all(self) -> bool:
+        if not self.tracks:
+            self.error = "There are no songs to shuffle."
+            return False
+        self._shuffle_queue = list(range(len(self.tracks)))
+        self._random.shuffle(self._shuffle_queue)
+        if (
+            len(self._shuffle_queue) > 1
+            and self.playing_index is not None
+            and self._shuffle_queue[0] == self.playing_index
+        ):
+            self._shuffle_queue[0], self._shuffle_queue[1] = (
+                self._shuffle_queue[1],
+                self._shuffle_queue[0],
+            )
+        self._shuffle_cursor = 0
+        self.selected_index = self._shuffle_queue[0]
+        self._position_track_index = self.selected_index
+        self._position_base = 0.0
+        self._position_started_at = None
+        return self._play_selected(preserve_shuffle=True, record_play=True)
+
+    def toggle_favorite(self) -> bool:
+        track = self.display_track
+        if track is None:
+            return False
+        favorite = self.store.toggle_favorite(track.track_id)
+        self.error = self.store.error
+        return favorite
+
+    def create_playlist(self, name: str) -> str | None:
+        try:
+            created = self.store.create_playlist(name)
+        except (RuntimeError, ValueError) as exc:
+            self.error = str(exc)
+            return None
+        self.error = self.store.error
+        return created
+
+    def delete_playlist(self, name: str) -> bool:
+        deleted = self.store.delete_playlist(name)
+        self.error = self.store.error
+        return deleted
+
+    def toggle_current_in_playlist(self, name: str) -> bool | None:
+        track = self.display_track
+        if track is None:
+            return None
+        try:
+            included = self.store.toggle_playlist_track(name, track.track_id)
+        except (RuntimeError, ValueError) as exc:
+            self.error = str(exc)
+            return None
+        self.error = self.store.error
+        return included
+
+    def track_indices_for_ids(self, track_ids: list[str]) -> list[int]:
+        return [
+            self._index_by_id[track_id]
+            for track_id in track_ids
+            if track_id in self._index_by_id
+        ]
+
     def poll(self) -> None:
         if self.state not in {"playing", "paused"} or self.backend.is_running():
             return
-        if self.repeat and self.playing_index is not None:
-            self.selected_index = self.playing_index
-            self.play_selected()
+        finished_index = self.playing_index
+        if finished_index is not None:
+            self._position_track_index = finished_index
+            self._position_base = self.tracks[finished_index].duration_seconds
+            self._position_started_at = None
+        if self.repeat and finished_index is not None:
+            self.selected_index = finished_index
+            self._position_base = 0.0
+            self._play_selected(
+                preserve_shuffle=self.shuffle_active,
+                record_play=True,
+                start_seconds=0.0,
+            )
+            return
+        if self.shuffle_active and self._shuffle_cursor + 1 < len(self._shuffle_queue):
+            self._shuffle_cursor += 1
+            self.selected_index = self._shuffle_queue[self._shuffle_cursor]
+            self._position_track_index = self.selected_index
+            self._position_base = 0.0
+            self._play_selected(
+                preserve_shuffle=True,
+                record_play=True,
+                start_seconds=0.0,
+            )
+            return
+        if self.shuffle_active and finished_index is not None:
+            self._shuffle_queue = list(range(len(self.tracks)))
+            self._random.shuffle(self._shuffle_queue)
+            if len(self._shuffle_queue) > 1 and self._shuffle_queue[0] == finished_index:
+                self._shuffle_queue[0], self._shuffle_queue[1] = (
+                    self._shuffle_queue[1],
+                    self._shuffle_queue[0],
+                )
+            self._shuffle_cursor = 0
+            self.selected_index = self._shuffle_queue[0]
+            self._position_track_index = self.selected_index
+            self._position_base = 0.0
+            self._play_selected(
+                preserve_shuffle=True,
+                record_play=True,
+                start_seconds=0.0,
+            )
+            return
+        if finished_index is not None and self.tracks:
+            self.selected_index = (finished_index + 1) % len(self.tracks)
+            self._position_track_index = self.selected_index
+            self._position_base = 0.0
+            self._play_selected(
+                preserve_shuffle=False,
+                record_play=True,
+                start_seconds=0.0,
+            )
             return
         self._set_state("stopped")
 
@@ -546,6 +860,7 @@ class MusicTool:
         session = MusicSession(
             library.tracks(),
             self._backend_factory(self.config.player_command),
+            store=MusicStore(self.config.state_path),
             face_animation_hook=self._face_animation_hook,
         )
         self._session = session
@@ -599,7 +914,9 @@ __all__ = [
     "MUSIC_MENU_ITEM",
     "MusicLibrary",
     "MusicSession",
+    "MusicStore",
     "MusicTool",
     "MusicTrack",
     "read_ogg_comments",
+    "read_ogg_duration",
 ]

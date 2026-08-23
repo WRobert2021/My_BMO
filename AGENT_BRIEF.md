@@ -107,8 +107,9 @@ configuration list.
 | `bmo/features/calendar_view.py` | Toolkit-neutral calendar occurrence and editor records shared with presentation adapters. |
 | `bmo/features/weather_view.py` | Toolkit-neutral weather-page records and condition/season/time/moon/hourly scene contract shared with presentation adapters. |
 | `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
-| `bmo/features/music.py` | Menu-only Ogg song discovery, embedded metadata/artwork parsing, ffplay controls, repeat, and cleanup. |
-| `bmo/features/music_config.py` | Music-owned private library root, genre filter, menu visibility, and player command configuration. |
+| `bmo/features/music.py` | Menu-only Ogg song discovery, metadata/artwork/duration parsing, continuous and shuffled ffplay queues, seeking, and cleanup. |
+| `bmo/features/music_config.py` | Music-owned private library root, genre filter, menu visibility, player command, and state-path configuration. |
+| `bmo/features/music_store.py` | Atomic Music history, play-count, favorite, and playlist persistence keyed by library-relative track IDs. |
 | `bmo/features/galaxy_rvr.py` | Menu-only Bluetooth gamepad remote, GalaxyRVR LAN control/telemetry protocol, RGB commands, camera snapshots, and safe-stop lifecycle. |
 | `bmo/features/galaxy_rvr_config.py` | GalaxyRVR-owned private network, photo, controller mapping, motion, camera, and timeout configuration. |
 
@@ -175,7 +176,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/qt/qml/GalaxyRVRView.qml` | Production RC camera dashboard, live ultrasonic/IR/battery cards, controller status, RGB palette, and snapshot action. |
 | `bmo/qt/qml/TimerView.qml` | Production Timer creation controls, live countdown list, cancellation, and touch scrolling. |
 | `bmo/qt/qml/AlbumView.qml` | Production Album thumbnail grid, photo detail actions, bounded paging, and child-friendly empty/error states. |
-| `bmo/qt/qml/MusicView.qml` | Production 800x420 scrollable song picker, embedded album art, title, and large playback controls. |
+| `bmo/qt/qml/MusicView.qml` | Production 800x420 metadata browser with scroll-stable song selection, fitted album art, marquees, progress seeking, collections, and playback controls. |
 | `bmo/qt/qml/CalendarView.qml` | Production day/month/year Calendar, bounded event dots, recurrence editor, touch color picker, and occurrence/series choice. |
 | `bmo/qt/qml/WeatherView.qml` | Production 800x480 child-friendly Weather layout, interaction, live face, carousel, and debug panel. |
 | `bmo/qt/qml/WeatherScene.qml` | Seasonal/day-period ground, particles, and animated weather effects. |
@@ -191,7 +192,7 @@ Modes are longer interactions that temporarily own user input.
 | `config/example.calendar.json` | Calendar data/overlay paths, categories, holidays, and spoken notes. |
 | `config/example.learning.json` | Learning data/art paths, teacher area, session/mastery limits, fonts, speech, and debug seed. |
 | `config/example.galaxy_rvr.json` | GalaxyRVR LAN address, controller mapping, motion/servo limits, camera preview, photo storage, and timeouts. |
-| `config/example.music.json` | Music library root, allowed metadata genres, menu visibility, and ffplay command. |
+| `config/example.music.json` | Music library/state paths, allowed metadata genres, menu visibility, and ffplay command. |
 | `config/example.quiet_hours.json` | Schedule, weekdays, passcode, and sleeping-face path. |
 | `config/example.compact_face.json` | Compact-face state directories and animation timing. |
 

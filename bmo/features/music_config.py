@@ -13,6 +13,7 @@ from bmo.jsonio import load_json
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MUSIC_CONFIG_PATH = Path("config/music.json")
 DEFAULT_MUSIC_ROOT = PROJECT_ROOT / "completed"
+DEFAULT_STATE_PATH = PROJECT_ROOT / "data" / "music" / "library.json"
 MAX_CONFIG_BYTES = 64 * 1024
 _OWNED_KEYS = frozenset(
     {
@@ -20,6 +21,7 @@ _OWNED_KEYS = frozenset(
         "allowed_genres",
         "show_in_menu",
         "player_command",
+        "state_path",
     }
 )
 
@@ -32,11 +34,12 @@ class MusicConfig:
     allowed_genres: tuple[str, ...] = ("song",)
     show_in_menu: bool = True
     player_command: str = "ffplay"
+    state_path: Path = DEFAULT_STATE_PATH
 
 
-def _path(value: object) -> Path:
+def _path(value: object, label: str) -> Path:
     if not isinstance(value, (str, Path)) or not str(value).strip():
-        raise ValueError("music music_root must be a non-empty path")
+        raise ValueError(f"music {label} must be a non-empty path")
     return Path(value).expanduser()
 
 
@@ -76,10 +79,11 @@ def _parse(values: Mapping[str, Any]) -> MusicConfig:
             "unknown music setting(s): " + ", ".join(sorted(unknown))
         )
     return MusicConfig(
-        music_root=_path(values.get("music_root", DEFAULT_MUSIC_ROOT)),
+        music_root=_path(values.get("music_root", DEFAULT_MUSIC_ROOT), "music_root"),
         allowed_genres=_genres(values.get("allowed_genres", ["song"])),
         show_in_menu=_boolean(values.get("show_in_menu", True), "show_in_menu"),
         player_command=_command(values.get("player_command", "ffplay")),
+        state_path=_path(values.get("state_path", DEFAULT_STATE_PATH), "state_path"),
     )
 
 
@@ -125,6 +129,7 @@ def load_music_config(
 __all__ = [
     "DEFAULT_MUSIC_CONFIG_PATH",
     "DEFAULT_MUSIC_ROOT",
+    "DEFAULT_STATE_PATH",
     "MusicConfig",
     "load_music_config",
 ]

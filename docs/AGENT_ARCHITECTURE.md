@@ -40,9 +40,13 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.features.album` — menu-only photo discovery, root-containment checks,
   FreeDesktop Wastebasket moves, and album-view registration.
 - `bmo.features.music` — menu-only contained Ogg discovery, genre filtering,
-  Opus/Vorbis metadata and artwork parsing, ffplay lifecycle, and repeat.
-- `bmo.features.music_config` — private Music root, genre, visibility, and
-  player-command configuration without merging it into shared settings.
+  Opus/Vorbis metadata, duration, and artwork parsing, ffplay lifecycle,
+  seeking, and continuous normal/shuffled queues.
+- `bmo.features.music_config` — private Music root, state path, genre,
+  visibility, and player-command configuration without merging it into shared
+  settings.
+- `bmo.features.music_store` — Music-owned atomic play history, favorites,
+  counts, and playlists keyed by portable library-relative track IDs.
 - `bmo.features.galaxy_rvr` — menu-only Linux joystick polling, dependency-free
   GalaxyRVR WebSocket control and sensor telemetry, RGB commands, camera
   snapshots, reconnects, and safe stops.
@@ -166,8 +170,9 @@ The application keeps `agent.py` as the stable startup command while implementat
   surfaces.
 - `bmo/qt/qml/AlbumView.qml` — Album thumbnail grid, bounded page controls,
   photo detail actions, and child-friendly empty and error states.
-- `bmo/qt/qml/MusicView.qml` — 800x420 scrollable song selection, metadata
-  album art/title presentation, and large play/pause/stop/repeat controls.
+- `bmo/qt/qml/MusicView.qml` — 800x420 scroll-stable metadata browsing,
+  fitted album art, marquee labels, progress seeking, saved collections, and
+  large playback controls.
 - `bmo/qt/qml/CalendarView.qml` — production Calendar day/month/year layouts,
   bounded colored event dots, scrollable editor, touch color palette, and
   recurring occurrence/series decision surface.
@@ -423,23 +428,34 @@ never receives `BotGUI`, model objects, or an interaction archive.
 
 The Music feature contributes `graphics/icons/music.png` by reference and is
 also menu-only. Its private `config/music.json` selects an arbitrary kiosk music
-root, an allowlist of metadata genres (defaulting to `song`), menu visibility,
-and the `ffplay` command. Discovery recursively accepts only contained regular
-Ogg/Opus files whose normalized Vorbis/Opus `GENRE` comment is allowlisted, so
-stories, intros, and other non-song tracks never enter the player. The parser
-uses only the standard library, reads `TITLE`, `ALBUM`, and `ARTIST`, and
-decodes `METADATA_BLOCK_PICTURE` or `COVERART`; track numbers are never exposed
-to either presentation.
+root, a private state path, an allowlist of metadata genres (defaulting to
+`song`), menu visibility, and the `ffplay` command. Discovery recursively
+accepts only contained regular Ogg/Opus files whose normalized Vorbis/Opus
+`GENRE` comment is allowlisted, so stories, intros, and other non-song tracks
+never enter the player. The standard-library parser reads duration plus
+`TITLE`, `ALBUM`, `ARTIST`, and `SERIES`, and decodes
+`METADATA_BLOCK_PICTURE` or `COVERART`; track numbers are never exposed to
+either presentation. The feature-owned store atomically persists recent and
+most-played activity, favorites, and named playlists under `state_path` using
+library-relative identifiers. Invalid saved state becomes visibly read-only
+instead of being overwritten or preventing the feature from loading.
 
 Production Music uses a single 800x420 QML surface beneath the shared header.
-Its bounded touch list remains vertically flickable, and large Play, Pause,
-Stop, and Repeat controls sit beside the current title and embedded album art.
+Albums, artists, and series group the library before track selection; all
+songs, recent, most-played, favorites, and playlists provide direct collection
+views. The bounded touch list keeps its scroll offset when selection changes.
+Long labels marquee, artwork fits its reserved frame without cropping or
+overlapping controls, and a seekable progress bar accompanies large Play,
+Pause, Stop, Repeat, and whole-library Shuffle controls.
 The canonical live BMO face stays at `x=684`, `y=5`, 108x65 and is the only
 return-to-menu control. Closing that face stops the owned `ffplay` child before
 revealing the originating menu. Playback state also calls the feature-owned
 `music_playing`, `music_paused`, or `idle` animation hook; those names can be
 mapped to artwork later without moving the face or coupling Music to the core
 controller. Repeat restarts the same contained track after normal completion.
+Without repeat, ordinary playback advances in library order and wraps;
+shuffle plays a randomized full-library queue and generates a fresh order when
+the queue is exhausted.
 
 The GalaxyRVR feature contributes `graphics/icons/rc_remote.png` by reference
 and likewise has no voice, model, prompt, alias, or executable-tool surface.

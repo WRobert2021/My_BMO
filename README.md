@@ -175,7 +175,8 @@ Configuration is split by audience:
   joystick mapping, motor/servo limits, camera preview, and timeouts.
 - `config/music.json` is owned only by the menu-launched music player. Change
   `music_root` when the kiosk library moves; `allowed_genres` defaults to only
-  `song`, and `player_command` defaults to `ffplay`.
+  `song`, `player_command` defaults to `ffplay`, and `state_path` chooses where
+  recent plays, counts, favorites, and playlists are saved.
 - `config/compact_face.json` is owned by the neutral UI layer. It maps runtime
   states to contained PNG directories under `faces/` and controls the one
   shared refresh/layout specification used by Menu, features, modes, and
@@ -315,11 +316,16 @@ shown in `config/example.features.json`:
   scans the `music_root` from `config/music.json`. It accepts only contained
   `.ogg`, `.oga`, and `.opus` files whose metadata genre appears in
   `allowed_genres` (the default is `song`). The 800x420 touch view shows the
-  metadata title and embedded album art, never displays track numbers, offers
-  a flickable song list plus large Play/Pause/Stop/Repeat controls, and uses the
-  fixed miniature BMO face as its only return to the menu. Closing the view
-  stops playback. Copy `config/example.music.json` to `config/music.json`, then
-  edit `music_root` for the kiosk's final library location.
+  metadata title and aspect-fitted embedded album art, and never displays track
+  numbers. Albums, artists, series, recent plays, most-played songs, favorites,
+  and playlists keep a large library manageable. Long labels marquee, song
+  selection preserves the current list scroll offset, and the touch controls
+  provide Play/Pause/Stop/Repeat, whole-library Shuffle, and progress seeking.
+  Playback advances continuously in normal order or through a newly randomized
+  shuffle queue. The fixed miniature BMO face remains the only return to the
+  menu, and closing it stops playback. Copy `config/example.music.json` to
+  `config/music.json`, then edit `music_root` and optionally `state_path` for
+  the kiosk's final locations.
 - The menu-only Learning feature uses `graphics/icons/learning.png` and opens
   an offline 800x480 Pre-K suite only when that icon is tapped. Its data-driven
   curriculum covers literacy, vocabulary, early math, and general readiness.
