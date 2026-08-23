@@ -39,6 +39,10 @@ The application keeps `agent.py` as the stable startup command while implementat
   recording, and vision follow-up results.
 - `bmo.features.album` — menu-only photo discovery, root-containment checks,
   FreeDesktop Wastebasket moves, and album-view registration.
+- `bmo.features.music` — menu-only contained Ogg discovery, genre filtering,
+  Opus/Vorbis metadata and artwork parsing, ffplay lifecycle, and repeat.
+- `bmo.features.music_config` — private Music root, genre, visibility, and
+  player-command configuration without merging it into shared settings.
 - `bmo.features.galaxy_rvr` — menu-only Linux joystick polling, dependency-free
   GalaxyRVR WebSocket control and sensor telemetry, RGB commands, camera
   snapshots, reconnects, and safe stops.
@@ -132,6 +136,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   keypad for the global kiosk lock.
 - `bmo.ui.album` — paginated photo thumbnails, horizontal swipe navigation,
   fullscreen image actions, and BMO vision-state presentation.
+- `bmo.ui.music` — legacy scrollable song selection, metadata art, playback
+  controls, and compact-face-only menu return.
 - `bmo.ui.learning` — 800x480 learner sessions, replayable BMO instruction,
   touch exercises, teacher-plan controls, and progress presentation.
 - `bmo.ui.weather` — legacy Tk fallback location carousel, secure loopback
@@ -160,6 +166,8 @@ The application keeps `agent.py` as the stable startup command while implementat
   surfaces.
 - `bmo/qt/qml/AlbumView.qml` — Album thumbnail grid, bounded page controls,
   photo detail actions, and child-friendly empty and error states.
+- `bmo/qt/qml/MusicView.qml` — 800x420 scrollable song selection, metadata
+  album art/title presentation, and large play/pause/stop/repeat controls.
 - `bmo/qt/qml/CalendarView.qml` — production Calendar day/month/year layouts,
   bounded colored event dots, scrollable editor, touch color palette, and
   recurring occurrence/series decision surface.
@@ -413,6 +421,26 @@ presentation-only and are always narrated even when the vision model formats
 its description like JSON or prefixes it with an `Action:` label. The feature
 never receives `BotGUI`, model objects, or an interaction archive.
 
+The Music feature contributes `graphics/icons/music.png` by reference and is
+also menu-only. Its private `config/music.json` selects an arbitrary kiosk music
+root, an allowlist of metadata genres (defaulting to `song`), menu visibility,
+and the `ffplay` command. Discovery recursively accepts only contained regular
+Ogg/Opus files whose normalized Vorbis/Opus `GENRE` comment is allowlisted, so
+stories, intros, and other non-song tracks never enter the player. The parser
+uses only the standard library, reads `TITLE`, `ALBUM`, and `ARTIST`, and
+decodes `METADATA_BLOCK_PICTURE` or `COVERART`; track numbers are never exposed
+to either presentation.
+
+Production Music uses a single 800x420 QML surface beneath the shared header.
+Its bounded touch list remains vertically flickable, and large Play, Pause,
+Stop, and Repeat controls sit beside the current title and embedded album art.
+The canonical live BMO face stays at `x=684`, `y=5`, 108x65 and is the only
+return-to-menu control. Closing that face stops the owned `ffplay` child before
+revealing the originating menu. Playback state also calls the feature-owned
+`music_playing`, `music_paused`, or `idle` animation hook; those names can be
+mapped to artwork later without moving the face or coupling Music to the core
+controller. Repeat restarts the same contained track after normal completion.
+
 The GalaxyRVR feature contributes `graphics/icons/rc_remote.png` by reference
 and likewise has no voice, model, prompt, alias, or executable-tool surface.
 Opening it starts one feature-owned daemon worker that reads the paired
@@ -528,6 +556,12 @@ runtime and adds no dependency. Raspberry Pi OS Chromium is needed only by the
 temporary `tk_agent.py` fallback weather renderer and runs only while that
 legacy view is open.
 
+Music playback uses the Raspberry Pi OS `ffmpeg` system package, whose arm64
+build provides `ffplay` plus Ogg, Opus, and Vorbis decoding. It adds no Python
+package. The feature launches one headless, auto-exiting child at a time and
+terminates it during Stop, face-close, feature cleanup, or application
+shutdown.
+
 Calendar persistence, recurrence, color selection, and quiet-hours enforcement
 use only Python's standard library and the existing Qt Quick production/Tk
 fallback runtimes. The system local date and time are authoritative; there is
@@ -610,7 +644,7 @@ Features and modes solve different routing problems:
 ### Feature module contract
 
 The `features` list lives in `config/features.json`. Omitting the key loads the
-ten modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+eleven modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
 default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.

@@ -1,0 +1,8 @@
+{
+  "music_root": "completed",
+  "allowed_genres": [
+    "song"
+  ],
+  "show_in_menu": true,
+  "player_command": "ffplay"
+}

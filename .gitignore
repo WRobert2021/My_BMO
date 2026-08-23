@@ -53,6 +53,7 @@ config/calendar.json
 config/quiet_hours.json
 config/learning.json
 config/galaxy_rvr.json
+config/music.json
 config/compact_face.json
 
 # --- Generated media ---
@@ -83,3 +84,4 @@ graphics/Paw Patrol
 /LEARNING FEATURE.md
 /docs/learning-module-implementation-prompt.md
 /ISSUES.md
+/completed/

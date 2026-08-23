@@ -107,6 +107,8 @@ configuration list.
 | `bmo/features/calendar_view.py` | Toolkit-neutral calendar occurrence and editor records shared with presentation adapters. |
 | `bmo/features/weather_view.py` | Toolkit-neutral weather-page records and condition/season/time/moon/hourly scene contract shared with presentation adapters. |
 | `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
+| `bmo/features/music.py` | Menu-only Ogg song discovery, embedded metadata/artwork parsing, ffplay controls, repeat, and cleanup. |
+| `bmo/features/music_config.py` | Music-owned private library root, genre filter, menu visibility, and player command configuration. |
 | `bmo/features/galaxy_rvr.py` | Menu-only Bluetooth gamepad remote, GalaxyRVR LAN control/telemetry protocol, RGB commands, camera snapshots, and safe-stop lifecycle. |
 | `bmo/features/galaxy_rvr_config.py` | GalaxyRVR-owned private network, photo, controller mapping, motion, camera, and timeout configuration. |
 
@@ -158,6 +160,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/calendar.py` | Day/month/year views, event editor, recurrence controls, event scrolling, and narration actions. |
 | `bmo/ui/quiet_hours.py` | Fullscreen sleeping cover and four-digit touch keypad. |
 | `bmo/ui/album.py` | Thumbnail pages, fullscreen photos, Back/Wastebasket/BMO actions, and vision presentation. |
+| `bmo/ui/music.py` | Legacy Tk song list, metadata artwork, playback controls, scrolling, and face-only menu return. |
 | `bmo/ui/galaxy_rvr.py` | Legacy Tk GalaxyRVR remote status view over the feature-owned controller session. |
 | `bmo/ui/learning.py` | Learner sessions, generic activity rendering, teacher controls, plan/profile management, reports, and scoped speech. |
 | `bmo/ui/weather.py` | Legacy Tk fallback weather carousel, loopback bridge, Chromium process/profile, action validation, and cleanup. |
@@ -165,13 +168,14 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/qt/controller.py` | Qt properties/signals for face frames, overlays, HUD, menus, hosted views, attentions, quiet hours, and kiosk gestures. |
 | `bmo/qt/presentation.py` | Queued Qt implementation of the runtime presentation port. |
 | `bmo/qt/view_host.py` | Feature/mode app-factory host and active QML view lifecycle. |
-| `bmo/qt/views/` | QML adapters for Timer, Calendar, Weather, Album, Learning, Pup Pairs, and Twenty Questions; the Weather adapter owns async cache/refresh and scoped narration. |
+| `bmo/qt/views/` | QML adapters for Timer, Calendar, Weather, Album, Music, Learning, Pup Pairs, and Twenty Questions; the Weather adapter owns async cache/refresh and scoped narration. |
 | `bmo/qt/app.py` | Production Qt Quick engine, runtime wiring, shutdown, and isolated preview ownership. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 face, menu, global overlays, debug input, and hosted-view surface. |
 | `bmo/qt/qml/HostedView.qml` | Touch presentation host for every built-in feature and interaction mode. |
 | `bmo/qt/qml/GalaxyRVRView.qml` | Production RC camera dashboard, live ultrasonic/IR/battery cards, controller status, RGB palette, and snapshot action. |
 | `bmo/qt/qml/TimerView.qml` | Production Timer creation controls, live countdown list, cancellation, and touch scrolling. |
 | `bmo/qt/qml/AlbumView.qml` | Production Album thumbnail grid, photo detail actions, bounded paging, and child-friendly empty/error states. |
+| `bmo/qt/qml/MusicView.qml` | Production 800x420 scrollable song picker, embedded album art, title, and large playback controls. |
 | `bmo/qt/qml/CalendarView.qml` | Production day/month/year Calendar, bounded event dots, recurrence editor, touch color picker, and occurrence/series choice. |
 | `bmo/qt/qml/WeatherView.qml` | Production 800x480 child-friendly Weather layout, interaction, live face, carousel, and debug panel. |
 | `bmo/qt/qml/WeatherScene.qml` | Seasonal/day-period ground, particles, and animated weather effects. |
@@ -187,6 +191,7 @@ Modes are longer interactions that temporarily own user input.
 | `config/example.calendar.json` | Calendar data/overlay paths, categories, holidays, and spoken notes. |
 | `config/example.learning.json` | Learning data/art paths, teacher area, session/mastery limits, fonts, speech, and debug seed. |
 | `config/example.galaxy_rvr.json` | GalaxyRVR LAN address, controller mapping, motion/servo limits, camera preview, photo storage, and timeouts. |
+| `config/example.music.json` | Music library root, allowed metadata genres, menu visibility, and ffplay command. |
 | `config/example.quiet_hours.json` | Schedule, weekdays, passcode, and sleeping-face path. |
 | `config/example.compact_face.json` | Compact-face state directories and animation timing. |
 
@@ -207,6 +212,7 @@ Modes are longer interactions that temporarily own user input.
 | Calendar | `tests/test_calendar.py` |
 | Camera | `tests/test_camera.py` |
 | Album | `tests/test_album.py` |
+| Music | `tests/test_music.py` |
 | GalaxyRVR remote | `tests/test_galaxy_rvr.py` |
 | Learning | `tests/test_learning_curriculum.py`, `tests/test_learning_feature.py`, `tests/test_learning_store.py`, `tests/test_learning_ui.py` |
 | Matching game | `tests/test_matching_game.py` |

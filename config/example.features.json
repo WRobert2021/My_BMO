@@ -79,6 +79,13 @@
       }
     },
     {
+      "module": "bmo.features.music",
+      "enabled": true,
+      "settings": {
+        "config_path": "config/music.json"
+      }
+    },
+    {
       "module": "bmo.features.learning",
       "enabled": true,
       "settings": {

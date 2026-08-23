@@ -99,6 +99,7 @@ Rectangle {
             case "twenty_questions": return twentyView
             case "matching_game": return matchingView
             case "learning": return learningView
+            case "music": return musicView
             case "galaxy_rvr": return galaxyRvrView
             default: return unknownView
             }
@@ -111,6 +112,14 @@ Rectangle {
         wrapMode: Text.Wrap
         color: "#b3261e"
         font.pixelSize: 14
+    }
+
+    Component {
+        id: musicView
+
+        MusicView {
+            controller: root.controller
+        }
     }
 
     Component {

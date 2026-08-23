@@ -24,6 +24,7 @@ DEFAULT_ROUTABLE_FEATURE_MODULES = (
 )
 DEFAULT_MENU_FEATURE_MODULES = (
     "bmo.features.album",
+    "bmo.features.music",
     "bmo.features.learning",
     "bmo.features.galaxy_rvr",
 )

@@ -173,6 +173,9 @@ Configuration is split by audience:
 - `config/galaxy_rvr.json` is owned only by the menu-launched GalaxyRVR
   remote. It selects the rover's local IPv4 address, photo folder, Linux
   joystick mapping, motor/servo limits, camera preview, and timeouts.
+- `config/music.json` is owned only by the menu-launched music player. Change
+  `music_root` when the kiosk library moves; `allowed_genres` defaults to only
+  `song`, and `player_command` defaults to `ffplay`.
 - `config/compact_face.json` is owned by the neutral UI layer. It maps runtime
   states to contained PNG directories under `faces/` and controls the one
   shared refresh/layout specification used by Menu, features, modes, and
@@ -192,6 +195,7 @@ cp config/example.calendar.json config/calendar.json
 cp config/example.quiet_hours.json config/quiet_hours.json
 cp config/example.learning.json config/learning.json
 cp config/example.galaxy_rvr.json config/galaxy_rvr.json
+cp config/example.music.json config/music.json
 cp config/example.compact_face.json config/compact_face.json
 ```
 
@@ -307,6 +311,15 @@ shown in `config/example.features.json`:
   Its `wastebasket_root`, `bmo_button_image`, and `photos_per_page` settings are
   shown in `config/example.features.json`. Album paths are resolved and must
   remain inside `photo_root`; symbolic-link escapes are excluded.
+- The menu-only Music feature uses `graphics/icons/music.png` and recursively
+  scans the `music_root` from `config/music.json`. It accepts only contained
+  `.ogg`, `.oga`, and `.opus` files whose metadata genre appears in
+  `allowed_genres` (the default is `song`). The 800x420 touch view shows the
+  metadata title and embedded album art, never displays track numbers, offers
+  a flickable song list plus large Play/Pause/Stop/Repeat controls, and uses the
+  fixed miniature BMO face as its only return to the menu. Closing the view
+  stops playback. Copy `config/example.music.json` to `config/music.json`, then
+  edit `music_root` for the kiosk's final library location.
 - The menu-only Learning feature uses `graphics/icons/learning.png` and opens
   an offline 800x480 Pre-K suite only when that icon is tapped. Its data-driven
   curriculum covers literacy, vocabulary, early math, and general readiness.
@@ -500,6 +513,10 @@ This project is dual-licensed:
 * **Qt for Python dependency:** PySide6 is distributed separately under
   LGPL-3.0-only, GPL-2.0-only, GPL-3.0-only, or a commercial Qt license; it is
   not relicensed by this project's MIT license.
+* **Music playback dependency:** FFmpeg is installed as a separate operating
+  system package and is licensed under LGPL-2.1-or-later, or GPL-2.0-or-later
+  when built with optional GPL components. It is not relicensed by this
+  project's MIT license.
 
 ## ⚖️ Legal Disclaimer
 Disclaimer: Fan Project

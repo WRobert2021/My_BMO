@@ -74,7 +74,7 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertIn("bmo.features.album", result.modules)
         self.assertIn("bmo.features.learning", result.modules)
         self.assertTrue(
-            {"album", "learning", "galaxy_rvr"}.issubset(
+            {"album", "music", "learning", "galaxy_rvr"}.issubset(
                 {item.name for item in result.registry.menu_items}
             )
         )

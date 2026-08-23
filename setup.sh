@@ -108,6 +108,7 @@ install_system_dependencies() {
         chromium
         curl
         espeak-ng
+        ffmpeg
         git
         libasound2-dev
         libblas-dev
@@ -129,7 +130,7 @@ install_system_dependencies() {
     fi
 
     local command_name
-    for command_name in chromium cmake curl git nproc python3 tar; do
+    for command_name in chromium cmake curl ffplay git nproc python3 tar; do
         require_command "$command_name"
     done
 }

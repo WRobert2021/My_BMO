@@ -53,6 +53,7 @@ class QtViewHost(QObject):
             QtGalaxyRVRView,
             QtLearningView,
             QtMatchingGameView,
+            QtMusicView,
             QtTimerView,
             QtTwentyQuestionsView,
             QtWeatherView,
@@ -65,6 +66,7 @@ class QtViewHost(QObject):
             ("album", QtAlbumView),
             ("galaxy_rvr", QtGalaxyRVRView),
             ("learning", QtLearningView),
+            ("music", QtMusicView),
             ("matching_game", QtMatchingGameView),
             ("twenty_questions", QtTwentyQuestionsView),
         ):
