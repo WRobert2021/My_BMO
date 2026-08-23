@@ -39,6 +39,32 @@ def _format_time(seconds: float) -> str:
     return f"{minutes}:{remaining:02d}"
 
 
+def _browser_item(
+    kind: str,
+    title: str,
+    *,
+    track_index: int = -1,
+    group_kind: str = "",
+    key: str = "",
+    subtitle: str = "",
+    album: str = "",
+    artist: str = "",
+    series: str = "",
+) -> dict[str, object]:
+    """Build one row with the stable role schema required by QML ListModel."""
+    return {
+        "kind": kind,
+        "trackIndex": track_index,
+        "groupKind": group_kind,
+        "key": key,
+        "title": title,
+        "subtitle": subtitle,
+        "album": album,
+        "artist": artist,
+        "series": series,
+    }
+
+
 class QtMusicView(QtHostedView):
     kind = "music"
     title = "Music"
@@ -74,14 +100,14 @@ class QtMusicView(QtHostedView):
 
     def _track_item(self, index: int) -> dict[str, object]:
         track = self.session.tracks[index]
-        return {
-            "kind": "track",
-            "trackIndex": index,
-            "title": track.title,
-            "album": track.album or "Unknown Album",
-            "artist": track.artist,
-            "series": track.series,
-        }
+        return _browser_item(
+            "track",
+            track.title,
+            track_index=index,
+            album=track.album or "Unknown Album",
+            artist=track.artist,
+            series=track.series,
+        )
 
     def _group_items(self, mode: str) -> list[dict[str, object]]:
         field, _label, unknown = _GROUP_LABELS[mode]
@@ -93,14 +119,14 @@ class QtMusicView(QtHostedView):
             grouped[key].append(index)
             display_names.setdefault(key, value)
         return [
-            {
-                "kind": "group",
-                "groupKind": field,
-                "key": display_names[key],
-                "title": display_names[key],
-                "subtitle": f"{len(grouped[key])} song"
+            _browser_item(
+                "group",
+                display_names[key],
+                group_kind=field,
+                key=display_names[key],
+                subtitle=f"{len(grouped[key])} song"
                 + ("" if len(grouped[key]) == 1 else "s"),
-            }
+            )
             for key in sorted(
                 grouped,
                 key=lambda item: display_names[item].casefold(),
@@ -173,13 +199,13 @@ class QtMusicView(QtHostedView):
             return "groups", label.upper(), self._group_items(self.browse_mode)
         if self.browse_mode == "playlists":
             items = [
-                {
-                    "kind": "playlist",
-                    "key": name,
-                    "title": name,
-                    "subtitle": f"{len(track_ids)} song"
+                _browser_item(
+                    "playlist",
+                    name,
+                    key=name,
+                    subtitle=f"{len(track_ids)} song"
                     + ("" if len(track_ids) == 1 else "s"),
-                }
+                )
                 for name, track_ids in self.session.store.playlists.items()
             ]
             return "playlists", "PLAYLISTS", items

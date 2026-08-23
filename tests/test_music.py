@@ -584,6 +584,27 @@ class MusicConfigurationAndFeatureTests(unittest.TestCase):
         self.assertEqual(items[0]["trackIndex"], 2)
         self.assertNotIn("index", items[0])
 
+    def test_group_track_and_playlist_rows_share_one_qml_role_schema(self) -> None:
+        store = MusicStore(None)
+        store.create_playlist("My Mix")
+        session = MusicSession((sample_track("One"),), FakeBackend(), store=store)
+        view = QtMusicView.__new__(QtMusicView)
+        view.session = session
+        view.group_value = ""
+        view.active_playlist = ""
+
+        view.browse_mode = "albums"
+        group = view.payload()["browserItems"][0]
+        view.browse_mode = "songs"
+        track = view.payload()["browserItems"][0]
+        view.browse_mode = "playlists"
+        playlist = view.payload()["browserItems"][0]
+
+        self.assertEqual(set(group), set(track))
+        self.assertEqual(set(group), set(playlist))
+        self.assertEqual(group["trackIndex"], -1)
+        self.assertEqual(playlist["trackIndex"], -1)
+
     def test_track_selection_does_not_change_browser_revision(self) -> None:
         session = MusicSession(
             tuple(sample_track(f"Song {index}") for index in range(30)),
@@ -677,12 +698,22 @@ Image.new("RGB", (100, 200), "purple").save(art_buffer, format="PNG")
 art_source = QUrl(
     "data:image/png;base64," + base64.b64encode(art_buffer.getvalue()).decode("ascii")
 )
+def browser_item(kind, title, *, track_index=-1, group_kind="", key="",
+                 subtitle="", album="", artist="", series=""):
+    return {
+        "kind": kind, "trackIndex": track_index, "groupKind": group_kind,
+        "key": key, "title": title, "subtitle": subtitle, "album": album,
+        "artist": artist, "series": series,
+    }
+
 payload = {
     "browserKind": "tracks",
     "browserTitle": "ALL SONGS",
     "browserItems": [
-        {"kind": "track", "trackIndex": 100 + index, "title": f"Song {index}",
-         "album": "BMO Jams", "artist": "A Friend", "series": "A Series"}
+        browser_item(
+            "track", f"Song {index}", track_index=100 + index,
+            album="BMO Jams", artist="A Friend", series="A Series",
+        )
         for index in range(20)
     ],
     "browserRevision": "songs:::0",
@@ -755,7 +786,7 @@ result = {name: geometry(name) for name in (
     "musicAlbumArt"
 )}
 result["scrollY"] = song_list.property("contentY")
-result["selectionAction"] = actions[-1]
+result["selectionAction"] = actions[-1] if actions else []
 print(json.dumps(result))
 window.close()
 controller.stop()
@@ -776,6 +807,7 @@ controller.stop()
         self.assertEqual(
             geometry["selectionAction"],
             ["music_select", "100"],
+            geometry,
         )
         self.assertAlmostEqual(geometry["scrollY"], 150.0)
         for name in (
@@ -798,6 +830,103 @@ controller.stop()
         self.assertLessEqual(art_x + art_width, frame_x + frame_width)
         self.assertLessEqual(art_y + art_height, frame_y + frame_height)
         self.assertAlmostEqual(art_width / art_height, 0.5, places=2)
+
+    def test_qml_group_to_song_transition_keeps_track_index_role(self) -> None:
+        script = r'''
+import json
+from pathlib import Path
+from PySide6.QtCore import QPoint, QUrl, Qt
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from PySide6.QtTest import QTest
+from bmo.features.music import MusicSession, MusicTrack
+from bmo.qt.app import QML_PATH
+from bmo.qt.controller import QtFaceController
+from bmo.qt.view_host import QtViewHost
+from bmo.qt.views.music import QtMusicView
+
+class Backend:
+    def play(self, path, start_seconds=0.0):
+        pass
+    def is_running(self):
+        return False
+    def pause(self):
+        return False
+    def resume(self):
+        return False
+    def stop(self):
+        pass
+
+def track(title, artist):
+    return MusicTrack(
+        path=Path(f"/{title}.ogg"),
+        track_id=f"{title}.ogg",
+        title=title,
+        album="Album",
+        artist=artist,
+        series="Series",
+        genre="song",
+        duration_seconds=120.0,
+    )
+
+app = QGuiApplication(["music-group-track-transition"])
+controller = QtFaceController(start_timer=False)
+host = QtViewHost(controller)
+session = MusicSession((
+    track("First Song", "Artist A"),
+    track("Unrelated Song", "Artist C"),
+    track("Correct Song", "Artist B"),
+), Backend())
+view = QtMusicView(host, session=session, on_close=lambda: None)
+view.handle_action("music_browse", "artists")
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+window = engine.rootObjects()[0]
+window.showNormal()
+window.resize(800, 480)
+QTest.qWait(60)
+song_list = window.findChild(QQuickItem, "musicSongList")
+
+def click_row(row):
+    point = song_list.mapToItem(None, song_list.width() / 2, row * 63 + 28)
+    QTest.mouseClick(
+        window,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(int(point.x()), int(point.y())),
+    )
+    QTest.qWait(80)
+
+click_row(1)
+click_row(0)
+print(json.dumps({
+    "browseMode": view.browse_mode,
+    "group": view.group_value,
+    "selectedIndex": session.selected_index,
+    "selectedTitle": session.selected_track.title,
+    "error": session.error,
+}))
+view.close()
+window.close()
+controller.stop()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        selected = json.loads(result.stdout.strip())
+        self.assertEqual(selected["browseMode"], "artist")
+        self.assertEqual(selected["group"], "Artist B")
+        self.assertEqual(selected["selectedIndex"], 2)
+        self.assertEqual(selected["selectedTitle"], "Correct Song")
+        self.assertEqual(selected["error"], "")
 
 
 class MusicStoreTests(unittest.TestCase):
