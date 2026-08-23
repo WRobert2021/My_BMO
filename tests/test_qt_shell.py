@@ -19,6 +19,7 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 
 from bmo.face_config import CompactFaceConfig, CompactFaceState  # noqa: E402
 from bmo.features.calendar_view import CalendarViewEvent  # noqa: E402
+from bmo.features.galaxy_rvr_config import GalaxyRVRConfig  # noqa: E402
 from bmo.features.timer_view import TimerViewItem  # noqa: E402
 from bmo.features.weather_config import WeatherLocationConfig  # noqa: E402
 from bmo.features.weather_view import WeatherPageData  # noqa: E402
@@ -35,6 +36,7 @@ from bmo.qt.controller import QtFaceController  # noqa: E402
 from bmo.qt.view_host import QtViewHost  # noqa: E402
 from bmo.qt.views.album import QtAlbumView  # noqa: E402
 from bmo.qt.views.calendar import QtCalendarView  # noqa: E402
+from bmo.qt.views.galaxy_rvr import QtGalaxyRVRView  # noqa: E402
 from bmo.qt.views.matching_game import QtMatchingGameView  # noqa: E402
 from bmo.qt.views.timer import QtTimerView  # noqa: E402
 from bmo.qt.views.weather import QtWeatherView  # noqa: E402
@@ -311,6 +313,31 @@ class QtFaceControllerTests(unittest.TestCase):
         self.assertTrue(controller.viewVisible)
         self.assertEqual(controller.viewData, {"ready": True})
         self.assertEqual(actions, [("go", "now")])
+
+
+class QtGalaxyRVRViewTests(unittest.TestCase):
+    def test_payload_and_actions_expose_sensors_lights_and_snapshot(self) -> None:
+        host = Mock()
+        session = Mock()
+        view = QtGalaxyRVRView(
+            host,
+            config=GalaxyRVRConfig(),
+            session_factory=Mock(return_value=session),
+            on_close=Mock(),
+        )
+
+        payload = view.payload()
+        self.assertEqual(len(payload["lightColors"]), 8)
+        self.assertIn("ultrasonic_cm", payload)
+        self.assertIn("ir_left_detected", payload)
+        self.assertIn("battery_voltage", payload)
+
+        view.handle_action("galaxy_rvr_rgb", "#0c2238")
+        session.request_rgb.assert_called_once_with(12, 34, 56)
+        view.handle_action("galaxy_rvr_rgb", "not-a-color")
+        session.request_rgb.assert_called_once()
+        view.handle_action("galaxy_rvr_snapshot", "")
+        session.request_snapshot.assert_called_once_with()
 
 
 class QtAlbumViewTests(unittest.TestCase):
@@ -805,6 +832,118 @@ raise SystemExit(0 if engine.rootObjects() else 1)
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_galaxy_rvr_qml_fits_dashboard_without_moving_face(self) -> None:
+        script = r'''
+import json
+from PySide6.QtCore import QPointF, QRectF, QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickItem
+from bmo.qt.app import QML_PATH
+from bmo.qt.controller import QtFaceController
+
+app = QGuiApplication(["galaxy-rvr-qml-geometry"])
+controller = QtFaceController(start_timer=False)
+controller.show_view("galaxy_rvr", "GalaxyRVR Remote", {
+    "host": "192.168.4.1",
+    "captureUrl": "http://192.168.4.1:9000/capture",
+    "previewEnabled": False,
+    "previewIntervalMs": 100,
+    "rover_connected": True,
+    "controller_connected": True,
+    "state": "Ready to drive.",
+    "error": "",
+    "left_power": 0,
+    "right_power": 0,
+    "servo_angle": 90,
+    "axis_summary": "LY0 +0.00  RX3 +0.00  LT5 -1.00  RT4 +1.00",
+    "ultrasonic_cm": 42.5,
+    "ir_left_detected": False,
+    "ir_right_detected": True,
+    "battery_voltage": 7.42,
+    "taking_photo": False,
+    "last_photo": "",
+    "rgb_red": 63,
+    "rgb_green": 142,
+    "rgb_blue": 252,
+    "rgb_selected": True,
+    "controls": ["Left stick • drive", "Right stick • steer",
+                 "LT / RT • camera tilt", "A button • snap photo"],
+    "lightColors": [
+        {"name": "OFF", "hex": "#000000", "text": "#ffffff"},
+        {"name": "RED", "hex": "#ef5350", "text": "#ffffff"},
+        {"name": "GOLD", "hex": "#f2c84b", "text": "#102a5e"},
+        {"name": "GREEN", "hex": "#43b581", "text": "#ffffff"},
+        {"name": "BLUE", "hex": "#3f8efc", "text": "#ffffff"},
+        {"name": "PURPLE", "hex": "#9b6de3", "text": "#ffffff"},
+        {"name": "PINK", "hex": "#f08aa6", "text": "#102a5e"},
+        {"name": "WHITE", "hex": "#ffffff", "text": "#102a5e"},
+    ],
+})
+engine = QQmlApplicationEngine()
+engine.rootContext().setContextProperty("bmoUi", controller)
+engine.load(QUrl.fromLocalFile(str(QML_PATH.resolve())))
+window = engine.rootObjects()[0]
+window.showNormal()
+window.resize(800, 480)
+for _ in range(4):
+    app.processEvents()
+def find_visual(name):
+    item = window.findChild(QQuickItem, name)
+    if item is None:
+        raise AssertionError(f"Could not find {name!r}")
+    return item
+
+def values(name):
+    item = find_visual(name)
+    origin = item.mapToItem(None, QPointF(0, 0))
+    rect = QRectF(origin.x(), origin.y(), item.width(), item.height())
+    return [rect.x(), rect.y(), rect.width(), rect.height()]
+
+print(json.dumps({name: values(name) for name in (
+    "hostedCompactFace", "galaxyRvrRoot", "galaxyRvrCameraCard",
+    "galaxyRvrSensorRow", "galaxyRvrControlCard", "galaxyRvrLightGrid"
+)}))
+window.close()
+controller.stop()
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        geometry = json.loads(result.stdout.strip())
+        self.assertEqual(
+            geometry["hostedCompactFace"],
+            [684.0, 5.0, 108.0, 65.0],
+        )
+        self.assertEqual(geometry["galaxyRvrRoot"], [0.0, 62.0, 800.0, 418.0])
+        for name in (
+            "galaxyRvrCameraCard",
+            "galaxyRvrSensorRow",
+            "galaxyRvrControlCard",
+            "galaxyRvrLightGrid",
+        ):
+            x, y, width, height = geometry[name]
+            with self.subTest(name=name):
+                self.assertGreaterEqual(x, 0)
+                self.assertGreaterEqual(y, 62)
+                self.assertLessEqual(x + width, 800)
+                self.assertLessEqual(y + height, 480)
+
+        hosted = (QML_PATH.parent / "HostedView.qml").read_text(encoding="utf-8")
+        galaxy = (QML_PATH.parent / "GalaxyRVRView.qml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("GalaxyRVRView {", hosted)
+        self.assertIn('objectName: "galaxyRvrSensorRow"', galaxy)
+        self.assertIn('objectName: "galaxyRvrLightGrid"', galaxy)
 
     def test_learning_qml_fits_all_primary_surfaces_without_moving_face(self) -> None:
         script = r'''

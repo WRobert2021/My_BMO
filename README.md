@@ -323,7 +323,9 @@ shown in `config/example.features.json`:
   (axis 3) for steering, LT/RT (axes 5/4) for camera tilt, and A (button 0) for
   a photo. The remote learns each trigger's released value so normal and
   inverted trigger ranges both work. Live axis numbers and values are shown on
-  the remote screen.
+  the remote screen. The Qt dashboard also decodes the rover's live ultrasonic,
+  left/right IR obstacle, and battery telemetry and offers a touch RGB palette
+  for the rover's LED strip.
   The double-buffered camera preview targets 10 FPS. It connects to SunFounder's
   firmware-2.x WebSocket on port `30102`, previews/captures from camera port
   `9000`, retries transient disconnects, and sends a motor stop whenever the

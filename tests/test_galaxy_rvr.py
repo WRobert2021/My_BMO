@@ -22,6 +22,8 @@ from bmo.features.galaxy_rvr import (
     mix_drive,
     motor_servo_frame,
     next_servo_angle,
+    parse_sensor_frame,
+    rgb_frame,
     save_snapshot,
 )
 from bmo.features.galaxy_rvr_config import (
@@ -33,6 +35,29 @@ from bmo.prompts import build_routing_prompt, build_system_prompt
 
 
 JPEG = b"\xff\xd8test-jpeg\xff\xd9"
+
+
+def sensor_frame(
+    distance_mm: int = 300,
+    ir_value: int = 0b10,
+    battery_value: int = 150,
+) -> bytes:
+    entities = bytes(
+        (
+            0x81,
+            distance_mm >> 8,
+            distance_mm & 0xFF,
+            0x82,
+            ir_value,
+            0x83,
+            battery_value,
+        )
+    )
+    length = len(entities)
+    checksum = 0xA0 ^ length
+    for value in entities:
+        checksum ^= value
+    return bytes((0xA0, length, checksum)) + entities + bytes((0xA1,))
 
 
 class GalaxyRVRConfigTests(unittest.TestCase):
@@ -183,6 +208,34 @@ class GalaxyRVRProtocolTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             motor_servo_frame(101, 0, 90)
 
+    def test_rgb_packet_is_separate_from_unchanged_motor_packet(self) -> None:
+        motor = motor_servo_frame(25, -25, 80)
+        lights = rgb_frame(12, 34, 56)
+
+        self.assertEqual(motor[3:-1], bytes((0x01, 25, 231, 0x03, 80)))
+        self.assertEqual(lights[3:-1], bytes((0x02, 12, 34, 56)))
+        self.assertEqual(lights[2], 0x02 ^ 12 ^ 34 ^ 56)
+        with self.assertRaises(ValueError):
+            rgb_frame(256, 0, 0)
+
+    def test_sensor_packet_decodes_sonic_ir_and_battery(self) -> None:
+        telemetry = parse_sensor_frame(sensor_frame())
+
+        self.assertIsNotNone(telemetry)
+        assert telemetry is not None
+        self.assertEqual(telemetry.ultrasonic_cm, 30.0)
+        self.assertTrue(telemetry.ir_left_detected)
+        self.assertFalse(telemetry.ir_right_detected)
+        self.assertEqual(telemetry.battery_voltage, 7.5)
+
+        invalid = bytearray(sensor_frame())
+        invalid[2] ^= 0x01
+        self.assertIsNone(parse_sensor_frame(bytes(invalid)))
+        out_of_range = parse_sensor_frame(sensor_frame(distance_mm=65_526))
+        self.assertIsNotNone(out_of_range)
+        assert out_of_range is not None
+        self.assertIsNone(out_of_range.ultrasonic_cm)
+
     def test_lt_and_rt_move_camera_in_opposite_bounded_directions(self) -> None:
         config = GalaxyRVRConfig()
 
@@ -221,6 +274,14 @@ class GalaxyRVRProtocolTests(unittest.TestCase):
             for index, value in enumerate(frame[6:])
         )
         self.assertEqual(decoded, b"\x01\x02\x03")
+
+    def test_websocket_parser_returns_binary_telemetry_messages(self) -> None:
+        payload = sensor_frame()
+        transport = WebSocketTransport(GalaxyRVRConfig())
+        transport._receive_buffer.extend(bytes((0x82, len(payload))) + payload)
+
+        self.assertEqual(transport._consume_frames(), (payload,))
+        self.assertEqual(transport._receive_buffer, b"")
 
 
 class GalaxyRVRSnapshotTests(unittest.TestCase):
@@ -278,6 +339,7 @@ class GalaxyRVRSessionTests(unittest.TestCase):
         frames: list[bytes] = []
         statuses: list[object] = []
         controls_seen = threading.Event()
+        rgb_seen = threading.Event()
 
         class Transport:
             def __init__(self, _config) -> None:
@@ -288,9 +350,11 @@ class GalaxyRVRSessionTests(unittest.TestCase):
 
             def send_binary(self, frame: bytes) -> None:
                 frames.append(frame)
+                if frame[3] == 0x02:
+                    rgb_seen.set()
 
             def poll(self) -> None:
-                return None
+                return (sensor_frame(),)
 
             def close(self) -> None:
                 return None
@@ -335,10 +399,16 @@ class GalaxyRVRSessionTests(unittest.TestCase):
         session.start()
 
         self.assertTrue(controls_seen.wait(1.0))
+        self.assertTrue(session.request_rgb(12, 34, 56))
+        self.assertTrue(rgb_seen.wait(1.0))
         session.close()
 
         self.assertTrue(any("RX3" in status.axis_summary for status in statuses))
         self.assertTrue(any("RT4" in status.axis_summary for status in statuses))
+        self.assertTrue(any(status.ultrasonic_cm == 30.0 for status in statuses))
+        self.assertTrue(any(status.ir_left_detected is True for status in statuses))
+        self.assertTrue(any(status.battery_voltage == 7.5 for status in statuses))
+        self.assertIn(rgb_frame(12, 34, 56), frames)
 
     def test_controller_disconnect_and_close_send_motor_stop(self) -> None:
         frames: list[bytes] = []

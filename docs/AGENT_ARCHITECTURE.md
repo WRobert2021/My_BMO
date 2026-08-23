@@ -40,7 +40,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.features.album` — menu-only photo discovery, root-containment checks,
   FreeDesktop Wastebasket moves, and album-view registration.
 - `bmo.features.galaxy_rvr` — menu-only Linux joystick polling, dependency-free
-  GalaxyRVR WebSocket control, camera snapshots, reconnects, and safe stops.
+  GalaxyRVR WebSocket control and sensor telemetry, RGB commands, camera
+  snapshots, reconnects, and safe stops.
 - `bmo.features.galaxy_rvr_config` — private rover address, controller mapping,
   motion, servo, preview, photo, and timeout validation.
 - `bmo.features.learning` — menu-only Pre-K curriculum registration, private
@@ -154,6 +155,9 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
 - `bmo/qt/qml/TimerView.qml` — Timer creation controls, live countdown list,
   cancellation, and touch scrolling.
+- `bmo/qt/qml/GalaxyRVRView.qml` — RC camera dashboard with bounded live
+  ultrasonic, left/right IR, battery, RGB palette, controller, and snapshot
+  surfaces.
 - `bmo/qt/qml/AlbumView.qml` — Album thumbnail grid, bounded page controls,
   photo detail actions, and child-friendly empty and error states.
 - `bmo/qt/qml/CalendarView.qml` — production Calendar day/month/year layouts,

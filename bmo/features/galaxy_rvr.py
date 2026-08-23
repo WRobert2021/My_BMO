@@ -147,8 +147,8 @@ class WebSocketTransport:
             self.close()
             raise WebSocketError("The rover connection was lost.") from exc
 
-    def poll(self) -> None:
-        """Drain telemetry, answer pings, and detect a closed connection."""
+    def poll(self) -> tuple[bytes, ...]:
+        """Drain binary telemetry, answer pings, and detect a closed connection."""
         connection = self.socket
         if connection is None:
             raise WebSocketError("The rover WebSocket is not connected.")
@@ -167,10 +167,11 @@ class WebSocketTransport:
                 self.close()
                 raise WebSocketError("The rover connection was closed.")
             self._receive_buffer.extend(chunk)
-        self._consume_frames()
+        return self._consume_frames()
 
-    def _consume_frames(self) -> None:
+    def _consume_frames(self) -> tuple[bytes, ...]:
         buffer = self._receive_buffer
+        messages: list[bytes] = []
         while len(buffer) >= 2:
             first, second = buffer[0], buffer[1]
             opcode = first & 0x0F
@@ -179,12 +180,12 @@ class WebSocketTransport:
             offset = 2
             if length == 126:
                 if len(buffer) < 4:
-                    return
+                    break
                 length = struct.unpack("!H", buffer[2:4])[0]
                 offset = 4
             elif length == 127:
                 if len(buffer) < 10:
-                    return
+                    break
                 length = struct.unpack("!Q", buffer[2:10])[0]
                 offset = 10
             if length > 1_000_000:
@@ -193,11 +194,11 @@ class WebSocketTransport:
             mask = b""
             if masked:
                 if len(buffer) < offset + 4:
-                    return
+                    break
                 mask = bytes(buffer[offset : offset + 4])
                 offset += 4
             if len(buffer) < offset + length:
-                return
+                break
             payload = bytes(buffer[offset : offset + length])
             del buffer[: offset + length]
             if masked:
@@ -210,6 +211,9 @@ class WebSocketTransport:
                 raise WebSocketError("The rover ended the control session.")
             if opcode == 0x9:
                 self._send_frame(0xA, payload)
+            elif opcode == 0x2:
+                messages.append(payload)
+        return tuple(messages)
 
     def close(self) -> None:
         connection, self.socket = self.socket, None
@@ -314,6 +318,14 @@ class GalaxyRVRStatus:
     taking_photo: bool = False
     last_photo: str = ""
     axis_summary: str = ""
+    ultrasonic_cm: float | None = None
+    ir_left_detected: bool | None = None
+    ir_right_detected: bool | None = None
+    battery_voltage: float | None = None
+    rgb_red: int = 0
+    rgb_green: int = 0
+    rgb_blue: int = 0
+    rgb_selected: bool = False
 
     def to_json(self) -> dict[str, object]:
         return asdict(self)
@@ -355,6 +367,74 @@ def motor_servo_frame(left: int, right: int, servo_angle: int) -> bytes:
     for value in entities:
         checksum ^= value
     return bytes((0xA0, len(entities), checksum)) + entities + bytes((0xA1,))
+
+
+def rgb_frame(red: int, green: int, blue: int) -> bytes:
+    """Build the firmware's RGB-strip command without altering drive packets."""
+    for value in (red, green, blue):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("GalaxyRVR RGB values must be integers")
+        if not 0 <= value <= 255:
+            raise ValueError("GalaxyRVR RGB values must be between 0 and 255")
+    entities = bytes((0x02, red, green, blue))
+    checksum = 0
+    for value in entities:
+        checksum ^= value
+    return bytes((0xA0, len(entities), checksum)) + entities + bytes((0xA1,))
+
+
+@dataclass(frozen=True)
+class GalaxyRVRTelemetry:
+    """Validated sensor values broadcast by firmware 2.x."""
+
+    ultrasonic_cm: float | None
+    ir_left_detected: bool
+    ir_right_detected: bool
+    battery_voltage: float
+
+
+def parse_sensor_frame(payload: bytes) -> GalaxyRVRTelemetry | None:
+    """Decode one checked firmware telemetry packet, rejecting partial data."""
+    if (
+        len(payload) < 4
+        or payload[0] != 0xA0
+        or payload[-1] != 0xA1
+        or payload[1] != len(payload) - 4
+    ):
+        return None
+    checksum = 0
+    for value in payload[:-1]:
+        checksum ^= value
+    if checksum != 0:
+        return None
+
+    values: dict[int, tuple[int, ...]] = {}
+    entity_sizes = {0x81: 2, 0x82: 1, 0x83: 1}
+    entities = payload[3:-1]
+    index = 0
+    while index < len(entities):
+        entity_id = entities[index]
+        size = entity_sizes.get(entity_id)
+        if size is None or index + 1 + size > len(entities):
+            return None
+        values[entity_id] = tuple(entities[index + 1 : index + 1 + size])
+        index += 1 + size
+    if set(values) != set(entity_sizes):
+        return None
+
+    ultrasonic_raw = (values[0x81][0] << 8) | values[0x81][1]
+    ultrasonic_cm = (
+        round(ultrasonic_raw / 10.0, 1)
+        if 0 < ultrasonic_raw <= 5_000
+        else None
+    )
+    ir_value = values[0x82][0]
+    return GalaxyRVRTelemetry(
+        ultrasonic_cm=ultrasonic_cm,
+        ir_left_detected=bool(ir_value & 0b10),
+        ir_right_detected=bool(ir_value & 0b01),
+        battery_voltage=round(6.0 + values[0x83][0] / 100.0, 2),
+    )
 
 
 def next_servo_angle(
@@ -470,6 +550,7 @@ class GalaxyRVRSession:
         self._lock = threading.Lock()
         self._status = GalaxyRVRStatus(servo_angle=config.servo_start_angle)
         self._last_snap_pressed = False
+        self._pending_rgb: tuple[int, int, int] | None = None
 
     @property
     def status(self) -> GalaxyRVRStatus:
@@ -514,6 +595,13 @@ class GalaxyRVRSession:
                     try:
                         candidate.connect()
                         transport = candidate
+                        with self._lock:
+                            if self._status.rgb_selected:
+                                self._pending_rgb = (
+                                    self._status.rgb_red,
+                                    self._status.rgb_green,
+                                    self._status.rgb_blue,
+                                )
                         self._publish(
                             rover_connected=True,
                             state=(
@@ -578,6 +666,10 @@ class GalaxyRVRSession:
                             error=str(exc) or "Controller disconnected.",
                             left_power=0,
                             right_power=0,
+                            ultrasonic_cm=None,
+                            ir_left_detected=None,
+                            ir_right_detected=None,
+                            battery_voltage=None,
                         )
                         events = ()
                     for event_kind, number, value in events:
@@ -626,9 +718,13 @@ class GalaxyRVRSession:
                     )
 
                 if transport is not None:
+                    with self._lock:
+                        pending_rgb = self._pending_rgb
                     try:
+                        if pending_rgb is not None:
+                            transport.send_binary(rgb_frame(*pending_rgb))
                         transport.send_binary(motor_servo_frame(left, right, servo))
-                        transport.poll()
+                        telemetry_packets = transport.poll() or ()
                     except (OSError, ConnectionError, TimeoutError) as exc:
                         transport.close()
                         transport = None
@@ -642,8 +738,29 @@ class GalaxyRVRSession:
                             right_power=0,
                             servo_angle=servo,
                             axis_summary=axis_summary,
+                            ultrasonic_cm=None,
+                            ir_left_detected=None,
+                            ir_right_detected=None,
+                            battery_voltage=None,
                         )
                     else:
+                        if pending_rgb is not None:
+                            with self._lock:
+                                if self._pending_rgb == pending_rgb:
+                                    self._pending_rgb = None
+                        telemetry = None
+                        for packet in telemetry_packets:
+                            parsed = parse_sensor_frame(packet)
+                            if parsed is not None:
+                                telemetry = parsed
+                        sensor_changes: dict[str, object] = {}
+                        if telemetry is not None:
+                            sensor_changes = {
+                                "ultrasonic_cm": telemetry.ultrasonic_cm,
+                                "ir_left_detected": telemetry.ir_left_detected,
+                                "ir_right_detected": telemetry.ir_right_detected,
+                                "battery_voltage": telemetry.battery_voltage,
+                            }
                         self._publish(
                             state=(
                                 "Rover connected; waiting for controller..."
@@ -655,6 +772,7 @@ class GalaxyRVRSession:
                             right_power=right,
                             servo_angle=servo,
                             axis_summary=axis_summary,
+                            **sensor_changes,
                         )
                 self._stop.wait(interval)
         finally:
@@ -671,6 +789,10 @@ class GalaxyRVRSession:
                 left_power=0,
                 right_power=0,
                 axis_summary="",
+                ultrasonic_cm=None,
+                ir_left_detected=None,
+                ir_right_detected=None,
+                battery_voltage=None,
             )
 
     def _safe_stop(self, transport: Any) -> None:
@@ -699,6 +821,24 @@ class GalaxyRVRSession:
             daemon=True,
         )
         self._photo_thread.start()
+        return True
+
+    def request_rgb(self, red: int, green: int, blue: int) -> bool:
+        """Queue one RGB update for the thread that owns the WebSocket."""
+        rgb_frame(red, green, blue)
+        with self._lock:
+            if self._stop.is_set():
+                return False
+            self._pending_rgb = (red, green, blue)
+            self._status = replace(
+                self._status,
+                rgb_red=red,
+                rgb_green=green,
+                rgb_blue=blue,
+                rgb_selected=True,
+            )
+            status = self._status
+        self.on_status(status)
         return True
 
     def _save_snapshot(self) -> None:
@@ -806,6 +946,7 @@ __all__ = [
     "GALAXY_RVR_MENU_ITEM",
     "GalaxyRVRSession",
     "GalaxyRVRStatus",
+    "GalaxyRVRTelemetry",
     "GalaxyRVRTool",
     "LinuxJoystick",
     "WebSocketError",
@@ -814,7 +955,9 @@ __all__ = [
     "mix_drive",
     "motor_servo_frame",
     "next_servo_angle",
+    "parse_sensor_frame",
     "register",
     "register_menu_metadata",
+    "rgb_frame",
     "save_snapshot",
 ]

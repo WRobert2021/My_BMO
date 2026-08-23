@@ -107,7 +107,7 @@ configuration list.
 | `bmo/features/calendar_view.py` | Toolkit-neutral calendar occurrence and editor records shared with presentation adapters. |
 | `bmo/features/weather_view.py` | Toolkit-neutral weather-page records and condition/season/time/moon/hourly scene contract shared with presentation adapters. |
 | `bmo/features/album.py` | Menu-only contained photo library, Wastebasket moves, and Album view registration. |
-| `bmo/features/galaxy_rvr.py` | Menu-only Bluetooth gamepad remote, GalaxyRVR LAN protocol, camera snapshots, and safe-stop lifecycle. |
+| `bmo/features/galaxy_rvr.py` | Menu-only Bluetooth gamepad remote, GalaxyRVR LAN control/telemetry protocol, RGB commands, camera snapshots, and safe-stop lifecycle. |
 | `bmo/features/galaxy_rvr_config.py` | GalaxyRVR-owned private network, photo, controller mapping, motion, camera, and timeout configuration. |
 
 ## Learning feature modules
@@ -169,6 +169,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/qt/app.py` | Production Qt Quick engine, runtime wiring, shutdown, and isolated preview ownership. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 face, menu, global overlays, debug input, and hosted-view surface. |
 | `bmo/qt/qml/HostedView.qml` | Touch presentation host for every built-in feature and interaction mode. |
+| `bmo/qt/qml/GalaxyRVRView.qml` | Production RC camera dashboard, live ultrasonic/IR/battery cards, controller status, RGB palette, and snapshot action. |
 | `bmo/qt/qml/TimerView.qml` | Production Timer creation controls, live countdown list, cancellation, and touch scrolling. |
 | `bmo/qt/qml/AlbumView.qml` | Production Album thumbnail grid, photo detail actions, bounded paging, and child-friendly empty/error states. |
 | `bmo/qt/qml/CalendarView.qml` | Production day/month/year Calendar, bounded event dots, recurrence editor, touch color picker, and occurrence/series choice. |

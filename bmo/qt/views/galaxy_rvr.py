@@ -47,10 +47,20 @@ class QtGalaxyRVRView(QtHostedView):
                 QUrl.fromLocalFile(str(photo.resolve())) if photo else QUrl()
             ),
             "controls": [
-                "Left stick: forward / backward",
-                "Right stick: turn left / right",
-                "LT / RT: camera up / down",
-                "A: save photo",
+                "Left stick  •  drive",
+                "Right stick  •  steer",
+                "LT / RT  •  camera tilt",
+                "A button  •  snap photo",
+            ],
+            "lightColors": [
+                {"name": "OFF", "hex": "#000000", "text": "#ffffff"},
+                {"name": "RED", "hex": "#ef5350", "text": "#ffffff"},
+                {"name": "GOLD", "hex": "#f2c84b", "text": "#102a5e"},
+                {"name": "GREEN", "hex": "#43b581", "text": "#ffffff"},
+                {"name": "BLUE", "hex": "#3f8efc", "text": "#ffffff"},
+                {"name": "PURPLE", "hex": "#9b6de3", "text": "#ffffff"},
+                {"name": "PINK", "hex": "#f08aa6", "text": "#102a5e"},
+                {"name": "WHITE", "hex": "#ffffff", "text": "#102a5e"},
             ],
         }
 
@@ -59,11 +69,22 @@ class QtGalaxyRVRView(QtHostedView):
         self.refresh()
 
     def handle_action(self, action: str, value: str) -> None:
-        del value
         if action == "galaxy_rvr_snapshot":
             self.session.request_snapshot()
+        elif action == "galaxy_rvr_rgb":
+            color = value.strip().removeprefix("#")
+            if len(color) != 6:
+                return
+            try:
+                red, green, blue = (
+                    int(color[index : index + 2], 16)
+                    for index in (0, 2, 4)
+                )
+            except ValueError:
+                return
+            self.session.request_rgb(red, green, blue)
         else:
-            super().handle_action(action, "")
+            super().handle_action(action, value)
             return
         self.refresh()
 
