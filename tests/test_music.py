@@ -507,7 +507,7 @@ class MusicConfigurationAndFeatureTests(unittest.TestCase):
         expected = {
             "albums": ["Alpha", "Beta"],
             "artists": ["Finn", "Jake"],
-            "series": ["Show A", "Show B"],
+            "series_groups": ["Show A", "Show B"],
         }
         for mode, titles in expected.items():
             view.browse_mode = mode
@@ -537,6 +537,52 @@ class MusicConfigurationAndFeatureTests(unittest.TestCase):
             [item["title"] for item in view.payload()["browserItems"]],
             ["Two"],
         )
+
+    def test_series_tab_opens_a_series_track_list(self) -> None:
+        tracks = (
+            sample_track("One", series="Show A"),
+            sample_track("Two", series="Show A"),
+            sample_track("Three", series="Show B"),
+        )
+        session = MusicSession(tracks, FakeBackend())
+        view = QtMusicView.__new__(QtMusicView)
+        view.session = session
+        view.browse_mode = "albums"
+        view.group_value = ""
+        view.active_playlist = ""
+        view.refresh = Mock()
+
+        view.handle_action("music_browse", "series")
+        groups = view.payload()["browserItems"]
+        view.handle_action(
+            "music_open_group",
+            json.dumps({"kind": "series", "value": groups[0]["key"]}),
+        )
+
+        self.assertEqual(view.browse_mode, "series")
+        self.assertEqual(
+            [item["title"] for item in view.payload()["browserItems"]],
+            ["One", "Two"],
+        )
+
+    def test_filtered_track_items_keep_full_library_indices(self) -> None:
+        tracks = (
+            sample_track("Bluey", artist="Bingo"),
+            sample_track("Unrelated", artist="Other"),
+            sample_track("Friend Like Me", artist="Disney"),
+        )
+        session = MusicSession(tracks, FakeBackend())
+        view = QtMusicView.__new__(QtMusicView)
+        view.session = session
+        view.browse_mode = "artist"
+        view.group_value = "Disney"
+        view.active_playlist = ""
+
+        items = view.payload()["browserItems"]
+
+        self.assertEqual(items[0]["title"], "Friend Like Me")
+        self.assertEqual(items[0]["trackIndex"], 2)
+        self.assertNotIn("index", items[0])
 
     def test_track_selection_does_not_change_browser_revision(self) -> None:
         session = MusicSession(
@@ -612,15 +658,20 @@ import json
 import base64
 from io import BytesIO
 from PIL import Image
-from PySide6.QtCore import QPointF, QUrl
+from PySide6.QtCore import QPoint, QPointF, QUrl, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickItem
+from PySide6.QtTest import QTest
 from bmo.qt.app import QML_PATH
 from bmo.qt.controller import QtFaceController
 
 app = QGuiApplication(["music-qml-geometry"])
 controller = QtFaceController(start_timer=False)
+actions = []
+controller.viewActionRequested.connect(
+    lambda action, value: actions.append([action, value])
+)
 art_buffer = BytesIO()
 Image.new("RGB", (100, 200), "purple").save(art_buffer, format="PNG")
 art_source = QUrl(
@@ -630,15 +681,15 @@ payload = {
     "browserKind": "tracks",
     "browserTitle": "ALL SONGS",
     "browserItems": [
-        {"kind": "track", "index": index, "title": f"Song {index}",
+        {"kind": "track", "trackIndex": 100 + index, "title": f"Song {index}",
          "album": "BMO Jams", "artist": "A Friend", "series": "A Series"}
         for index in range(20)
     ],
     "browserRevision": "songs:::0",
     "activeChip": "songs",
     "trackCount": 3,
-    "selectedIndex": 0,
-    "playingIndex": 0,
+    "selectedIndex": 100,
+    "playingIndex": 100,
     "title": "A Very Long Song Title That Needs To Move Across The Screen",
     "album": "BMO Jams",
     "artist": "A Friend",
@@ -683,9 +734,17 @@ def geometry(name):
     return [point.x(), point.y(), item.width(), item.height()]
 
 song_list = find("musicSongList")
+first_row = song_list.mapToItem(None, song_list.width() / 2, 25)
+QTest.mouseClick(
+    window,
+    Qt.MouseButton.LeftButton,
+    pos=QPoint(int(first_row.x()), int(first_row.y())),
+)
+for _index in range(2):
+    app.processEvents()
 song_list.setProperty("contentY", 150.0)
 updated = dict(payload)
-updated["selectedIndex"] = 14
+updated["selectedIndex"] = 114
 controller.update_view(updated)
 for _index in range(4):
     app.processEvents()
@@ -696,6 +755,7 @@ result = {name: geometry(name) for name in (
     "musicAlbumArt"
 )}
 result["scrollY"] = song_list.property("contentY")
+result["selectionAction"] = actions[-1]
 print(json.dumps(result))
 window.close()
 controller.stop()
@@ -713,6 +773,10 @@ controller.stop()
         self.assertNotIn("ReferenceError", result.stderr)
         geometry = json.loads(result.stdout.strip())
         self.assertEqual(geometry["hostedCompactFace"], [684.0, 5.0, 108.0, 65.0])
+        self.assertEqual(
+            geometry["selectionAction"],
+            ["music_select", "100"],
+        )
         self.assertAlmostEqual(geometry["scrollY"], 150.0)
         for name in (
             "musicSongPanel",

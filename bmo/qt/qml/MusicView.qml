@@ -254,9 +254,11 @@ Item {
                     radius: 12
                     property bool isTrack: model.kind === "track"
                     property bool selected: isTrack
-                            && model.index === musicView.viewModel.selectedIndex
+                            && model.trackIndex
+                               === musicView.viewModel.selectedIndex
                     property bool playing: isTrack
-                            && model.index === musicView.viewModel.playingIndex
+                            && model.trackIndex
+                               === musicView.viewModel.playingIndex
                             && ["playing", "paused"].indexOf(
                                 musicView.viewModel.state
                             ) >= 0
@@ -332,7 +334,10 @@ Item {
                         anchors.fill: parent
                         onClicked: {
                             if (model.kind === "track") {
-                                musicView.send("music_select", model.index)
+                                musicView.send(
+                                    "music_select",
+                                    model.trackIndex
+                                )
                             } else if (model.kind === "group") {
                                 musicView.resetListOnNextSync = true
                                 musicView.send(

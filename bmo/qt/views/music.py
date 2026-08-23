@@ -16,7 +16,17 @@ from bmo.qt.views.base import QtHostedView
 _GROUP_LABELS = {
     "albums": ("album", "Albums", "Unknown Album"),
     "artists": ("artist", "Artists", "Unknown Artist"),
-    "series": ("series", "Series", "Unknown Series"),
+    "series_groups": ("series", "Series", "Unknown Series"),
+}
+_BROWSE_ACTIONS = {
+    "albums": "albums",
+    "artists": "artists",
+    "series": "series_groups",
+    "songs": "songs",
+    "recent": "recent",
+    "most": "most",
+    "favorites": "favorites",
+    "playlists": "playlists",
 }
 
 
@@ -66,7 +76,7 @@ class QtMusicView(QtHostedView):
         track = self.session.tracks[index]
         return {
             "kind": "track",
-            "index": index,
+            "trackIndex": index,
             "title": track.title,
             "album": track.album or "Unknown Album",
             "artist": track.artist,
@@ -246,6 +256,7 @@ class QtMusicView(QtHostedView):
             "album": "albums",
             "artist": "artists",
             "series": "series",
+            "series_groups": "series",
             "playlist": "playlists",
         }.get(self.browse_mode, self.browse_mode)
         return {
@@ -309,16 +320,9 @@ class QtMusicView(QtHostedView):
         elif action == "music_favorite":
             self.session.toggle_favorite()
         elif action == "music_browse":
-            allowed = {
-                *_GROUP_LABELS,
-                "songs",
-                "recent",
-                "most",
-                "favorites",
-                "playlists",
-            }
-            if value in allowed:
-                self.browse_mode = value
+            browse_mode = _BROWSE_ACTIONS.get(value)
+            if browse_mode is not None:
+                self.browse_mode = browse_mode
                 self.group_value = ""
         elif action == "music_open_group":
             try:
