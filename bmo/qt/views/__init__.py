@@ -1,6 +1,7 @@
 """QML-backed adapters for built-in feature and mode views."""
 
 from bmo.qt.views.album import QtAlbumView
+from bmo.qt.views.alarm_clock import QtAlarmClockView
 from bmo.qt.views.calendar import QtCalendarView
 from bmo.qt.views.galaxy_rvr import QtGalaxyRVRView
 from bmo.qt.views.learning import QtLearningView
@@ -12,6 +13,7 @@ from bmo.qt.views.weather import QtWeatherView
 
 __all__ = [
     "QtAlbumView",
+    "QtAlarmClockView",
     "QtCalendarView",
     "QtGalaxyRVRView",
     "QtLearningView",

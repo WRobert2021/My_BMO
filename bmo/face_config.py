@@ -30,6 +30,7 @@ _DEFAULT_STATE_VALUES = {
     "capturing": (Path("faces/capturing"), 500),
     "warmup": (Path("faces/warmup"), 500),
     "alarm": (Path("faces/alarm"), 180),
+    "alarm_clock_ringing": (Path("faces/alarm_clock"), 180),
 }
 
 

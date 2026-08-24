@@ -16,6 +16,7 @@ from bmo.features.registry import ToolRegistry
 DEFAULT_ROUTABLE_FEATURE_MODULES = (
     "bmo.features.get_time",
     "bmo.features.set_timer",
+    "bmo.features.alarm_clock",
     "bmo.features.calendar",
     "bmo.features.get_location",
     "bmo.features.get_weather",

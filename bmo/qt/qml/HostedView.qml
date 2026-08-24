@@ -37,9 +37,20 @@ Rectangle {
             opacity: 0.85
         }
 
+        Rectangle {
+            x: 18
+            anchors.verticalCenter: parent.verticalCenter
+            width: 13
+            height: 13
+            radius: 6.5
+            color: "#f2c84b"
+            border.color: "#fff4bf"
+            border.width: 2
+        }
+
         Label {
             anchors.left: parent.left
-            anchors.leftMargin: 22
+            anchors.leftMargin: 42
             anchors.verticalCenter: parent.verticalCenter
             text: controller.viewTitle.toUpperCase()
             color: "white"
@@ -93,6 +104,7 @@ Rectangle {
         sourceComponent: {
             switch (controller.viewKind) {
             case "timer": return timerView
+            case "alarm_clock": return alarmClockView
             case "album": return albumView
             case "weather": return weatherView
             case "calendar": return calendarView
@@ -130,6 +142,14 @@ Rectangle {
             viewModel: root.viewModel
         }
     }
+    Component {
+        id: alarmClockView
+
+        AlarmClockView {
+            controller: root.controller
+        }
+    }
+
     Component {
         id: timerView
 

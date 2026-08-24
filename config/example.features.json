@@ -38,6 +38,13 @@
       }
     },
     {
+      "module": "bmo.features.alarm_clock",
+      "enabled": true,
+      "settings": {
+        "config_path": "config/alarm_clock.json"
+      }
+    },
+    {
       "module": "bmo.features.calendar",
       "enabled": true,
       "settings": {

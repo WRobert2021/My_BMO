@@ -101,6 +101,10 @@ configuration list.
 | `bmo/features/capture_image.py` | Raspberry Pi still capture, rotation, persistent copy, and vision follow-up. |
 | `bmo/features/set_timer.py` | Duration parsing, multi-timer scheduler, voice operations, menu callbacks, and alarm attentions. |
 | `bmo/features/timer_view.py` | Toolkit-neutral active-timer snapshots shared with presentation adapters. |
+| `bmo/features/alarm_clock.py` | Persistent wall-clock alarms, voice/touch operations, scheduler, snooze/dismiss attentions, and view lifecycle. |
+| `bmo/features/alarm_config.py` | Alarm-owned private configuration and defaults. |
+| `bmo/features/alarm_store.py` | Strict alarm records and atomic local persistence. |
+| `bmo/features/alarm_view.py` | Toolkit-neutral alarm-list presentation records. |
 | `bmo/features/calendar.py` | Read-only spoken calendar, editable menu view, midnight refresh worker, and current-day attentions. |
 | `bmo/features/calendar_config.py` | Calendar-owned private configuration. |
 | `bmo/features/calendar_store.py` | Event/acknowledgement storage, recurrence expansion, occurrence overrides, and US holidays. |
@@ -158,6 +162,7 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/ui/compact_face.py` | Shared 108x65 face configuration, image normalization, rendering, and overlay stack lifecycle. |
 | `bmo/ui/menu.py` | Tk rendering and lifecycle for the shared swipe-menu model and compact face. |
 | `bmo/ui/timer.py` | Active-timer list, countdown refresh, touch deletion, scrolling, and duration editor. |
+| `bmo/ui/alarm_clock.py` | Legacy digital clock, alarm list/editor, repeats, snooze, dismiss, and fixed compact face. |
 | `bmo/ui/calendar.py` | Day/month/year views, event editor, recurrence controls, event scrolling, and narration actions. |
 | `bmo/ui/quiet_hours.py` | Fullscreen sleeping cover and four-digit touch keypad. |
 | `bmo/ui/album.py` | Thumbnail pages, fullscreen photos, Back/Wastebasket/BMO actions, and vision presentation. |
@@ -169,12 +174,13 @@ Modes are longer interactions that temporarily own user input.
 | `bmo/qt/controller.py` | Qt properties/signals for face frames, overlays, HUD, menus, hosted views, attentions, quiet hours, and kiosk gestures. |
 | `bmo/qt/presentation.py` | Queued Qt implementation of the runtime presentation port. |
 | `bmo/qt/view_host.py` | Feature/mode app-factory host and active QML view lifecycle. |
-| `bmo/qt/views/` | QML adapters for Timer, Calendar, Weather, Album, Music, Learning, Pup Pairs, and Twenty Questions; the Weather adapter owns async cache/refresh and scoped narration. |
+| `bmo/qt/views/` | QML adapters for Alarm Clock, Timer, Calendar, Weather, Album, Music, Learning, Pup Pairs, and Twenty Questions; the Weather adapter owns async cache/refresh and scoped narration. |
 | `bmo/qt/app.py` | Production Qt Quick engine, runtime wiring, shutdown, and isolated preview ownership. |
 | `bmo/qt/qml/Main.qml` | Fullscreen 800x480 face, menu, global overlays, debug input, and hosted-view surface. |
 | `bmo/qt/qml/HostedView.qml` | Touch presentation host for every built-in feature and interaction mode. |
 | `bmo/qt/qml/GalaxyRVRView.qml` | Production RC camera dashboard, live ultrasonic/IR/battery cards, controller status, RGB palette, and snapshot action. |
 | `bmo/qt/qml/TimerView.qml` | Production Timer creation controls, live countdown list, cancellation, and touch scrolling. |
+| `bmo/qt/qml/AlarmClockView.qml` | Production digital clock, persistent alarm list/editor, weekday repeats, format toggle, snooze, and dismiss controls. |
 | `bmo/qt/qml/AlbumView.qml` | Production Album thumbnail grid, photo detail actions, bounded paging, and child-friendly empty/error states. |
 | `bmo/qt/qml/MusicView.qml` | Production 800x420 metadata browser with scroll-stable song selection, fitted album art, marquees, progress seeking, collections, and playback controls. |
 | `bmo/qt/qml/CalendarView.qml` | Production day/month/year Calendar, bounded event dots, recurrence editor, touch color picker, and occurrence/series choice. |
@@ -190,6 +196,7 @@ Modes are longer interactions that temporarily own user input.
 | `config/example.features.json` | Ordered enabled feature and mode modules with module settings. |
 | `config/example.weather.json` | Units, locations, carousel default, visual flags, and optional alerts. |
 | `config/example.calendar.json` | Calendar data/overlay paths, categories, holidays, and spoken notes. |
+| `config/example.alarm_clock.json` | Alarm state path, menu visibility, clock format, and snooze duration. |
 | `config/example.learning.json` | Learning data/art paths, teacher area, session/mastery limits, fonts, speech, and debug seed. |
 | `config/example.galaxy_rvr.json` | GalaxyRVR LAN address, controller mapping, motion/servo limits, camera preview, photo storage, and timeouts. |
 | `config/example.music.json` | Music library/state paths, allowed metadata genres, menu visibility, and ffplay command. |
@@ -210,6 +217,7 @@ Modes are longer interactions that temporarily own user input.
 | Installation | `tests/test_setup_script.py` |
 | Time/location/weather | `tests/test_location_weather.py`, `tests/test_weather_feature.py` |
 | Timer | `tests/test_set_timer.py`, `tests/test_timer_ui.py` |
+| Alarm clock | `tests/test_alarm_clock.py` |
 | Calendar | `tests/test_calendar.py` |
 | Camera | `tests/test_camera.py` |
 | Album | `tests/test_album.py` |

@@ -48,6 +48,7 @@ class QtViewHost(QObject):
 
     def _register_builtin_factories(self) -> None:
         from bmo.qt.views import (
+            QtAlarmClockView,
             QtAlbumView,
             QtCalendarView,
             QtGalaxyRVRView,
@@ -61,6 +62,7 @@ class QtViewHost(QObject):
 
         for kind, factory in (
             ("timer", QtTimerView),
+            ("alarm_clock", QtAlarmClockView),
             ("calendar", QtCalendarView),
             ("weather", QtWeatherView),
             ("album", QtAlbumView),

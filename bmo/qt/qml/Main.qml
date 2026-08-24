@@ -283,6 +283,31 @@ ApplicationWindow {
                         }
                     }
                 }
+
+                Rectangle {
+                    objectName: "menuItemLabel"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 3
+                    width: Math.min(parent.width - 8, menuLabel.implicitWidth + 24)
+                    height: 25
+                    radius: 12
+                    color: "#e6102a5e"
+                    border.color: "#66ffffff"
+                    border.width: 1
+
+                    Text {
+                        id: menuLabel
+                        anchors.centerIn: parent
+                        width: parent.width - 14
+                        text: modelData.label
+                        color: "white"
+                        font.pixelSize: 12
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                    }
+                }
             }
         }
 

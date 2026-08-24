@@ -68,6 +68,13 @@ The application keeps `agent.py` as the stable startup command while implementat
   priority-queue scheduler for all active timers.
 - `bmo.features.timer_view` — immutable active-timer presentation snapshots
   shared without importing a concrete UI toolkit.
+- `bmo.features.alarm_clock` — persistent wall-clock alarms, direct/model voice
+  operations, one cooperative scheduler, touch callbacks, and alarm attentions.
+- `bmo.features.alarm_config` — private alarm state-path, visibility, clock
+  format, and snooze-duration configuration.
+- `bmo.features.alarm_store` — strict version-one alarm records and atomic
+  local persistence.
+- `bmo.features.alarm_view` — immutable alarm-list presentation snapshots.
 - `bmo.features.calendar` — read-only calendar voice routing, touch-view
   registration, local-date attention refresh, and menu persistence actions.
 - `bmo.features.calendar_view` — immutable occurrence and editor records at the
@@ -133,6 +140,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo.ui.menu` — Tk drawing and lifecycle for the shared touch-menu model.
 - `bmo.ui.timer` — live countdown rendering, touch deletion, and vertical
   drag-scrolling for the menu-launched timer view.
+- `bmo.ui.alarm_clock` — legacy digital time/date, persistent alarm list and
+  editor, repeats, clock format, snooze, dismiss, and shared compact face.
 - `bmo.ui.calendar` — current-day-first day/month/year navigation, bounded
   event-dot layout, scrollable day rows, color/category editor, and recurring
   occurrence/series choices.
@@ -165,6 +174,8 @@ The application keeps `agent.py` as the stable startup command while implementat
 - `bmo/qt/qml/HostedView.qml` — touch UI for built-in features and modes.
 - `bmo/qt/qml/TimerView.qml` — Timer creation controls, live countdown list,
   cancellation, and touch scrolling.
+- `bmo/qt/qml/AlarmClockView.qml` — digital time/date, persistent alarm
+  list/editor, weekday repeats, clock-format toggle, snooze, and dismiss.
 - `bmo/qt/qml/GalaxyRVRView.qml` — RC camera dashboard with bounded live
   ultrasonic, left/right IR, battery, RGB palette, controller, and snapshot
   surfaces.
@@ -330,10 +341,11 @@ Enabled modes and feature tools may optionally contribute typed menu metadata.
 Their registries expose those contributions in configuration order, and
 `BotGUI` maps them to generic five-column, three-row icon-grid pages without
 checking concrete extension names. Each page holds up to fifteen actions;
-additional actions are placed on later swipeable pages. Grid cells render only
-their alpha-preserving icons without labels or boxed tile borders; Qt places a
-low-opacity circular color halo behind each icon while Tk retains the plain
-icon treatment. Each invisible cell remains the full touch target. A mode tap queues the
+additional actions are placed on later swipeable pages. Grid cells render
+their alpha-preserving icons without boxed tile borders. Qt places a
+low-opacity circular color halo behind each icon and a compact name pill over
+its lower edge, while Tk retains the plain icon treatment. Each full cell
+remains the touch target. A mode tap queues the
 selected mode for the normal interaction worker, interrupting wake-word waiting
 without starting mode lifecycle work on Tk's event thread; completion is posted
 back to the presentation dispatcher before the originating menu is revealed. A
@@ -368,6 +380,23 @@ Expired timers publish typed persistent attention. The root face cycles the
 configured `faces/alarm` frames and presents an acknowledgment badge until the
 timer is dismissed; the timer module owns those attention identifiers and
 cleans them up independently of other features.
+
+The Alarm Clock contributes `graphics/icons/alarm.png` by reference. Its
+production view shows live local digital time and date, a persistent multiple-
+alarm list, 12/24-hour format, named one-time or weekday-repeating alarms, and
+touch editing, enable/disable, deletion, snooze, and dismiss controls. Voice
+routing separately supports setting, listing, enabling, disabling, deleting,
+snoozing, and dismissing alarms; duration countdowns remain owned by Timer.
+One feature-owned worker checks system local wall time and is stopped during
+feature cleanup. One-time alarms disable after firing, repeating alarms remain
+enabled, and snooze deadlines are persisted atomically.
+
+Ringing publishes a typed persistent attention with the
+`alarm_clock_ringing` animation-state hook. Missing future face frames safely
+fall back through the shared controller; future frames may be placed in the
+configured `faces/alarm_clock` directory. The canonical live BMO face therefore
+remains at `x=684`, `y=5`, 108x65 throughout the clock, list, and editor instead
+of being recreated or moved by the feature.
 
 The calendar tool contributes `graphics/icons/calendar.png` by reference and
 opens only from its touch-menu item. It starts on the local current day, with
@@ -582,6 +611,12 @@ Calendar persistence, recurrence, color selection, and quiet-hours enforcement
 use only Python's standard library and the existing Qt Quick production/Tk
 fallback runtimes. The system local date and time are authoritative; there is
 no feature-level timezone.
+Alarm Clock uses the same system-local time authority and only the standard
+library plus the existing presentation runtimes. Private alarm state lives
+under `data/alarms`, and alarm settings live in `config/alarm_clock.json`; both
+are local and Git-ignored. The tracked `config/example.alarm_clock.json`
+documents the schema. Malformed alarm state becomes visibly read-only rather
+than being overwritten or preventing other features from starting.
 Calendar value objects require exact string, `date`, and `time` domain values;
 they reject `datetime` and values that would otherwise be silently stringified.
 Recurrence candidates are generated lazily, stop at the first exhausted count,
@@ -660,7 +695,7 @@ Features and modes solve different routing problems:
 ### Feature module contract
 
 The `features` list lives in `config/features.json`. Omitting the key loads the
-eleven modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
+twelve modules in `DEFAULT_FEATURE_MODULES`; providing the key replaces that
 default list. Each entry supports:
 
 - `module`: a non-empty importable Python module name.

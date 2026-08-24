@@ -63,6 +63,7 @@ class FeatureLoadingTests(unittest.TestCase):
             {
                 "get_time",
                 "set_timer",
+                "alarm_clock",
                 "get_calendar",
                 "get_location",
                 "get_weather",
@@ -74,7 +75,7 @@ class FeatureLoadingTests(unittest.TestCase):
         self.assertIn("bmo.features.album", result.modules)
         self.assertIn("bmo.features.learning", result.modules)
         self.assertTrue(
-            {"album", "music", "learning", "galaxy_rvr"}.issubset(
+            {"alarm_clock", "album", "music", "learning", "galaxy_rvr"}.issubset(
                 {item.name for item in result.registry.menu_items}
             )
         )

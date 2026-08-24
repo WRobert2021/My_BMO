@@ -36,6 +36,10 @@
     "alarm": {
       "directory": "faces/alarm",
       "frame_duration_ms": 180
+    },
+    "alarm_clock_ringing": {
+      "directory": "faces/alarm_clock",
+      "frame_duration_ms": 180
     }
   }
 }
