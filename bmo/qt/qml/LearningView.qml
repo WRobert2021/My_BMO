@@ -1,7 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Basic as Basic
-import QtQuick.Layouts
 
 Rectangle {
     id: root
@@ -125,21 +123,6 @@ Rectangle {
         }
     }
 
-    component InputCard: Basic.TextField {
-        color: "#102a5e"
-        placeholderTextColor: "#75899c"
-        font.pixelSize: 15
-        leftPadding: 16
-        rightPadding: 16
-        selectByMouse: true
-        background: Rectangle {
-            radius: 12
-            color: "white"
-            border.color: parent.activeFocus ? "#35a99a" : "#a9c5cf"
-            border.width: parent.activeFocus ? 3 : 2
-        }
-    }
-
     component EmptyCard: Rectangle {
         required property string message
         color: "#ffffffcc"
@@ -218,7 +201,7 @@ Rectangle {
 
         Rectangle {
             objectName: "learningPinPanel"
-            x: 214; y: 14; width: 372; height: 390
+            x: 214; y: 8; width: 372; height: 402
             radius: 24
             color: "#ffffffed"
             border.color: "#8dcfc8"
@@ -253,23 +236,31 @@ Rectangle {
                 }
             }
             Grid {
-                x: 41; y: 142
+                x: 41; y: 136
                 columns: 3
                 spacing: 7
                 Repeater {
                     model: ["1","2","3","4","5","6","7","8","9"]
                     delegate: KidButton {
                         required property string modelData
-                        width: 92; height: 50
+                        width: 92; height: 48
                         label: modelData
                         baseColor: "#3978c3"
                         textSize: 19
                         onClicked: root.send("learning_teacher_digit", modelData)
                     }
                 }
-                KidButton { width: 92; height: 50; label: "CLEAR"; baseColor: "#d26a72"; textSize: 11; onClicked: root.send("learning_teacher_clear") }
-                KidButton { width: 92; height: 50; label: "0"; baseColor: "#3978c3"; textSize: 19; onClicked: root.send("learning_teacher_digit", "0") }
-                KidButton { width: 92; height: 50; label: "BACK"; baseColor: "#5a6288"; textSize: 11; onClicked: root.send("learning_home") }
+                KidButton { width: 92; height: 48; label: "CLEAR"; baseColor: "#d26a72"; textSize: 11; onClicked: root.send("learning_teacher_clear") }
+                KidButton { width: 92; height: 48; label: "0"; baseColor: "#3978c3"; textSize: 19; onClicked: root.send("learning_teacher_digit", "0") }
+                KidButton { width: 92; height: 48; label: "DELETE"; baseColor: "#5a6288"; textSize: 10; onClicked: root.send("learning_teacher_backspace") }
+            }
+            KidButton {
+                x: 126; y: 354; width: 120; height: 36
+                label: "CANCEL"
+                baseColor: "#5a6288"
+                outlined: true
+                textSize: 10
+                onClicked: root.send("learning_teacher_back")
             }
         }
     }
@@ -290,7 +281,7 @@ Rectangle {
         GridView {
             id: teacherProfileGrid
             objectName: "learningTeacherProfilesGrid"
-            x: 28; y: 88; width: 744; height: 196
+            x: 28; y: 88; width: 744; height: 232
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -315,28 +306,20 @@ Rectangle {
             message: "No learner profiles yet. Add one below to get started."
         }
 
-        InputCard {
-            id: newTeacherLearner
-            x: 60; y: 300; width: 398; height: 52
-            placeholderText: "New learner name"
-        }
         KidButton {
-            x: 470; y: 300; width: 210; height: 52
+            x: 166; y: 340; width: 220; height: 58
             label: "ADD LEARNER"
             baseColor: "#35a06f"
             enabled: !root.viewModel.readOnly
-            onClicked: {
-                root.send("learning_create_profile", newTeacherLearner.text)
-                newTeacherLearner.clear()
-            }
+            onClicked: root.send("learning_text_open", "new_profile")
         }
         KidButton {
-            x: 310; y: 363; width: 180; height: 44
+            x: 414; y: 340; width: 220; height: 58
             label: "EXIT TEACHER"
             baseColor: "#5a6288"
             outlined: true
-            textSize: 12
-            onClicked: root.send("learning_home")
+            textSize: 13
+            onClicked: root.send("learning_teacher_back")
         }
     }
 
@@ -352,31 +335,23 @@ Rectangle {
             accent: "#4e7dcc"
         }
 
-        InputCard {
-            id: renameTeacherLearner
-            x: 28; y: 60; width: 335; height: 48
-            placeholderText: "Rename learner"
-        }
         KidButton {
-            x: 375; y: 60; width: 140; height: 48
+            x: 28; y: 58; width: 210; height: 48
             label: "RENAME"
             baseColor: "#4e7dcc"
             textSize: 13
-            enabled: !root.viewModel.readOnly
-            onClicked: {
-                root.send("learning_rename_profile", renameTeacherLearner.text)
-                renameTeacherLearner.clear()
-            }
+            enabled: !root.viewModel.readOnly && !root.viewModel.teacherProfileArchived
+            onClicked: root.send("learning_text_open", "rename_profile")
         }
         KidButton {
-            x: 527; y: 60; width: 140; height: 48
+            x: 250; y: 58; width: 210; height: 48
             label: "REPORT"
             baseColor: "#e58b5f"
             textSize: 13
             onClicked: root.send("learning_teacher_report")
         }
         KidButton {
-            x: 679; y: 60; width: 93; height: 48
+            x: 612; y: 58; width: 160; height: 48
             label: "BACK"
             baseColor: "#5a6288"
             outlined: true
@@ -385,9 +360,9 @@ Rectangle {
         }
 
         Label {
-            x: 31; y: 119; width: 730; height: 24
-            text: "LEARNING PLANS"
-            color: "#58708c"
+            x: 31; y: 112; width: 730; height: 24
+            text: root.viewModel.teacherProfileArchived ? "ARCHIVED · RESTORE TO EDIT" : "LEARNING PLANS"
+            color: root.viewModel.teacherProfileArchived ? "#a3424e" : "#58708c"
             font.pixelSize: 13
             font.bold: true
             font.letterSpacing: 1.0
@@ -396,7 +371,7 @@ Rectangle {
         GridView {
             id: teacherPlanGrid
             objectName: "learningTeacherPlansGrid"
-            x: 28; y: 148; width: 744; height: 148
+            x: 28; y: 140; width: 744; height: 150
             clip: true
             interactive: contentHeight > height
             boundsBehavior: Flickable.StopAtBounds
@@ -408,32 +383,45 @@ Rectangle {
                 required property var modelData
                 required property int index
                 width: 234; height: 62
-                label: modelData.label + (modelData.enabled ? "" : "\nPAUSED")
-                baseColor: modelData.enabled ? root.colorAt(index) : "#89969d"
-                textSize: modelData.enabled ? 15 : 12
+                label: modelData.label + (modelData.archived ? "\nARCHIVED" : (modelData.enabled ? "" : "\nPAUSED"))
+                baseColor: modelData.archived || !modelData.enabled ? "#89969d" : root.colorAt(index)
+                textSize: modelData.enabled && !modelData.archived ? 15 : 12
                 onClicked: root.send("learning_teacher_plan", modelData.id)
             }
         }
 
         EmptyCard {
-            x: 145; y: 151; width: 510; height: 126
+            x: 145; y: 143; width: 510; height: 126
             visible: (root.viewModel.teacherPlans || []).length === 0
             message: "No plans yet. Name a plan below to create one."
         }
 
-        InputCard {
-            id: newLearningPlan
-            x: 80; y: 315; width: 400; height: 54
-            placeholderText: "New plan name"
+        KidButton {
+            x: 28; y: 310; width: 232; height: 58
+            label: "NEW PLAN"
+            baseColor: "#35a06f"
+            enabled: !root.viewModel.readOnly && !root.viewModel.teacherProfileArchived
+            onClicked: root.send("learning_text_open", "new_plan")
         }
         KidButton {
-            x: 492; y: 315; width: 228; height: 54
-            label: "CREATE PLAN"
-            baseColor: "#35a06f"
+            x: 272; y: 310; width: 232; height: 58
+            label: "RESET PROGRESS"
+            baseColor: "#d26a72"
+            textSize: 12
+            enabled: !root.viewModel.readOnly
+            onClicked: root.send("learning_reset_profile")
+        }
+        KidButton {
+            x: 516; y: 310; width: 256; height: 58
+            label: root.viewModel.teacherProfileArchived ? "RESTORE LEARNER" : "ARCHIVE LEARNER"
+            baseColor: root.viewModel.teacherProfileArchived ? "#35a06f" : "#b84755"
+            textSize: 12
             enabled: !root.viewModel.readOnly
             onClicked: {
-                root.send("learning_create_plan", newLearningPlan.text)
-                newLearningPlan.clear()
+                if (root.viewModel.teacherProfileArchived)
+                    root.send("learning_restore_profile")
+                else
+                    root.send("learning_archive_profile")
             }
         }
     }
@@ -444,42 +432,313 @@ Rectangle {
         anchors.fill: parent
         visible: root.screen === "teacher_plan"
 
+        PageHeading {
+            x: 28; y: 5; width: 744
+            title: root.viewModel.teacherPlanName || "Learning plan"
+            subtitle: (root.viewModel.teacherPlan || {}).archived ? "Archived plan" : "Plan settings and progress"
+            accent: (root.viewModel.teacherPlan || {}).archived ? "#89969d" : "#35a99a"
+        }
+
         Rectangle {
             objectName: "learningPlanCard"
-            x: 90; y: 40; width: 620; height: 300
-            radius: 24
+            x: 28; y: 80; width: 744; height: 58
+            radius: 15
             color: "#ffffffed"
             border.color: "#9ecbd4"
-            border.width: 3
-
-            Rectangle { x: 0; y: 0; width: 18; height: parent.height; radius: 9; color: "#35a99a" }
-            Rectangle { x: 36; y: 28; width: 48; height: 48; radius: 24; color: "#fff1b8"; border.color: "#efc64c"; border.width: 2
-                Label { anchors.centerIn: parent; text: "★"; color: "#c88b16"; font.pixelSize: 26 }
-            }
+            border.width: 2
             Label {
-                x: 102; y: 24; width: 475; height: 54
-                text: root.viewModel.teacherPlanName || "Learning plan"
+                anchors.fill: parent
+                anchors.margins: 8
+                text: ((root.viewModel.teacherPlan || {}).lessons || 0) + " LESSONS   ·   "
+                      + ((root.viewModel.teacherPlan || {}).questions || 0) + " QUESTIONS   ·   "
+                      + ((root.viewModel.teacherPlan || {}).repetitions || 0) + " ROUNDS   ·   GATE "
+                      + ((root.viewModel.teacherPlan || {}).masteryGate ? "ON" : "OFF")
                 color: "#102a5e"
-                font.pixelSize: 28
-                font.bold: true
-                elide: Text.ElideRight
+                horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
+                font.pixelSize: 13
+                font.bold: true
             }
+        }
+
+        Row {
+            x: 28; y: 150; spacing: 10
+            KidButton { width: 238; height: 54; label: "EDIT & REORDER"; baseColor: "#4e7dcc"; textSize: 12; enabled: !root.viewModel.readOnly && !(root.viewModel.teacherPlan || {}).archived; onClicked: root.send("learning_edit_plan") }
+            KidButton { width: 238; height: 54; label: "DUPLICATE"; baseColor: "#35a99a"; textSize: 12; enabled: !root.viewModel.readOnly && !(root.viewModel.teacherPlan || {}).archived; onClicked: root.send("learning_duplicate_plan") }
+            KidButton { width: 238; height: 54; label: (root.viewModel.teacherPlan || {}).enabled ? "TURN OFF" : "TURN ON"; baseColor: "#d09a2f"; textSize: 12; enabled: !root.viewModel.readOnly && !(root.viewModel.teacherPlan || {}).archived; onClicked: root.send("learning_toggle_plan") }
+        }
+        Row {
+            x: 28; y: 214; spacing: 10
+            KidButton { width: 238; height: 54; label: "VIEW REPORT"; baseColor: "#e58b5f"; textSize: 12; onClicked: root.send("learning_teacher_report") }
+            KidButton { width: 238; height: 54; label: "RESET PROGRESS"; baseColor: "#d26a72"; textSize: 11; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_reset_plan") }
+            KidButton {
+                width: 238; height: 54
+                label: (root.viewModel.teacherPlan || {}).archived ? "RESTORE PLAN" : "ARCHIVE PLAN"
+                baseColor: (root.viewModel.teacherPlan || {}).archived ? "#35a06f" : "#b84755"
+                textSize: 11; enabled: !root.viewModel.readOnly
+                onClicked: {
+                    if ((root.viewModel.teacherPlan || {}).archived)
+                        root.send("learning_restore_plan")
+                    else
+                        root.send("learning_archive_plan")
+                }
+            }
+        }
+
+        Rectangle {
+            x: 55; y: 280; width: 690; height: 68
+            radius: 14
+            color: "#fff8dd"
+            border.color: "#e2c562"
             Label {
-                x: 42; y: 96; width: 536; height: 54
-                text: "This plan uses the validated Pre-K lesson catalog. You can pause it or open its progress report."
-                color: "#58708c"
-                font.pixelSize: 16
+                anchors.fill: parent
+                anchors.margins: 9
+                text: "MASTERY GATE: ON introduces foundation lessons first and unlocks later lessons after enough accurate practice. OFF makes the full plan available without erasing scores or changing its order."
+                color: "#6f5a16"
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 wrapMode: Text.Wrap
+                font.pixelSize: 11
+                font.bold: true
             }
+        }
+        KidButton {
+            x: 310; y: 357; width: 180; height: 48
+            label: "BACK"
+            baseColor: "#5a6288"
+            outlined: true
+            textSize: 12
+            onClicked: root.send("learning_teacher_back")
+        }
+    }
+
+    Item {
+        id: teacherPlanEditPage
+        objectName: "learningTeacherPlanEditPage"
+        anchors.fill: parent
+        visible: root.screen === "teacher_plan_edit"
+
+        PageHeading {
+            x: 20; y: 2; width: 760
+            title: "Edit: " + ((root.viewModel.planDraft || {}).name || "Learning plan")
+            accent: "#4e7dcc"
+        }
+
+        KidButton {
+            x: 18; y: 53; width: 170; height: 72
+            label: "RENAME PLAN"
+            baseColor: "#4e7dcc"
+            textSize: 11
+            enabled: !root.viewModel.readOnly
+            onClicked: root.send("learning_text_open", "rename_plan")
+        }
+        Rectangle {
+            x: 198; y: 53; width: 180; height: 72
+            radius: 13; color: "#ffffffed"; border.color: "#9ecbd4"; border.width: 2
+            Label { x: 42; y: 5; width: 96; height: 26; text: "QUESTIONS " + ((root.viewModel.planDraft || {}).questions || 0); color: "#102a5e"; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 11; font.bold: true }
+            KidButton { x: 8; y: 34; width: 72; height: 30; label: "−"; baseColor: "#5a6288"; textSize: 17; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_plan_adjust", "questions:-1") }
+            KidButton { x: 100; y: 34; width: 72; height: 30; label: "+"; baseColor: "#35a06f"; textSize: 17; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_plan_adjust", "questions:1") }
+        }
+        Rectangle {
+            x: 388; y: 53; width: 180; height: 72
+            radius: 13; color: "#ffffffed"; border.color: "#9ecbd4"; border.width: 2
+            Label { x: 38; y: 5; width: 104; height: 26; text: "ROUNDS " + ((root.viewModel.planDraft || {}).repetitions || 0); color: "#102a5e"; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 11; font.bold: true }
+            KidButton { x: 8; y: 34; width: 72; height: 30; label: "−"; baseColor: "#5a6288"; textSize: 17; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_plan_adjust", "repetitions:-1") }
+            KidButton { x: 100; y: 34; width: 72; height: 30; label: "+"; baseColor: "#35a06f"; textSize: 17; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_plan_adjust", "repetitions:1") }
+        }
+        KidButton {
+            x: 578; y: 53; width: 204; height: 72
+            label: "MASTERY GATE\n" + ((root.viewModel.planDraft || {}).masteryGate ? "ON" : "OFF")
+            baseColor: (root.viewModel.planDraft || {}).masteryGate ? "#35a06f" : "#89969d"
+            textSize: 11
+            enabled: !root.viewModel.readOnly
+            onClicked: root.send("learning_plan_gate")
+        }
+
+        Label {
+            x: 22; y: 131; width: 756; height: 22
+            text: "ORDERED LESSONS · DRAG TO SCROLL"
+            color: "#58708c"; font.pixelSize: 11; font.bold: true; font.letterSpacing: 0.8
+        }
+        ListView {
+            id: planLessonList
+            objectName: "learningPlanLessonList"
+            x: 18; y: 154; width: 764; height: 186
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: 4
+            model: root.viewModel.planDraftLessons || []
+            ScrollIndicator.vertical: ScrollIndicator {}
+            delegate: Rectangle {
+                required property var modelData
+                required property int index
+                width: planLessonList.width - 10; height: 54; radius: 12
+                color: index % 2 ? "#f5fbff" : "#ffffffed"
+                border.color: "#a9c9d4"; border.width: 2
+                Label {
+                    x: 12; y: 5; width: 454; height: 44
+                    text: (modelData.index + 1) + ". " + modelData.title + "\n" + modelData.domain.toUpperCase() + " · " + modelData.family.replace("_", " ").toUpperCase()
+                    color: "#102a5e"; font.pixelSize: 11; font.bold: true
+                    verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; maximumLineCount: 2
+                }
+                KidButton { x: 474; y: 8; width: 62; height: 38; label: "UP"; baseColor: "#4e7dcc"; textSize: 9; enabled: modelData.canMoveUp && !root.viewModel.readOnly; onClicked: root.send("learning_plan_move", modelData.index + ":-1") }
+                KidButton { x: 544; y: 8; width: 68; height: 38; label: "DOWN"; baseColor: "#4e7dcc"; textSize: 8; enabled: modelData.canMoveDown && !root.viewModel.readOnly; onClicked: root.send("learning_plan_move", modelData.index + ":1") }
+                KidButton { x: 620; y: 8; width: 122; height: 38; label: "REMOVE"; baseColor: "#d26a72"; textSize: 9; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_plan_remove", modelData.id) }
+            }
+        }
+        EmptyCard {
+            x: 145; y: 174; width: 510; height: 132
+            visible: (root.viewModel.planDraftLessons || []).length === 0
+            message: "Choose at least one lesson. You can arrange the order here."
+        }
+        Row {
+            x: 18; y: 350; spacing: 10
+            KidButton { width: 244; height: 56; label: "CHOOSE LESSONS"; baseColor: "#35a99a"; textSize: 12; onClicked: root.send("learning_choose_lessons") }
+            KidButton { width: 244; height: 56; label: "SAVE PLAN"; baseColor: "#35a06f"; textSize: 12; enabled: root.viewModel.readOnly !== true && (root.viewModel.planDraft || {}).saveReady === true; onClicked: root.send("learning_save_plan") }
+            KidButton { width: 244; height: 56; label: "CANCEL"; baseColor: "#5a6288"; outlined: true; textSize: 12; onClicked: root.send("learning_cancel_plan") }
+        }
+    }
+
+    Item {
+        id: teacherLessonsPage
+        objectName: "learningTeacherLessonsPage"
+        anchors.fill: parent
+        visible: root.screen === "teacher_lessons"
+
+        PageHeading { x: 20; y: 2; width: 760; title: "Choose lessons"; accent: "#35a99a" }
+        KidButton {
+            x: 18; y: 53; width: 220; height: 50
+            label: "DOMAIN\n" + (root.viewModel.lessonDomain || "all").replace("_", " ").toUpperCase()
+            baseColor: "#4e7dcc"; textSize: 10
+            onClicked: root.send("learning_lesson_filter", "domain")
+        }
+        KidButton {
+            x: 248; y: 53; width: 220; height: 50
+            label: "FAMILY\n" + (root.viewModel.lessonFamily || "all").replace("_", " ").toUpperCase()
+            baseColor: "#8a6dc1"; textSize: 10
+            onClicked: root.send("learning_lesson_filter", "family")
+        }
+        KidButton {
+            x: 478; y: 53; width: 150; height: 50
+            label: "ADD THESE\n" + (root.viewModel.lessonFilteredCount || 0)
+            baseColor: "#35a06f"; textSize: 9
+            enabled: !root.viewModel.readOnly && (root.viewModel.lessonFilteredCount || 0) > 0
+            onClicked: root.send("learning_bulk_add_lessons")
+        }
+        KidButton {
+            x: 638; y: 53; width: 144; height: 50
+            label: "DONE"
+            baseColor: "#5a6288"; outlined: true; textSize: 11
+            onClicked: root.send("learning_teacher_back")
+        }
+
+        ListView {
+            id: lessonCatalogList
+            objectName: "learningLessonCatalog"
+            x: 18; y: 112; width: 764; height: 294
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: 4
+            model: root.viewModel.lessonChoices || []
+            ScrollIndicator.vertical: ScrollIndicator {}
+            delegate: KidButton {
+                required property var modelData
+                required property int index
+                width: lessonCatalogList.width - 10; height: 54
+                label: (modelData.selected ? "✓ ADDED   " : "+ ADD   ") + modelData.title + "\n" + modelData.domain.toUpperCase() + " · " + modelData.family.replace("_", " ").toUpperCase()
+                baseColor: modelData.selected ? "#35a06f" : root.colorAt(index + 1)
+                textSize: 10
+                enabled: !root.viewModel.readOnly
+                onClicked: root.send("learning_toggle_lesson", modelData.id)
+            }
+        }
+    }
+
+    Item {
+        id: teacherLessonFilterPage
+        objectName: "learningTeacherLessonFilterPage"
+        anchors.fill: parent
+        visible: root.screen === "teacher_lesson_filter"
+
+        PageHeading { x: 55; y: 10; width: 690; title: root.viewModel.lessonFilterTitle || "Choose a filter"; accent: "#8a6dc1" }
+        ListView {
+            id: lessonFilterList
+            objectName: "learningLessonFilterList"
+            x: 90; y: 66; width: 620; height: 278
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: 5
+            model: root.viewModel.lessonFilterValues || []
+            ScrollIndicator.vertical: ScrollIndicator {}
+            delegate: KidButton {
+                required property var modelData
+                width: lessonFilterList.width - 10; height: 52
+                label: modelData.label
+                baseColor: modelData.selected ? "#35a06f" : "#4e7dcc"
+                textSize: 12
+                onClicked: root.send("learning_set_lesson_filter", modelData.value)
+            }
+        }
+        KidButton { x: 300; y: 356; width: 200; height: 50; label: "BACK"; baseColor: "#5a6288"; outlined: true; textSize: 11; onClicked: root.send("learning_teacher_back") }
+    }
+
+    Item {
+        id: teacherTextPage
+        objectName: "learningTeacherTextPage"
+        anchors.fill: parent
+        visible: root.screen === "teacher_text"
+
+        PageHeading { x: 55; y: 2; width: 690; title: root.viewModel.textTitle || "Enter a name"; accent: "#4e7dcc" }
+        Rectangle {
+            x: 60; y: 51; width: 680; height: 46
+            radius: 12; color: "white"; border.color: "#35a99a"; border.width: 3
+            Label { anchors.fill: parent; anchors.margins: 7; text: root.viewModel.textValue || " "; color: "#102a5e"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideLeft; font.pixelSize: 18; font.bold: true }
+        }
+        GridView {
+            id: learningNameKeyboard
+            objectName: "learningNameKeyboard"
+            x: 26; y: 105; width: 748; height: 212
+            cellWidth: 74.8; cellHeight: 53
+            interactive: false; clip: true
+            model: root.viewModel.textKeys || []
+            delegate: KidButton {
+                required property string modelData
+                required property int index
+                width: 68; height: 46; label: modelData; baseColor: root.colorAt(index); textSize: 14
+                onClicked: root.send("learning_text_key", modelData)
+            }
+        }
+        Row {
+            x: 70; y: 330; spacing: 10
+            KidButton { width: 170; height: 66; label: "SPACE"; baseColor: "#35a99a"; textSize: 11; onClicked: root.send("learning_text_key", " ") }
+            KidButton { width: 110; height: 66; label: "DELETE"; baseColor: "#d26a72"; textSize: 10; onClicked: root.send("learning_text_backspace") }
+            KidButton { width: 100; height: 66; label: "CLEAR"; baseColor: "#b27731"; textSize: 10; onClicked: root.send("learning_text_clear") }
+            KidButton { width: 120; height: 66; label: "CANCEL"; baseColor: "#5a6288"; outlined: true; textSize: 10; onClicked: root.send("learning_text_cancel") }
+            KidButton { width: 160; height: 66; label: "SAVE"; baseColor: "#35a06f"; textSize: 12; enabled: root.viewModel.textCanSave === true && root.viewModel.readOnly !== true; onClicked: root.send("learning_text_save") }
+        }
+    }
+
+    Item {
+        id: teacherConfirmPage
+        objectName: "learningTeacherConfirmPage"
+        anchors.fill: parent
+        visible: root.screen === "teacher_confirm"
+
+        Rectangle {
+            objectName: "learningConfirmationCard"
+            x: 110; y: 48; width: 580; height: 300
+            radius: 24; color: "#ffffffed"
+            border.color: (root.viewModel.confirmation || {}).danger ? "#c45260" : "#d3ad3e"
+            border.width: 4
+            Label { x: 30; y: 25; width: 520; height: 45; text: (root.viewModel.confirmation || {}).title || "Please confirm"; color: "#102a5e"; horizontalAlignment: Text.AlignHCenter; font.pixelSize: 25; font.bold: true }
+            Label { x: 42; y: 82; width: 496; height: 100; text: (root.viewModel.confirmation || {}).message || ""; color: "#58708c"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; wrapMode: Text.Wrap; font.pixelSize: 16; font.bold: true }
             Row {
-                x: 42; y: 182
-                spacing: 12
-                KidButton { width: 190; height: 62; label: "ENABLE / DISABLE"; baseColor: "#4e7dcc"; textSize: 13; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_toggle_plan") }
-                KidButton { width: 170; height: 62; label: "VIEW REPORT"; baseColor: "#e58b5f"; textSize: 13; onClicked: root.send("learning_teacher_report") }
-                KidButton { width: 130; height: 62; label: "BACK"; baseColor: "#5a6288"; outlined: true; textSize: 12; onClicked: root.send("learning_teacher_back") }
+                x: 48; y: 210; spacing: 20
+                KidButton { width: 232; height: 62; label: "CANCEL"; baseColor: "#5a6288"; outlined: true; textSize: 12; onClicked: root.send("learning_confirm_cancel") }
+                KidButton { width: 232; height: 62; label: (root.viewModel.confirmation || {}).label || "CONFIRM"; baseColor: (root.viewModel.confirmation || {}).danger ? "#b84755" : "#35a06f"; textSize: 11; enabled: !root.viewModel.readOnly; onClicked: root.send("learning_confirm") }
             }
         }
     }
@@ -491,38 +750,46 @@ Rectangle {
         visible: root.screen === "teacher_report"
 
         PageHeading {
-            x: 55; y: 18; width: 690
+            x: 28; y: 2; width: 744
             title: "Progress: " + ((root.viewModel.report || {}).title || "")
-            subtitle: "A clear snapshot of recent learning."
             accent: "#e58b5f"
         }
 
-        Row {
+        GridView {
             objectName: "learningReportCards"
-            x: 55; y: 112
-            spacing: 12
-            Repeater {
-                model: [
-                    {label:"GRADE", value:(root.viewModel.report || {}).grade || "0%", color:"#4e7dcc"},
-                    {label:"COMPLETE", value:(root.viewModel.report || {}).completion || "0%", color:"#35a99a"},
-                    {label:"ATTEMPTS", value:(root.viewModel.report || {}).attempts || 0, color:"#8a6dc1"},
-                    {label:"RECENT", value:(root.viewModel.report || {}).recent || "0%", color:"#e58b5f"}
-                ]
-                delegate: Rectangle {
-                    required property var modelData
-                    width: 164; height: 142
-                    radius: 18
-                    color: "#ffffffed"
-                    border.color: modelData.color
-                    border.width: 3
-                    Rectangle { x: 10; y: 10; width: 144; height: 12; radius: 6; color: modelData.color; opacity: 0.78 }
-                    Label { x: 10; y: 36; width: 144; height: 25; text: modelData.label; color: "#58708c"; horizontalAlignment: Text.AlignHCenter; font.bold: true; font.pixelSize: 12 }
-                    Label { x: 10; y: 67; width: 144; height: 52; text: modelData.value; color: "#102a5e"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 27; font.bold: true }
-                }
+            x: 18; y: 54; width: 764; height: 158
+            cellWidth: 191; cellHeight: 79
+            interactive: false; clip: true
+            model: (root.viewModel.report || {}).metrics || []
+            delegate: Rectangle {
+                required property var modelData
+                width: 181; height: 70
+                radius: 13; color: "#ffffffed"; border.color: modelData.color; border.width: 2
+                Rectangle { x: 8; y: 7; width: 8; height: 56; radius: 4; color: modelData.color }
+                Label { x: 22; y: 6; width: 150; height: 22; text: modelData.label; color: "#58708c"; horizontalAlignment: Text.AlignHCenter; font.bold: true; font.pixelSize: 10 }
+                Label { x: 22; y: 27; width: 150; height: 36; text: modelData.value; color: "#102a5e"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; font.pixelSize: 21; font.bold: true }
             }
         }
+        Label { x: 30; y: 217; width: 740; height: 23; text: "SKILL MASTERY · DRAG TO SCROLL"; color: "#58708c"; font.pixelSize: 11; font.bold: true; font.letterSpacing: 0.8 }
+        ListView {
+            id: reportSkillList
+            objectName: "learningReportSkillList"
+            x: 30; y: 242; width: 740; height: 108
+            clip: true; interactive: contentHeight > height; boundsBehavior: Flickable.StopAtBounds; spacing: 3
+            model: (root.viewModel.report || {}).skills || []
+            ScrollIndicator.vertical: ScrollIndicator {}
+            delegate: Rectangle {
+                required property var modelData
+                width: reportSkillList.width - 10; height: 40; radius: 10
+                color: "#ffffffdd"; border.color: "#bad6dd"
+                Label { x: 12; y: 3; width: 470; height: 34; text: modelData.label; color: "#102a5e"; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; font.pixelSize: 11; font.bold: true }
+                Label { x: 492; y: 3; width: 150; height: 34; text: modelData.status; color: modelData.status === "MASTERED" ? "#23805b" : "#7b5b25"; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: 10; font.bold: true }
+                Label { x: 650; y: 3; width: 66; height: 34; text: modelData.grade; color: "#4e7dcc"; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter; font.pixelSize: 12; font.bold: true }
+            }
+        }
+        EmptyCard { x: 175; y: 247; width: 450; height: 90; visible: ((root.viewModel.report || {}).skills || []).length === 0; message: "No skill practice has been recorded yet." }
         KidButton {
-            x: 310; y: 320; width: 180; height: 58
+            x: 310; y: 358; width: 180; height: 48
             label: "BACK"
             baseColor: "#5a6288"
             outlined: true
