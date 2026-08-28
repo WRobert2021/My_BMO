@@ -45,6 +45,8 @@ whisper.cpp/
 memory.json
 chat_memory.json
 interaction_logs/
+iphone_snapshot/
+iphone_snapshot_stage0/
 config.json
 config/settings.json
 config/features.json

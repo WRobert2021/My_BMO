@@ -19,6 +19,36 @@ This project turns a Raspberry Pi into a fully functional, conversational AI age
 * **Fast Text-to-Speech**: Uses **Piper TTS** for low-latency, high-quality voice generation on the Pi.
 * **Vision Capable**: Can "see" and describe the world using a connected camera and the **Moondream** vision model.
 
+## Experimental iMessage Relay
+
+An incremental, read-only iMessage relay is being designed for a
+Dopamine/rootless jailbroken iPhone and this Raspberry Pi kiosk. Its initial
+scope is incoming iMessage text, photos, videos, and tapbacks, with explicit
+kiosk acknowledgements and duplicate-safe delivery.
+
+The relay is **not deployable yet**. Stage 2 has completed a stateless,
+read-only parser for the supported local Messages schema, including normalized
+incoming text, sender/chat identity, standard reactions, photos, videos, and
+the demonstrated Live Photo layout. Queueing, networking, kiosk ingestion, and
+live-iPhone use have not begun. No live iPhone was contacted. Do not point
+existing application commands at `/var/mobile/Library/SMS`, and do not copy
+either private `iphone_snapshot*/` directory into source control.
+
+Safety boundaries:
+
+- Apple's Messages database and attachments are strictly read-only.
+- Relay queues, checkpoints, and acknowledgements will use separate storage.
+- Message sending and SMS/MMS relay are outside the initial scope.
+- Automatic iPhone startup/launch-daemon installation is not permitted during
+  initial development.
+- Secrets and private message or attachment content must not enter tracked
+  configuration, logs, fixtures, or documentation.
+
+See the [schema report](docs/SCHEMA_REPORT.md) for source evidence, the
+[parser contract](docs/IMESSAGE_PARSER.md) for supported behavior and gaps, the
+[staged relay plan](docs/IMESSAGE_RELAY_PLAN.md) for stage gates, and the
+[agent continuation record](AGENT_README.md) for exact current status.
+
 ## 🛠️ Hardware Requirements
 
 * **Raspberry Pi 5** (Recommended) or Pi 4 (4GB RAM minimum)
