@@ -59,6 +59,7 @@ config/music.json
 config/alarm_clock.json
 config/compact_face.json
 config/imessage_relay.json
+config/imessage_receiver.json
 
 # --- Generated media ---
 camera_capture.jpg
@@ -88,6 +89,7 @@ graphics/Paw Patrol
 /data/music/
 /data/alarms/
 /data/imessage_relay/
+/data/imessage_receiver/
 /LEARNING FEATURE.md
 /docs/learning-module-implementation-prompt.md
 /ISSUES.md

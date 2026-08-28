@@ -1,10 +1,14 @@
-# iMessage Relay Messages Schema Report
+# iMessage Relay Messages Schema Evidence
+
+> Opt-in historical evidence from Stage 1. Current parser behavior is owned by
+> `../components/parser.md`; current continuation state is owned only by
+> `../progress.md`. This evidence does not override either document.
 
 ## Status and scope
 
-**Stage:** Stage 1 — Messages Schema Investigation  
-**Primary evidence:** `iphone_snapshot/` controlled-test snapshot  
-**Baseline:** `iphone_snapshot_stage0/`  
+**Stage:** Stage 1 — Messages Schema Investigation
+**Primary evidence:** `iphone_snapshot/` controlled-test snapshot
+**Baseline:** `iphone_snapshot_stage0/`
 **Report date:** 2026-08-28
 
 This report describes only the schema and behavior demonstrated by the two

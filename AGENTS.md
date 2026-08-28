@@ -1,121 +1,118 @@
 # AGENTS.md
 
-## Required documentation
+## Documentation lookup
 
-- Read `AGENT_BRIEF.md` before working on a coding prompt for a high-level map
-  of the repository's scripts and module ownership.
-- Read `docs/AGENT_ARCHITECTURE.md` before changing application behavior,
-  feature or mode boundaries, registration, configuration, runtime ownership,
-  failure handling, cleanup, or tests.
-- Read `docs/AGENT_LEARNING.md` when working on the Learning feature.
-- Read `docs/AGENT_LOCATION_WEATHER.md` when working on location or weather
-  behavior.
+For every repository task, read this file and then consult
+[`agent_docs/INDEX.md`](agent_docs/INDEX.md). Read only the documents routed by
+the index for the current task; do not bulk-read or recursively read
+`agent_docs/`.
+
+Instruction precedence is: the current user request, this file, the index,
+current core/plugin/API/progress documentation, then historical evidence and
+archives. Historical material never overrides verified current documentation.
 
 ## Project workflow
 
-- Work only inside this repository.
-- Use the existing project virtual environment.
-- Inspect relevant code and tests before modifying behavior.
-- Keep changes focused on the requested task.
-- Add or update tests whenever behavior changes.
-- Run `python -m pytest -q` after code changes.
-- Do not weaken, skip, or delete tests merely to make them pass.
+- Work only inside this repository and use its existing virtual environment.
+- Inspect relevant source and tests before changing behavior.
+- Keep changes focused and add or update tests when behavior changes.
+- Never weaken, skip, alter, or delete tests merely to make them pass.
+- During implementation, run the narrowest relevant tests first. Add shared
+  contract or integration tests when a shared boundary changes; rerun failures
+  directly instead of repeatedly running the whole suite.
+- Before handoff, run the full suite for core runtime, extension contracts,
+  shared utilities/configuration/persistence/UI, setup, or dependency changes.
+  For isolated plugin work, run its complete primary tests and relevant shared
+  contracts; run the full suite once when impact plausibly crosses plugin
+  boundaries.
+- For large full-suite runs, capture detailed output outside the conversation
+  (for example, `python -m pytest -q --tb=short >
+  /tmp/be_more_pytest.log 2>&1`) and report the concise final summary. If it
+  fails, identify failures and inspect/rerun only the relevant sections. Never
+  hide a failing exit status.
 
 ## Dependency policy
 
 - Ask before removing or upgrading an existing dependency.
-- A new dependency may be added without separate approval only when both of
-  these conditions are satisfied:
-  1. It is compatible with the primary deployment target: Raspberry Pi 5 with
-     16 GB RAM, 64-bit Raspberry Pi OS (`aarch64`), and Python 3.13.5.
-  2. It is absolutely necessary, materially reduces the project-owned code
-     needed for the planned feature, provides a measurable performance
-     improvement, or makes the implementation or runtime materially cleaner
-     and more reliable.
-- Establish target compatibility before adding the dependency. Check upstream
-  support and Python 3.13/aarch64 wheel or source-build availability, and run
-  an install/import smoke test on the target when practical. A successful
-  macOS installation alone is not sufficient. Do not add a dependency whose
-  target compatibility cannot be established.
-- Keep the dependency surface minimal. Identify the license, constrain the
-  supported version where needed, and update `requirements.txt`, `setup.sh`,
-  documentation, and tests that own installation behavior.
-- In the handoff, state which justification applies and report compatibility
-  evidence. Include before/after measurements when performance is the reason;
-  for code reduction or cleaner execution, summarize the concrete reduction
-  in project-owned code or runtime complexity.
+- Add a dependency only when it is compatible with Raspberry Pi 5, 64-bit
+  Raspberry Pi OS (`aarch64`), and Python 3.13.5, and it is necessary,
+  materially reduces project-owned code, measurably improves performance, or
+  makes execution materially cleaner and more reliable.
+- Establish upstream Python 3.13/aarch64 wheel or source-build support; a macOS
+  install alone is insufficient. Keep versions and licenses explicit and the
+  dependency surface minimal. Update `requirements.txt`, `setup.sh`, owning
+  docs, and installation tests as applicable.
+- In the handoff, state the justification and compatibility evidence. Include
+  measurements for performance claims or the concrete code/runtime reduction
+  for maintainability claims.
 
-## Feature modularity
+## Plugin invariants
 
-- Every new or modified feature must follow the feature and mode extension
-  contracts in `docs/AGENT_ARCHITECTURE.md`. Keep feature registration,
-  configuration, runtime ownership, failure handling, cleanup, and tests inside
-  the feature's module or its narrowly owned supporting modules.
-- Features must remain independent of one another. Enabling, disabling,
-  removing, or failing one feature must not break another feature's core
-  behavior or prevent the application from starting.
-- A feature may use a function from another script or feature only when that
-  dependency cannot break the consuming feature's core behavior. Optional
-  cross-feature integrations must be discovered or imported lazily rather than
-  becoming import-time requirements.
-- When a function starts being used by multiple features, or substantially the
-  same function is being implemented in multiple features, explicitly evaluate
-  whether it should be refactored into the smallest appropriate neutral core or
-  shared module. Document the ownership decision and avoid circular feature
-  dependencies or an unrelated catch-all utility module.
-- If a feature uses another script, feature, or function only for a non-core
-  capability, the consuming feature must continue to load and its core behavior
-  must continue to work when that provider is changed, disabled, unavailable,
-  or removed. In the application UI, the unavailable non-core action must be
-  disabled or greyed out so the missing integration is visible rather than
-  crashing, silently disappearing, or leaving an unusable control.
-- Add tests for the provider-present and provider-unavailable cases of every
-  optional cross-feature integration. Verify the consuming feature's core path,
-  the disabled UI state, clean startup, and cleanup behavior.
+- Features and modes are plugins: keep registration, configuration, lifecycle,
+  failure handling, cleanup, persistence, UI, workers, and tests within the
+  plugin or a narrowly owned neutral interface.
+- A disabled, unavailable, broken, or removed plugin must not prevent startup
+  or another plugin's core behavior. Optional cross-plugin integrations must
+  be lazy, failure-isolated, visibly unavailable in UI, and tested with the
+  provider present and absent.
+- Evaluate genuinely shared behavior for the smallest neutral owner. Avoid
+  circular plugin dependencies and catch-all utility modules.
+- Importing a plugin must not start workers, listeners, sockets, stores, or
+  other resources. Enabled registration/runtime lifecycle starts intrinsic
+  long-lived resources; cleanup must stop and close them explicitly.
+
+## Agent documentation maintenance
+
+Agent documentation is part of the implementation contract.
+
+When adding a plugin, create its `overview.md` and `progress.md` under its
+plugin documentation directory, add index routing and repository ownership,
+record configuration and primary tests, document lifecycle/background
+resources, and document any cross-plugin callable API. Update core/shared docs
+only when their contract changes.
+
+When modifying a plugin, update its overview only when architecture,
+ownership, configuration, persistence, public hooks, lifecycle, failure
+boundaries, shared API use, or test ownership changes. Update progress when a
+stage, chapter, blocker, next action, architectural decision, or implementation
+state changes. Update the index only for plugin inventory/type/routing/trigger
+changes, and update an API document when its callable contract changes. Do not
+rewrite unrelated plugin docs. Keep progress cheap to load: retain only current
+work and a compact stage index, and move detailed completed work into that
+plugin's opt-in history.
+
+A plugin is not complete until its applicable registration, configuration,
+lifecycle/cleanup, failure isolation, tests, overview, progress, index entry,
+and exposed API documentation are current. Removing a plugin also removes or
+retires its active routing and ownership entries.
 
 ## Git and GitHub restrictions
 
-- Do not stage files.
-- Do not create or amend commits.
-- Do not push, force-push, fetch, pull, or synchronize with a remote.
-- Do not create GitHub pull requests, issues, releases, or tags.
-- Do not add, remove, rename, or modify Git remotes.
-- Do not modify files inside `.git/`.
-- Do not run destructive Git commands such as `git reset --hard`,
-  `git clean`, or forced checkout operations.
-- Leave all changes unstaged for manual review by the user.
+- Do not stage, commit, amend, push, force-push, fetch, pull, or synchronize.
+- Do not create pull requests, issues, releases, or tags; do not alter remotes
+  or files inside `.git/`.
+- Do not run destructive Git commands such as `git reset --hard`, `git clean`,
+  or forced checkout. Leave changes unstaged for manual review.
 
 ## Privacy and local files
 
-- Do not read, print, expose, or modify `.env` files, credentials,
-  private keys, tokens, or passwords.
-- Treat `config/settings.json`, `config/features.json`, and the legacy
-  `config.json` as private local configuration.
-- Use the `config/example.*.json` files when documentation or tests need
-  configuration examples.
-- Do not add ignored files or directories to Git.
-- `graphics/` contains local copyrighted fan-project assets and must never be
-  staged, committed, uploaded, copied, or modified.
-- `.venv/`, `.idea/`, `piper/`, and `whisper.cpp/` are local dependencies or
-  environment files and must remain untracked.
+- Do not read, print, expose, or modify `.env`, credentials, keys, tokens, or
+  passwords.
+- Treat `config/settings.json`, `config/features.json`, legacy `config.json`,
+  private relay data, and all non-example local configuration as private. Use
+  tracked `config/example.*.json` files in docs and tests.
+- Do not add ignored files. `.venv/`, `.idea/`, `piper/`, and `whisper.cpp/`
+  remain untracked. `graphics/` contains local copyrighted fan-project assets
+  and must not be modified, copied, staged, or uploaded.
 
 ## Licensing
 
-- Preserve existing MIT and third-party license notices.
-- Do not copy new third-party code, graphics, sounds, models, or datasets into
-  the repository without identifying their license first.
-- Do not claim ownership of upstream or third-party material.
+- Preserve MIT and third-party notices. Do not copy third-party code, media,
+  models, or datasets without identifying the license, and do not claim
+  ownership of upstream material.
 
 ## Handoff requirements
 
-At the end of every task, report:
-
-- Files changed and the reason for each change.
-- Tests and checks run, including exact results.
-- Anything that could not be verified.
-- Remaining risks and assumptions.
-- Manual verification steps.
-- A concise `git diff` summary.
-- A concise suggested commit message describing the completed change.
-
-Do not commit or push as part of the handoff.
+Report files changed and why, exact tests/checks and results, anything not
+verified, remaining risks/assumptions, manual verification steps, a concise
+`git diff` summary, and a suggested commit message. Do not commit or push.

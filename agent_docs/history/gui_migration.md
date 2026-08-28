@@ -1,4 +1,7 @@
-# Qt 6 / QML GUI migration
+# Qt 6 / QML GUI Migration History
+
+> Opt-in migration and acceptance history. Current UI architecture is owned by
+> `../core/ui.md`; this record does not override it.
 
 This document records the transition from the production Tk interface to
 PySide6 and Qt Quick/QML and the remaining physical-kiosk acceptance work.

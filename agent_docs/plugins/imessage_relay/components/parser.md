@@ -1,4 +1,4 @@
-# Stage 2 Read-Only iMessage Parser
+# Read-Only iMessage Parser
 
 ## Status and boundary
 
@@ -10,7 +10,7 @@ against the live iPhone.
 The parser has no third-party runtime dependency. It uses Python's standard
 library and remains independent of the kiosk application's feature registry
 and runtime lifecycle. A later UI integration must remain optional and
-failure-isolated under `docs/AGENT_ARCHITECTURE.md`.
+failure-isolated under `../../../core/extensions.md`.
 
 ## Public contract
 

@@ -1,11 +1,11 @@
-# Stage 3 Relay State and Durable Queue
+# Relay State and Durable Queue
 
 ## Status and boundary
 
 Stage 3 implements a local, relay-owned SQLite state manager. It remains
 independent of the kiosk application runtime and contains no network client,
 receiver, authentication, live-iPhone access, launch daemon, or UI integration.
-Stage 4 remains a separate authorization boundary.
+Stage 3 is complete; current stage authority lives only in `../progress.md`.
 
 The store must never point at Apple's Messages files. `RelayStateStore`
 explicitly rejects the Apple `sms.db` and `chat.db` filenames and their WAL/SHM

@@ -1,8 +1,8 @@
-# iMessage Relay Issue Records
+# Historical iMessage Relay Issue Record Format
 
 Use this directory for relay issues that need more detail than the continuation
-summary in `AGENT_README.md`. Every detailed issue must also be linked from that
-summary.
+current plugin progress. Historical records do not override
+`../progress.md`.
 
 An issue record should include:
 

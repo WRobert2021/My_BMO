@@ -1,4 +1,8 @@
-# iMessage Relay Staged Development Plan
+# Archived iMessage Relay Staged Development Plan
+
+> Preserved detailed stage specification. Current stage/status is owned solely
+> by `../progress.md`; current future-stage routing is distilled in
+> `../roadmap.md`.
 
 ## Purpose and boundaries
 
@@ -195,6 +199,10 @@ growth and retry starvation.
 **STOP POINT:** Stop after local reliability tests pass; no network service.
 
 ## Stage 4 — Kiosk Receiver Prototype
+
+**Status:** In Progress — explicitly authorized on 2026-08-28. Work is limited
+to the local kiosk receiver and protocol tests; Stage 5 sender integration has
+not started.
 
 **Objective:** Provide authenticated, durable, idempotent kiosk ingestion with
 explicit ACK/NACK semantics.

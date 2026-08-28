@@ -1,4 +1,9 @@
-# iMessage Relay Agent Continuation Record
+# Archived iMessage Relay Continuation Record
+
+> This snapshot contains contradictory Stage 3/4 continuation statements from
+> an interrupted documentation update. It is preserved as historical evidence
+> only. Current stage, next action, and blockers are owned solely by
+> `../progress.md`.
 
 ## Project Objective
 
@@ -46,11 +51,11 @@ bidirectional; message content is iPhone-to-kiosk only.
 
 ## Current Stage
 
-**Current Stage: Stage 3 — Relay State and Durable Queue (Complete).**
+**Current Stage: Stage 4 — Kiosk Receiver Prototype (In Progress).**
 
-Stages 0–3 are complete. Stage 3 was explicitly authorized and completed on
-2026-08-28. This is the required stop point; Stage 4 has not started and needs
-new explicit authorization.
+Stages 0–3 are complete. Stage 4 was explicitly authorized and began on
+2026-08-28. Work remains local to the kiosk receiver; Stage 5 sender integration
+has not started.
 
 ## Stage Status
 
@@ -60,7 +65,7 @@ new explicit authorization.
 | 1 — Messages Schema Investigation | Complete | `docs/SCHEMA_REPORT.md` records supported behavior, Stage 2 contracts, and explicit evidence gaps. |
 | 2 — Read-Only Message Parser | Complete | Stateless read-only parser, immutable event contracts, sanitized tests, and controlled-snapshot acceptance pass. |
 | 3 — Relay State and Durable Queue | Complete | Atomic relay-owned cursor/queue commits, persisted payloads, attempts, retries, ACKs, dead letters, requeue, and restart recovery pass. |
-| 4 — Kiosk Receiver Prototype | Not Started | Ready only after new explicit authorization. |
+| 4 — Kiosk Receiver Prototype | In Progress | Authorized for local receiver protocol, authentication, durability, and tests only. |
 | 5 — End-to-End Simulated Relay | Not Started | Blocked by Stages 2–4. |
 | 6 — Reconciliation | Not Started | Blocked by simulated reliability acceptance. |
 | 7 — Attachments | Not Started | Blocked by manifest/protocol foundations. |

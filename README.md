@@ -26,11 +26,11 @@ Dopamine/rootless jailbroken iPhone and this Raspberry Pi kiosk. Its initial
 scope is incoming iMessage text, photos, videos, and tapbacks, with explicit
 kiosk acknowledgements and duplicate-safe delivery.
 
-The relay is **not deployable yet**. Stage 3 has added relay-owned durable
-discovery cursors, normalized payloads, retry/lease state, validated ACK state,
-and visible dead letters on top of the Stage 2 read-only parser. Networking,
-kiosk ingestion, authentication, and live-iPhone use have not begun. No live
-iPhone was contacted. Do not point existing application commands at
+The relay is **not deployable yet**. Local Stages 2–4 now include the read-only
+parser, relay-owned durable queue/retry state, and an authenticated,
+duplicate-safe standalone kiosk receiver. Sender integration, live-iPhone use,
+and BMO runtime registration have not begun. No live iPhone was contacted. Do
+not point existing application commands at
 `/var/mobile/Library/SMS`, and do not copy either private
 `iphone_snapshot*/` directory into source control.
 
@@ -44,11 +44,9 @@ Safety boundaries:
 - Secrets and private message or attachment content must not enter tracked
   configuration, logs, fixtures, or documentation.
 
-See the [schema report](docs/SCHEMA_REPORT.md) for source evidence, the
-[parser contract](docs/IMESSAGE_PARSER.md) for supported behavior and gaps, the
-[durable-state contract](docs/IMESSAGE_STATE.md) for queue/checkpoint semantics,
-the [staged relay plan](docs/IMESSAGE_RELAY_PLAN.md) for stage gates, and the
-[agent continuation record](AGENT_README.md) for exact current status.
+Developer references: [relay overview](agent_docs/plugins/imessage_relay/overview.md),
+[receiver protocol](agent_docs/plugins/imessage_relay/api/receiver_protocol.md),
+and opt-in [Messages schema evidence](agent_docs/plugins/imessage_relay/evidence/messages_schema.md).
 
 ## 🛠️ Hardware Requirements
 
@@ -75,6 +73,7 @@ be-more-agent/
 │   ├── example.learning.json  # Tracked Pre-K learning example
 │   ├── example.compact_face.json # Tracked shared compact-face example
 │   ├── example.imessage_relay.json # Tracked relay-state example
+│   ├── example.imessage_receiver.json # Tracked receiver example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)
@@ -82,10 +81,12 @@ be-more-agent/
 │   ├── quiet_hours.json       # Local global quiet-hours settings (ignored)
 │   ├── learning.json          # Local learning behavior/settings (ignored)
 │   ├── compact_face.json      # Local shared face layout/animation settings
-│   └── imessage_relay.json    # Local relay-state/retry settings (ignored)
+│   ├── imessage_relay.json    # Local relay-state/retry settings (ignored)
+│   └── imessage_receiver.json # Local receiver/TLS settings (ignored)
 ├── data/calendar/             # Local events and acknowledgments (ignored)
 ├── data/learning/             # Local learners, plans, and progress (ignored)
 ├── data/imessage_relay/       # Private relay queue/checkpoint state (ignored)
+├── data/imessage_receiver/    # Private kiosk receipt/nonce state (ignored)
 ├── memory.json                # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -171,8 +172,9 @@ icon to launch its QML view, and swipe right from the first page or tap the
 compact face to return. Audio, models, tools, modes, PTT, interruption, quiet
 hours, attentions, persistence, and shutdown run through the production
 runtime. `python typed_agent.py` adds the Qt on-screen debug input. The explicit
-temporary legacy fallback is `python tk_agent.py`. See the
-[GUI migration record](docs/GUI_MIGRATION.md) for acceptance status.
+temporary legacy fallback is `python tk_agent.py`. The completed conversion
+gates and remaining physical-kiosk acceptance are kept in the opt-in
+[GUI migration history](agent_docs/history/gui_migration.md).
 
 ### Development Tests
 
@@ -371,7 +373,7 @@ shown in `config/example.features.json`:
   teacher-authored prerequisite-aware plans, bounded attempt history, mastery,
   and reports stay under `data/learning`. Instructions and feedback use BMO's
   existing view-scoped Piper voice; no model, microphone, direct phrase, or
-  separate TTS path is exposed. See [the Learning guide](docs/AGENT_LEARNING.md) for
+  separate TTS path is exposed. See [the Learning guide](agent_docs/plugins/learning/overview.md) for
   configuration, scoring, storage recovery, and lesson-extension details.
 - The menu-only GalaxyRVR feature uses `graphics/icons/rc_remote.png`. Pair a
   Bluetooth controller in Raspberry Pi OS before opening the view; the remote
@@ -449,16 +451,17 @@ configuration-driven loading rules as features:
 - Voice launch accepts “Twenty questions”, “Play twenty questions”, “Let's play
   20 questions”, and “Start 20 questions”. Selecting the touch-menu item queues
   the mode through the normal interaction worker and opens its embedded board.
-- Menu actions are arranged in six-item grid pages. A game launched from the
+- Menu actions are arranged in 5×3 grid pages. A game launched from the
   menu leaves that live page underneath it, so exiting the game returns to the
   same page instead of briefly showing BMO's full-screen face.
 
-Mode registration receives a constrained runtime context containing only the Tk
-master and approved model, speech, memory, state, announcement, and face
-callbacks. Mode modules never receive the complete `BotGUI` object.
+Mode registration receives a constrained runtime context containing only the
+legacy presentation handle and approved model, speech, memory, state,
+announcement, face, and dispatch callbacks. Mode modules never receive the
+complete application coordinator.
 
-The complete feature and mode contracts, failure boundaries, and a minimal
-`say_hello` feature are in [the architecture guide](docs/AGENT_ARCHITECTURE.md#extension-contracts).
+The complete feature and mode contracts and failure boundaries are in the
+[plugin contract](agent_docs/core/extensions.md).
 
 ## Interaction archives
 
@@ -501,7 +504,7 @@ This software is a generic framework. You can give it a new personality by repla
 ---
 ## 🗣️ The Custom BMO Voice
 
-This project features a custom, locally fine-tuned text-to-speech model to make the agent sound authentic! 
+This project features a custom, locally fine-tuned text-to-speech model to make the agent sound authentic!
 
 When you run the `setup.sh` script, it downloads the compiled `.onnx` model and
 its `.json` configuration file from the pinned
@@ -546,7 +549,7 @@ severely altering the pitch.
 If the sample rates match perfectly, the issue might be the model's internal pacing setting.
 
 1. Open your `voices/bmo.onnx.json` file.
-2. Look inside the `"inference"` block for a setting called `"length_scale"`. 
+2. Look inside the `"inference"` block for a setting called `"length_scale"`.
 3. Piper uses this to determine the speed of the voice. If this value is set significantly higher than `1.0`, it will stretch the audio and make BMO sound like a zombie. Lower it closer to `1.0` to speed the voice back up to normal.
 
 ## 📄 License
