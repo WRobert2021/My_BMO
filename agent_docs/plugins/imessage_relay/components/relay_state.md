@@ -2,10 +2,11 @@
 
 ## Status and boundary
 
-Stage 3 implements a local, relay-owned SQLite state manager. It remains
-independent of the kiosk application runtime and contains no network client,
-receiver, authentication, live-iPhone access, launch daemon, or UI integration.
-Stage 3 is complete; current stage authority lives only in `../progress.md`.
+Stage 3 implements a local, relay-owned SQLite state manager. Stage 5 now uses
+its public claim/failure/ACK transitions from `sender.py`; the store itself
+remains independent of the kiosk application runtime and contains no network
+client, receiver, authentication, live-iPhone access, launch daemon, or UI
+integration. Current stage authority lives only in `../progress.md`.
 
 The store must never point at Apple's Messages files. `RelayStateStore`
 explicitly rejects the Apple `sms.db` and `chat.db` filenames and their WAL/SHM
@@ -106,9 +107,10 @@ queued -> in_flight -> acknowledged
   ACKs are idempotent. A late ACK may resolve retry-wait or dead-letter state
   because durable kiosk receipt is authoritative even if the sender timed out.
 
-The delivery lease is not a claim that transmission succeeded. Stage 4/5 must
-call `acknowledge()` only after a validated kiosk ACK that follows durable,
-idempotent kiosk processing.
+The delivery lease is not a claim that transmission succeeded. The Stage 5
+sender calls `acknowledge()` only after a strict expected kiosk ACK that follows
+durable, idempotent kiosk processing; every other result uses
+`record_failure()`.
 
 ## Configuration
 

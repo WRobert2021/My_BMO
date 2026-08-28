@@ -6,10 +6,10 @@ Current stage/status is intentionally omitted; see `../progress.md`.
 
 ## Status and Boundary
 
-This document records the Stage 4 kiosk receiver protocol as implemented on
-2026-08-28. The receiver is a standalone, standard-library Python package. It
-is not registered with application startup, does not read Apple Messages data,
-does not contact an iPhone, and does not implement the Stage 5 sender.
+This document records the Stage 4 kiosk receiver protocol as used by the Stage
+5 simulated sender on 2026-08-28. The receiver is a standalone,
+standard-library Python package. It is not registered with application startup,
+does not read Apple Messages data, and does not contact an iPhone.
 
 The protocol accepts normalized message and reaction events from the Stage 2
 contract. It deliberately excludes Apple source ROWIDs, filesystem paths, and
@@ -224,9 +224,9 @@ python -m kiosk_receiver.server --config config/imessage_receiver.json
 It runs until interrupted and performs graceful local cleanup. Stage 4 does not
 install a service or daemon.
 
-## Stage 5 Handoff
+## Stage 5 Sender Integration
 
-Stage 5 may build a simulated local sender against these fixed behaviors:
+The simulated local sender now uses these fixed behaviors:
 
 1. Produce the exact path-free event envelope and a fresh request ID.
 2. Sign the exact request bytes with a fresh nonce and current Unix timestamp.
@@ -236,5 +236,9 @@ Stage 5 may build a simulated local sender against these fixed behaviors:
    stable event payload.
 5. Classify NACKs without logging content and preserve the Stage 3 queue state.
 
-No Stage 5 sender, network-state loop, or relay queue integration is part of
-this Stage 4 implementation.
+It additionally requires JSON media type, a bounded strict response body, the
+exact protocol version, the expected request/event IDs, and the defined HTTP
+status/ACK-status pairing before acknowledging sender state. Loopback plaintext
+is permitted only by explicit simulation opt-in. This integration does not
+authorize reconciliation, attachment bytes, live-device access, deployment,
+daemon installation, or application runtime registration.

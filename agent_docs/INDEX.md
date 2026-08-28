@@ -47,6 +47,7 @@ or status changes. Evidence and history are opt-in.
 | Apple database parser | [components/parser.md](plugins/imessage_relay/components/parser.md) |
 | relay queue, retries, ACK state | [components/relay_state.md](plugins/imessage_relay/components/relay_state.md) |
 | receiver implementation/config/lifecycle | [components/receiver.md](plugins/imessage_relay/components/receiver.md) |
+| simulated sender, delivery loop, fault handling | [components/sender.md](plugins/imessage_relay/components/sender.md) |
 | HTTP/HMAC wire contract | [api/receiver_protocol.md](plugins/imessage_relay/api/receiver_protocol.md) |
 | Apple Messages schema evidence only | [evidence/messages_schema.md](plugins/imessage_relay/evidence/messages_schema.md) |
 | completed-stage detail or legacy contradictions | [history](plugins/imessage_relay/history/) |

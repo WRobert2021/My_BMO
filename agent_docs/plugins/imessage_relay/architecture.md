@@ -9,10 +9,10 @@ exemption from plugin contracts. No source package move or runtime adapter is
 part of the documentation refactor.
 
 Current boundaries are: Apple read-only parsing; relay-owned discovery/delivery
-state; kiosk-owned authenticated receipt; and a future plugin lifecycle
-adapter. Discovery cursor, queued transmission, kiosk receipt, and ACK are
-distinct states. Stable event GUIDs provide idempotency; source ROWIDs are local
-scan cursors only.
+state; a simulated sender and bounded HTTP(S) transport; kiosk-owned
+authenticated receipt; and a future plugin lifecycle adapter. Discovery
+cursor, queued transmission, kiosk receipt, and ACK are distinct states. Stable
+event GUIDs provide idempotency; source ROWIDs are local scan cursors only.
 
 ## Non-negotiable source safety
 
@@ -46,9 +46,9 @@ When a future authorized stage adds the registry adapter:
    stores, closes the server socket, and releases the port exactly once.
 
 The current implementation differs: `python -m kiosk_receiver.server` starts a
-standalone receiver explicitly, and BMO's feature loader knows nothing about
-Relay. Document and preserve that distinction until the roadmap stage that
-authorizes integration.
+standalone receiver explicitly, the Stage 5 sender has no standalone process
+entrypoint, and BMO's feature loader knows nothing about Relay. Document and
+preserve that distinction until the roadmap stage that authorizes integration.
 
 ## Reliability model
 
@@ -58,3 +58,7 @@ state to acknowledge. Timeouts/lost ACKs retry the identical stable event with
 fresh request authentication. Poison items become visible dead letters without
 blocking later work. Reconciliation reuses normal idempotent ingestion and must
 never delete kiosk-only history.
+
+Stage 5 implements this delivery path in local simulation. Its status surface
+contains counts and bounded error codes only. It does not change the later
+reconciliation, attachment, live-device, deployment, or runtime gates.

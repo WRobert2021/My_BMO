@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: future registry adapter; current packages iphone_relay and kiosk_receiver
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py]
 ---
 
 # Plugin: iMessage Relay
@@ -24,6 +24,7 @@ through Messages are out of scope.
 | --- | --- |
 | normalized contracts/read-only parser | `iphone_relay/contracts.py`, `reader.py`, `attachments.py`, `attributed_body.py`, `timestamps.py` |
 | sender-side discovery/queue state | `iphone_relay/state.py`, `state_codec.py`, `state_config.py` |
+| simulated sender/delivery loop | `iphone_relay/sender.py` |
 | kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
 | kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json` |
@@ -42,7 +43,11 @@ failure isolation; do not move packages merely to make paths look integrated.
    cursor, then owns leases, retries, ACKs, dead letters, and restart recovery.
 3. The standalone authenticated kiosk receiver strictly validates one event,
    reserves its nonce, commits canonical event JSON exactly once, and ACKs only
-   after commit. It does not yet consume Stage 3 queue entries; that is Stage 5.
+   after commit.
+4. `RelaySender` claims Stage 3 entries and delivers them through a bounded
+   HTTP(S) transport with fresh request authentication, strict ACK identity,
+   durable retry/dead-letter outcomes, and content-free status. The complete
+   path is verified only against invented local simulation data.
 
 ## Safety and failure boundaries
 
@@ -53,10 +58,11 @@ authorized stage. Relay and receiver state are separate private SQLite files.
 Logs omit content/handles/paths by default. Network receipt never means
 delivery without a validated kiosk ACK.
 
-The receiver currently runs only as an explicitly started standalone process.
-No launch daemon is authorized. Current stores/listeners close explicitly.
-Future plugin startup failure must mark only Relay unavailable/degraded while
-the application and unrelated plugins continue.
+The receiver currently runs only as an explicitly started standalone process,
+and the sender has no process entrypoint. No launch daemon is authorized.
+Current stores/listeners/transports close explicitly. Future plugin startup
+failure must mark only Relay unavailable/degraded while the application and
+unrelated plugins continue.
 
 ## Detailed routing
 

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "bind_host": "0.0.0.0",
+  "port": 8443,
+  "state_path": "data/imessage_receiver/receiver.db",
+  "tls_cert_path": "config/private/imessage_receiver.crt",
+  "tls_key_path": "config/private/imessage_receiver.key",
+  "allow_insecure_loopback": false,
+  "key_id": "iphone-relay-1",
+  "shared_secret_env": "IMESSAGE_RELAY_SHARED_SECRET",
+  "max_clock_skew_seconds": 300,
+  "max_request_bytes": 2097152,
+  "request_timeout_seconds": 10
+}

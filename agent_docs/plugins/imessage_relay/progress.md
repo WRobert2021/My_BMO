@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 4
-current_chapter: Stage 4 acceptance gate
+current_stage: 5
+current_chapter: Stage 5 acceptance gate
 state: complete
-next_action: Stop and wait for explicit authorization before Stage 5 simulated sender integration.
+next_action: Stop and wait for explicit authorization before Stage 6 reconciliation.
 last_verified: 2026-08-28
 
 ## Stage index
@@ -15,8 +15,8 @@ last_verified: 2026-08-28
 | 2 — read-only parser | complete | immutable normalized events and sanitized tests |
 | 3 — relay state/durable queue | complete | atomic cursors, retries, ACK/dead-letter state |
 | 4 — kiosk receiver prototype | complete | authenticated durable idempotent local receiver |
-| 5 — simulated end-to-end relay | not started | requires explicit authorization |
-| 6 — reconciliation | not started | blocked by Stage 5 acceptance |
+| 5 — simulated end-to-end relay | complete | local fault matrix and cleanup accepted |
+| 6 — reconciliation | not started | requires explicit authorization |
 | 7 — attachment transfer | not started | metadata only is currently delivered |
 | 8 — live iPhone read-only integration | not started | separately authorized live-device gate |
 | 9 — live relay | not started | blocked by Stage 8 acceptance |
@@ -26,45 +26,50 @@ last_verified: 2026-08-28
 
 ### Objective
 
-Reconcile the interrupted Stage 4 documentation against code and tests without
-starting Stage 5.
+Connect the parser, durable queue, authenticated sender, and durable receiver
+in a local-only simulation and stop after the Stage 5 fault matrix.
 
 ### Completed
 
-- Verified the standard-library `kiosk_receiver` package implements strict
-  configuration, HMAC authentication/replay protection, versioned path-free
-  JSON validation, private SQLite receipt/nonce state, authenticated
-  health/status, HTTP(S) serving, and explicit ACK/NACK behavior.
-- Verified ACK is emitted only after durable ingest; identical stable-ID replay
-  is a duplicate ACK and conflicting content is rejected.
-- Verified TLS is required except explicit loopback development, and build/
-  shutdown paths close the listener and store.
-- Ran `.venv/bin/python -m pytest -q tests/test_imessage_receiver.py
-  --tb=short` with loopback permission: **20 passed, 9 subtests passed in
-  2.10s**. An initial sandboxed run had 18 pass and two setup errors solely
-  because loopback bind was denied; the permitted rerun passed both HTTP tests.
-- Ran the combined parser/state/receiver boundary suite after documentation
-  reconciliation: **63 passed, 12 subtests passed in 1.84s**.
+- Added the standard-library `iphone_relay.sender` bridge over Stage 3 claims,
+  failures, ACKs, bounded backoff, and dead letters without changing the state
+  schema or tracked configuration.
+- Added fresh request ID/nonce authentication, exact path-free event retries,
+  strict bounded ACK/NACK validation, distinct `stale_request`, content-free
+  status, explicit loopback-only plaintext policy, Ctrl-C, and idempotent
+  transport cleanup.
+- Verified invented parser input through the real queue, loopback HTTP server,
+  HMAC receiver, and durable receipt while preserving the source hash.
+- Passed the Stage 5 matrix for offline before/during send, lost ACK/duplicate
+  receipt, fresh retry authentication, sender/receiver restart, ordered
+  backlog, NACK/malformed/mismatched response, poison bypass/dead letter,
+  explicit requeue recovery, Ctrl-C, status privacy, and resource cleanup.
+- Ran the complete parser/state/receiver/end-to-end relay suite with local
+  loopback permission: **70 passed, 14 subtests passed in 2.34s**.
 
 ### Remaining
 
-No Stage 4 implementation work is identified. Stage 5 sender/queue integration,
-fault simulation, and status loop are intentionally absent. Do not implement
-them without explicit authorization. No live iPhone contact, deployment,
-daemon, or runtime plugin registration is authorized by completed Stage 4.
+No Stage 5 implementation work is identified. Stage 6 reconciliation is not
+started and requires explicit authorization. No live iPhone contact,
+deployment, daemon, private sender configuration, or runtime plugin
+registration is authorized by completed Stage 5.
 
 ### Decisions constraining next work
 
 - Stage gates remain authorization gates; completion does not authorize the
   next stage.
 - HTTPS request/response plus per-request HMAC is the Stage 4 transport.
+- Plain HTTP is accepted only for explicit literal-loopback simulation.
+- Sender state acknowledges only an exact `201 accepted` or `200 duplicate`
+  ACK with matching protocol, request ID, and stable event ID.
 - Attachment bytes remain outside the protocol until Stage 7.
 - Current standalone packages are plugin-owned but not yet runtime-integrated.
 
 ### Blockers and known risks
 
-There is no Stage 4 blocker. Stage 5 is gated by user authorization. Known
-future risks: source attachment bytes are not durable queue payloads;
+There is no Stage 5 blocker. Stage 6 is gated by user authorization. Known
+future risks: production endpoint trust and sender configuration are undefined;
+source attachment bytes are not durable queue payloads;
 acknowledged-event retention has no pruning policy; live schema/environment,
 emoji reactions, retractions, edits, real groups/email handles, TLS/key
 provisioning, and iPhone clock skew remain unverified in their later stages.
