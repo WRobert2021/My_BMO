@@ -161,6 +161,10 @@ differences between snapshot and phone; schema variants absent from samples.
 
 ## Stage 3 — Relay State and Durable Queue
 
+**Status:** Complete on 2026-08-28. The implementation, state machine, schema,
+and evidence are recorded in `docs/IMESSAGE_STATE.md`; Stage 4 remains
+separately authorized.
+
 **Objective:** Persist discovery and at-least-once delivery state independently
 from Apple's database.
 

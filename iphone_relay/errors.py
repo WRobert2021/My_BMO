@@ -23,3 +23,39 @@ class AttributedBodyError(SourceRecordError):
 
 class UnsafeAttachmentPathError(SourceRecordError):
     """Raised when an Apple attachment filename escapes its owned root."""
+
+
+class RelayStateError(RuntimeError):
+    """Base error for relay-owned durable-state failures."""
+
+
+class StateDatabaseError(RelayStateError):
+    """Raised when relay-owned SQLite state cannot be opened or updated."""
+
+
+class StateConfigError(RelayStateError):
+    """Raised when relay-owned state/retry configuration is invalid."""
+
+
+class StateSecurityError(RelayStateError):
+    """Raised when a state path could expose data or target Apple's store."""
+
+
+class StateSchemaError(RelayStateError):
+    """Raised when a relay-owned database has an unsupported schema."""
+
+
+class StateIntegrityError(RelayStateError):
+    """Raised when durable state conflicts with a newly discovered event."""
+
+
+class CursorConflictError(RelayStateError):
+    """Raised when a scan was based on a stale or discontinuous cursor."""
+
+
+class StateTransitionError(RelayStateError):
+    """Raised when a delivery transition is not valid for the stored state."""
+
+
+class StateClosedError(RelayStateError):
+    """Raised when a closed state manager is used."""

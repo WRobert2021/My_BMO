@@ -75,6 +75,21 @@ agent.py
 | `bmo/weather.py` | Open-Meteo client, typed forecast records, unit handling, and spoken report formatting. |
 | `bmo/kiosk_access.py` | Quiet-hours configuration, active-period calculation, and current-period unlock state. |
 
+## Experimental iMessage relay modules
+
+The relay remains an independently owned backend subsystem and is not loaded by
+the kiosk runtime or feature registry during Stages 0–3.
+
+| File | Role |
+| --- | --- |
+| `iphone_relay/contracts.py` | Immutable normalized message, reaction, attachment, issue, and scan records. |
+| `iphone_relay/reader.py` | Explicitly read-only Apple Messages scanning and normalization boundary. |
+| `iphone_relay/attributed_body.py` | Bounded exact-variant typedstream text extraction. |
+| `iphone_relay/attachments.py` | Contained attachment resolution plus photo/video/Live Photo normalization. |
+| `iphone_relay/state_codec.py` | Strict canonical JSON persistence codec for normalized events. |
+| `iphone_relay/state.py` | Relay-owned SQLite discovery cursor, durable queue, attempts, ACK, retry, and dead-letter state. |
+| `iphone_relay/state_config.py` | Resource-free private state-path and retry-policy configuration loader. |
+
 ## Feature framework
 
 Features are short-lived tools or menu-only views loaded from the `features`
@@ -202,6 +217,7 @@ Modes are longer interactions that temporarily own user input.
 | `config/example.music.json` | Music library/state paths, allowed metadata genres, menu visibility, and ffplay command. |
 | `config/example.quiet_hours.json` | Schedule, weekdays, passcode, and sleeping-face path. |
 | `config/example.compact_face.json` | Compact-face state directories and animation timing. |
+| `config/example.imessage_relay.json` | Experimental relay state path, retry bounds, attempt limit, and lease duration. |
 
 ## Test map
 
@@ -228,6 +244,7 @@ Modes are longer interactions that temporarily own user input.
 | Twenty Questions | `tests/test_twenty_questions.py` |
 | Compact face and quiet hours | `tests/test_compact_face.py`, `tests/test_quiet_hours.py` |
 | Qt/QML production presentation | `tests/test_qt_shell.py` |
+| iMessage relay parser/state | `tests/test_imessage_parser.py`, `tests/test_imessage_state.py` |
 
 `tests/extension_modules/__init__.py` marks the proof-fixture package, and
 `tests/__init__.py` is not present because pytest discovers the suite directly.

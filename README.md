@@ -26,13 +26,13 @@ Dopamine/rootless jailbroken iPhone and this Raspberry Pi kiosk. Its initial
 scope is incoming iMessage text, photos, videos, and tapbacks, with explicit
 kiosk acknowledgements and duplicate-safe delivery.
 
-The relay is **not deployable yet**. Stage 2 has completed a stateless,
-read-only parser for the supported local Messages schema, including normalized
-incoming text, sender/chat identity, standard reactions, photos, videos, and
-the demonstrated Live Photo layout. Queueing, networking, kiosk ingestion, and
-live-iPhone use have not begun. No live iPhone was contacted. Do not point
-existing application commands at `/var/mobile/Library/SMS`, and do not copy
-either private `iphone_snapshot*/` directory into source control.
+The relay is **not deployable yet**. Stage 3 has added relay-owned durable
+discovery cursors, normalized payloads, retry/lease state, validated ACK state,
+and visible dead letters on top of the Stage 2 read-only parser. Networking,
+kiosk ingestion, authentication, and live-iPhone use have not begun. No live
+iPhone was contacted. Do not point existing application commands at
+`/var/mobile/Library/SMS`, and do not copy either private
+`iphone_snapshot*/` directory into source control.
 
 Safety boundaries:
 
@@ -46,7 +46,8 @@ Safety boundaries:
 
 See the [schema report](docs/SCHEMA_REPORT.md) for source evidence, the
 [parser contract](docs/IMESSAGE_PARSER.md) for supported behavior and gaps, the
-[staged relay plan](docs/IMESSAGE_RELAY_PLAN.md) for stage gates, and the
+[durable-state contract](docs/IMESSAGE_STATE.md) for queue/checkpoint semantics,
+the [staged relay plan](docs/IMESSAGE_RELAY_PLAN.md) for stage gates, and the
 [agent continuation record](AGENT_README.md) for exact current status.
 
 ## 🛠️ Hardware Requirements
@@ -73,15 +74,18 @@ be-more-agent/
 │   ├── example.quiet_hours.json # Tracked global kiosk-lock example
 │   ├── example.learning.json  # Tracked Pre-K learning example
 │   ├── example.compact_face.json # Tracked shared compact-face example
+│   ├── example.imessage_relay.json # Tracked relay-state example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)
 │   ├── calendar.json          # Local calendar behavior settings (ignored)
 │   ├── quiet_hours.json       # Local global quiet-hours settings (ignored)
 │   ├── learning.json          # Local learning behavior/settings (ignored)
-│   └── compact_face.json      # Local shared face layout/animation settings
+│   ├── compact_face.json      # Local shared face layout/animation settings
+│   └── imessage_relay.json    # Local relay-state/retry settings (ignored)
 ├── data/calendar/             # Local events and acknowledgments (ignored)
 ├── data/learning/             # Local learners, plans, and progress (ignored)
+├── data/imessage_relay/       # Private relay queue/checkpoint state (ignored)
 ├── memory.json                # Conversation history
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
@@ -212,6 +216,9 @@ Configuration is split by audience:
   shared refresh/layout specification used by Menu, features, modes, and
   Weather. Its outer viewport is always 108×65; invalid files safely use
   defaults.
+- `config/imessage_relay.json` is reserved for the experimental relay's private
+  state path and retry policy. The relay is not yet connected to application
+  startup or the feature registry.
 
 The application does **not** create these local files. If a file is absent or
 invalid, BMO reports a parsing error when applicable and uses defaults for that
@@ -228,6 +235,7 @@ cp config/example.learning.json config/learning.json
 cp config/example.galaxy_rvr.json config/galaxy_rvr.json
 cp config/example.music.json config/music.json
 cp config/example.compact_face.json config/compact_face.json
+cp config/example.imessage_relay.json config/imessage_relay.json
 ```
 
 When upgrading from the former root `config.json`, move its `features` and

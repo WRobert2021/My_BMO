@@ -46,10 +46,10 @@ bidirectional; message content is iPhone-to-kiosk only.
 
 ## Current Stage
 
-**Current Stage: Stage 2 — Read-Only Message Parser (Complete).**
+**Current Stage: Stage 3 — Relay State and Durable Queue (Complete).**
 
-Stages 0–2 are complete. Stage 2 was explicitly authorized and completed on
-2026-08-28. This is the required stop point; Stage 3 has not started and needs
+Stages 0–3 are complete. Stage 3 was explicitly authorized and completed on
+2026-08-28. This is the required stop point; Stage 4 has not started and needs
 new explicit authorization.
 
 ## Stage Status
@@ -59,8 +59,8 @@ new explicit authorization.
 | 0 — Project Audit and Snapshot Validation | Complete | Inputs, tooling, safety boundary, documentation, and next inspection checklist recorded. |
 | 1 — Messages Schema Investigation | Complete | `docs/SCHEMA_REPORT.md` records supported behavior, Stage 2 contracts, and explicit evidence gaps. |
 | 2 — Read-Only Message Parser | Complete | Stateless read-only parser, immutable event contracts, sanitized tests, and controlled-snapshot acceptance pass. |
-| 3 — Relay State and Durable Queue | Not Started | Ready only after new explicit authorization. |
-| 4 — Kiosk Receiver Prototype | Not Started | Blocked by event contract and protocol design. |
+| 3 — Relay State and Durable Queue | Complete | Atomic relay-owned cursor/queue commits, persisted payloads, attempts, retries, ACKs, dead letters, requeue, and restart recovery pass. |
+| 4 — Kiosk Receiver Prototype | Not Started | Ready only after new explicit authorization. |
 | 5 — End-to-End Simulated Relay | Not Started | Blocked by Stages 2–4. |
 | 6 — Reconciliation | Not Started | Blocked by simulated reliability acceptance. |
 | 7 — Attachments | Not Started | Blocked by manifest/protocol foundations. |
@@ -70,6 +70,32 @@ new explicit authorization.
 
 ## Work Completed
 
+- Completed Stage 3 after explicit authorization and stopped before Stage 4.
+- Added a private relay-owned SQLite database with application/schema IDs,
+  strict shape/integrity checks, WAL mode, foreign keys, full synchronous
+  durability, `0600` creation, and rejection of Apple database filenames,
+  symlinks, and broadly readable existing state files.
+- Made parser batch ingestion atomic across canonical normalized payloads,
+  bounded parse issues, a non-content scan audit, and the source observation
+  cursor. Injected database failure proves the entire transaction rolls back.
+- Added stale-cursor rejection, complete replay idempotency, GUID/payload
+  conflict detection, and source-range validation so a cursor cannot commit
+  ahead of the supplied normalized events or visible parser issues.
+- Persisted bounded canonical event JSON and SHA-256 corruption detection so
+  retries do not depend on Apple retaining a reaction/message row. Attachment
+  bytes remain external; only normalized attachment metadata and paths persist.
+- Added ordered delivery leases, durable total/per-cycle attempt counts,
+  configurable capped exponential retry, lease-expiry recovery, privacy-safe
+  error codes, ACK idempotency, late-ACK recovery, visible dead letters, and
+  explicit dead-letter requeue without erasing attempt history.
+- Added strict resource-free relay state/retry configuration plus a tracked
+  example. Missing private config creates nothing and returns defaults in
+  memory; invalid or duplicate fields fail closed.
+- Kept the subsystem absent from application startup, extension registration,
+  workers, UI, networking, authentication, and live-iPhone access.
+- Documented the state schema, ownership, transitions, persistence tradeoff,
+  security boundary, configuration, and Stage 4 handoff in
+  `docs/IMESSAGE_STATE.md`.
 - Completed Stage 2 after explicit authorization and stopped before Stage 3.
 - Added the independent `iphone_relay` package without registering it in or
   coupling it to the kiosk runtime. It has no new third-party dependency.
@@ -125,6 +151,23 @@ new explicit authorization.
 
 ## Tests Completed
 
+- Stage 3 focused suite:
+  `.venv/bin/python -m pytest -q tests/test_imessage_state.py` completed with
+  **24 passed, 3 subtests passed in 0.11 seconds**.
+- Combined Stage 2/3 boundary:
+  `.venv/bin/python -m pytest -q tests/test_imessage_parser.py
+  tests/test_imessage_state.py` completed with
+  **43 passed, 3 subtests passed in 0.21 seconds**.
+- The Stage 3 optional snapshot integration ran (not skipped), parsed the
+  disposable WAL-visible trio, atomically committed all 35 normalized events
+  through source ROWID 38, reopened the state database, and found zero issues.
+- Reliability tests cover transaction rollback, cursor conflicts, complete
+  replay, conflicting GUID payloads, parse-issue durability, payload tampering,
+  private file security, schema creation/rejection, restart at every queue
+  state, lease expiry, retry timing/capping, lost and duplicate ACKs, poison
+  bypass, late ACK, dead-letter persistence/requeue, and clean close.
+- Full repository suite: `.venv/bin/python -m pytest -q` completed with
+  **752 passed, 9,988 subtests passed in 13.04 seconds**.
 - Stage 2 focused suite:
   `.venv/bin/python -m pytest -q tests/test_imessage_parser.py` completed with
   **19 passed in 0.11 seconds**.
@@ -168,6 +211,31 @@ new explicit authorization.
 - `git diff --check`: passed with no whitespace errors.
 
 ## Current Known Issues
+
+### S3-001 — Attachment bytes are not durable queue payloads yet
+
+- Classification: staged implementation boundary.
+- Severity: Medium.
+- Stage discovered: Stage 3.
+- Description: Normalized attachment metadata and contained paths persist, but
+  photo/video bytes remain in Apple's attachment tree. Source removal before
+  successful delivery could make a queued attachment unavailable.
+- Workaround: Missing attachment state remains explicit. Stage 7 must define
+  bounded spooling/streaming and attachment-aware ACK completion before live
+  delivery.
+- Blocks next stage: No for receiver/protocol design; yes for claiming durable
+  attachment delivery.
+
+### S3-002 — Acknowledged-event retention is intentionally unbounded
+
+- Classification: staged design decision.
+- Severity: Low during local development.
+- Stage discovered: Stage 3.
+- Description: Acknowledged payloads remain in relay state for stable-ID dedupe
+  and later reconciliation. Stage 3 has no pruning policy.
+- Workaround: Keep state private and monitor size during later simulations.
+  Define retention only with Stage 6 reconciliation guarantees.
+- Blocks next stage: No.
 
 ### S0-001 — Read-only SQLite inspection updates SHM lock state
 
@@ -249,7 +317,25 @@ new explicit authorization.
 
 ## Decisions Made
 
-- Stage boundaries remain authorization boundaries; Stage 3 did not begin.
+- Stage boundaries remain authorization boundaries; Stage 4 did not begin.
+- The normalized payload is persisted at discovery because Apple may delete or
+  mutate source rows before retry. Attachment bytes are deliberately excluded
+  until Stage 7 defines their durable transfer lifecycle.
+- Discovery commit is one transaction containing events, issues, scan audit,
+  and the observation cursor. A parser-invalid row may advance only after its
+  bounded issue is durable and visible.
+- Queue state is `queued`, `in_flight`, `retry_wait`, `acknowledged`, or
+  `dead_letter`. Attempt transmission never implies delivery; only a later
+  validated stable-ID kiosk ACK may call `acknowledge()`.
+- Total attempt numbering is monotonic. A separate per-cycle counter allows an
+  explicit dead-letter requeue to receive a fresh bounded retry cycle without
+  erasing history.
+- Late and duplicate ACKs are idempotent; a late ACK may resolve retry/dead
+  state because durable kiosk receipt is authoritative.
+- State JSON has one strict owner and is canonical, bounded, duplicate-key and
+  non-finite rejecting, exact-field validated, and digest checked.
+- The private retry config is relay-owned and resource-free. It does not merge
+  into shared kiosk settings or create files when absent.
 - The parser is a stateless, independently owned subsystem. It is not a kiosk
   feature and has no application startup, registration, configuration,
   workers, networking, queue, or cleanup behavior in Stage 2.
@@ -301,16 +387,22 @@ new explicit authorization.
 
 ## Files Added or Changed
 
-- `.gitignore`: ignores both private snapshot trees.
+- `.gitignore`: additionally ignores private relay configuration and
+  `data/imessage_relay/` state.
 - `AGENT_README.md`: persistent stage, safety, issue, test, and continuation
   state.
-- `README.md`: human-facing Stage 2 status, scope, and safety notice.
+- `AGENT_BRIEF.md`: high-level ownership/test map for parser and state modules.
+- `README.md`: human-facing Stage 3 status, configuration, scope, and safety.
+- `docs/AGENT_ARCHITECTURE.md`: records independent relay ownership, codec and
+  transaction boundaries, and lack of runtime registration.
 - `docs/IMESSAGE_RELAY_PLAN.md`: complete Stage 0–10 plan, stop gates, and
-  Stage 2 completion marker.
+  Stage 3 completion marker.
 - `docs/SCHEMA_REPORT.md`: Stage 1 evidence, SQL/schema contract, decisions,
   and unresolved behaviors.
 - `docs/IMESSAGE_PARSER.md`: Stage 2 parser API, supported normalization,
   failure/privacy contract, cursor semantics, and evidence gaps.
+- `docs/IMESSAGE_STATE.md`: Stage 3 schema, state machine, atomicity,
+  persistence/retry/security decisions, configuration, and limitations.
 - `docs/issues/README.md`: privacy-safe issue-record format.
 - `scripts/inspect_imessage_schema.py`: disposable-copy, redacted Stage 1
   evidence probe with controlled-corpus assertions.
@@ -327,24 +419,35 @@ new explicit authorization.
   and event normalization.
 - `tests/test_imessage_parser.py`: invented fixture tests and optional private
   snapshot acceptance without tracked private data.
+- `iphone_relay/state_codec.py`: strict canonical normalized-event persistence
+  and corruption detection.
+- `iphone_relay/state.py`: private SQLite schema, atomic discovery commit,
+  queue leases, retry, ACK, attempt history, dead letter, and summary APIs.
+- `iphone_relay/state_config.py`: strict missing-safe state/retry configuration.
+- `iphone_relay/errors.py` and `iphone_relay/__init__.py`: Stage 3 errors and
+  public state/config exports.
+- `config/example.imessage_relay.json`: privacy-safe state/retry example.
+- `tests/test_imessage_state.py`: invented reliability/configuration fixtures
+  and disposable parser-to-state snapshot integration.
 
-## Stage 2 Completion Evidence
+## Stage 3 Completion Evidence
 
-`docs/IMESSAGE_PARSER.md` records the implemented contract and unsupported
-evidence gaps. The parser test suite proves versioned normalized output,
-read-only rejection, stable repeat scans, failure isolation, path containment,
-the sanitized typedstream fallback, and controlled-snapshot acceptance. The
-parser contains no networking, relay-owned state, live-phone access, or kiosk
-runtime integration.
+`docs/IMESSAGE_STATE.md` records the implemented schema, state machine, API,
+atomicity and payload decisions, and remaining boundaries. Tests prove that an
+event or visible parse issue is durable before the source cursor advances,
+pending work survives process restart, retries/leases are bounded, duplicate
+delivery state is harmless, and poison events become recoverable visible dead
+letters without blocking later work. No networking, kiosk receiver, live-phone
+access, automatic startup, or application integration exists.
 
 ## Next Required Action
 
-**STOP. Wait for explicit user authorization before Stage 3. If authorized,
-implement relay-owned durable queue/checkpoint/retry state as specified in
-`docs/IMESSAGE_RELAY_PLAN.md`, keeping discovery, delivery, and ACK state
-separate. Do not add networking or contact the live iPhone in Stage 3.**
+**STOP. Wait for explicit user authorization before Stage 4. If authorized,
+design and implement the locally running authenticated kiosk receiver and
+versioned protocol specified in `docs/IMESSAGE_RELAY_PLAN.md`. Do not contact
+the live iPhone or begin end-to-end sender integration in Stage 4.**
 
 ## Last Updated
 
-2026-08-28 — Stage 2 completed; parser acceptance passed and work stopped
-before Stage 3.
+2026-08-28 — Stage 3 completed; durable-state reliability acceptance passed
+and work stopped before Stage 4.

@@ -155,6 +155,14 @@ The application keeps `agent.py` as the stable startup command while implementat
   touch exercises, teacher-plan controls, and progress presentation.
 - `bmo.ui.weather` — legacy Tk fallback location carousel, secure loopback
   bridge, owned Chromium lifecycle, and compatibility state wrapper.
+- `iphone_relay` — experimental, independently owned iMessage parser and
+  relay-state subsystem; it is not imported, registered, configured, or
+  started by the kiosk application during Stages 0–3.
+- `iphone_relay.state_codec` — sole canonical private event-payload schema.
+- `iphone_relay.state` — sole owner of the relay SQLite schema, atomic source
+  cursor commits, delivery leases, retries, ACK state, and dead letters.
+- `iphone_relay.state_config` — resource-free strict private state/retry
+  configuration; it creates no files or runtime services.
 - `bmo.qt.controller` — Qt properties, signals, real face-frame animation,
   camera overlay state, HUD text, shared menu pages, hosted-view data, global
   overlays, selection events, and gesture translation without importing Tk.
@@ -267,6 +275,17 @@ Pure progress calculations live in `learning.analytics`, so generation,
 persistence, and reporting can evolve independently. Twenty Questions keeps
 its stable `bmo.twenty_questions` facade while text normalization and shared
 errors live in dependency-light supporting modules.
+
+The experimental iMessage relay uses the same deliberate ownership split.
+Parser contracts remain immutable and stateless. `iphone_relay.state_codec`
+serializes each normalized event once into strict canonical JSON, and
+`iphone_relay.state` persists that exact representation with its digest inside
+the same transaction that advances the source observation cursor. It owns no
+Apple database write path. Discovery, delivery attempts, validated kiosk ACKs,
+and dead-letter recovery remain separate state concepts. Attachment bytes stay
+outside the queue database. The subsystem remains absent from application
+startup and extension discovery until a later explicitly authorized feature/UI
+stage.
 
 Compatibility metadata such as `ToolRouter.VALID_TOOLS` is built in metadata
 mode from only the default routable modules. Calendar and Weather metadata

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "state_path": "data/imessage_relay/relay_state.db",
+  "retry_policy": {
+    "initial_delay_seconds": 30,
+    "multiplier": 2,
+    "max_delay_seconds": 900,
+    "max_attempts": 5,
+    "lease_duration_seconds": 60
+  }
+}
