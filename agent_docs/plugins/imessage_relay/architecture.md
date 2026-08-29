@@ -3,16 +3,17 @@
 ## Ownership model
 
 iMessage Relay is a first-class feature/service plugin even though its current
-Stage 2–4 code remains in standalone `iphone_relay/` and `kiosk_receiver/`
+Stage 2–6 code remains in standalone `iphone_relay/` and `kiosk_receiver/`
 packages. That separation was a development safety boundary, not a permanent
 exemption from plugin contracts. No source package move or runtime adapter is
 part of the documentation refactor.
 
 Current boundaries are: Apple read-only parsing; relay-owned discovery/delivery
-state; a simulated sender and bounded HTTP(S) transport; kiosk-owned
-authenticated receipt; and a future plugin lifecycle adapter. Discovery
-cursor, queued transmission, kiosk receipt, and ACK are distinct states. Stable
-event GUIDs provide idempotency; source ROWIDs are local scan cursors only.
+state and reconciliation; a simulated sender and bounded HTTP(S) transport;
+kiosk-owned authenticated receipt lookup; and a future plugin lifecycle
+adapter. Discovery cursor, lookback observation, queued transmission, kiosk
+receipt, and ACK are distinct states. Stable event GUIDs provide idempotency;
+source ROWIDs are local scan cursors only.
 
 ## Non-negotiable source safety
 
@@ -59,6 +60,9 @@ fresh request authentication. Poison items become visible dead letters without
 blocking later work. Reconciliation reuses normal idempotent ingestion and must
 never delete kiosk-only history.
 
-Stage 5 implements this delivery path in local simulation. Its status surface
-contains counts and bounded error codes only. It does not change the later
-reconciliation, attachment, live-device, deployment, or runtime gates.
+Stage 5 implements this delivery path in local simulation. Stage 6 adds bounded
+sender-candidate receipt comparison: missing acknowledged entries may be
+requeued, present attempted entries may be confirmed, conflicts remain
+unchanged, and kiosk-only history is never enumerated or deleted. Status and
+reports contain counts and bounded error codes only. These stages do not change
+the later attachment, live-device, deployment, or runtime gates.

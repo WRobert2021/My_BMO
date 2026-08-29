@@ -36,6 +36,7 @@ MAX_ERROR_CODE_LENGTH = 64
 MAX_ISSUE_CODE_LENGTH = 64
 MAX_ISSUE_DETAIL_LENGTH = 512
 MAX_SQLITE_INTEGER = 9_223_372_036_854_775_807
+MAX_RECONCILIATION_PAGE_SIZE = 20
 
 _SAFE_NAME = re.compile(r"[A-Za-z0-9_.-]+")
 _APPLE_DATABASE_NAMES = {
@@ -161,6 +162,14 @@ class StateSummary:
     @property
     def pending_count(self) -> int:
         return self.queued_count + self.in_flight_count + self.retry_wait_count
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationCommitResult:
+    scanned_row_count: int
+    observed_event_count: int
+    inserted_event_count: int
+    issue_count: int
 
 
 class RelayStateStore:
@@ -328,6 +337,91 @@ class RelayStateStore:
                     observed_at_ms,
                 ),
             )
+
+    def commit_reconciliation_batch(
+        self,
+        batch: ScanBatch,
+        *,
+        expected_after_rowid: int,
+        start_timestamp_raw_ns: int,
+        end_timestamp_raw_ns: int,
+        source_key: str = DEFAULT_SOURCE_KEY,
+        now_ms: int | None = None,
+    ) -> ReconciliationCommitResult:
+        """Persist one bounded lookback page without advancing the live cursor."""
+
+        source_key = _validated_name(source_key, "source key", MAX_SOURCE_KEY_LENGTH)
+        expected_after_rowid = _nonnegative_int(expected_after_rowid, "expected cursor")
+        start = _nonnegative_int(start_timestamp_raw_ns, "window start timestamp")
+        end = _nonnegative_int(end_timestamp_raw_ns, "window end timestamp")
+        if end <= start:
+            raise StateIntegrityError("reconciliation window end must follow its start")
+        observed_at_ms = _timestamp_ms(now_ms)
+        _validate_reconciliation_batch(
+            batch,
+            expected_after_rowid=expected_after_rowid,
+            start_timestamp_raw_ns=start,
+            end_timestamp_raw_ns=end,
+        )
+
+        encoded_events: list[tuple[NormalizedEvent, str, str]] = []
+        for event in batch.events:
+            payload_json, payload_digest = encode_event(event)
+            if decode_event(payload_json, payload_digest) != event:
+                raise StateIntegrityError(
+                    "reconciliation event failed its canonical round trip"
+                )
+            encoded_events.append((event, payload_json, payload_digest))
+
+        inserted_count = 0
+        with self._transaction() as connection:
+            for event, payload_json, payload_digest in encoded_events:
+                existing = connection.execute(
+                    """
+                    SELECT source_rowid, event_kind, payload_sha256
+                    FROM relay_events WHERE event_id = ?
+                    """,
+                    (event.event_id,),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        int(existing["source_rowid"]) != event.source_rowid
+                        or existing["event_kind"] != event.event_kind.value
+                        or existing["payload_sha256"] != payload_digest
+                    ):
+                        raise StateIntegrityError(
+                            "stable event ID conflicts with reconciled content"
+                        )
+                    continue
+                connection.execute(
+                    """
+                    INSERT INTO relay_events(
+                        event_id, source_rowid, event_kind, payload_json,
+                        payload_sha256, status, discovered_at_ms,
+                        next_attempt_at_ms, attempt_count,
+                        retry_cycle_attempt_count
+                    ) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, 0, 0)
+                    """,
+                    (
+                        event.event_id,
+                        event.source_rowid,
+                        event.event_kind.value,
+                        payload_json,
+                        payload_digest,
+                        observed_at_ms,
+                        observed_at_ms,
+                    ),
+                )
+                inserted_count += 1
+            for issue in batch.issues:
+                self._store_issue(connection, source_key, issue, observed_at_ms)
+
+        return ReconciliationCommitResult(
+            scanned_row_count=batch.scanned_row_count,
+            observed_event_count=len(batch.events),
+            inserted_event_count=inserted_count,
+            issue_count=len(batch.issues),
+        )
 
     def claim_next(self, *, now_ms: int | None = None) -> AttemptLease | None:
         """Lease the oldest eligible event for one delivery attempt."""
@@ -506,6 +600,37 @@ class RelayStateStore:
             ).fetchone()
             return self._entry_from_row(updated)
 
+    def requeue_acknowledged_for_reconciliation(
+        self,
+        event_id: str,
+        *,
+        now_ms: int | None = None,
+    ) -> bool:
+        """Selectively queue an acknowledged event reported missing by the kiosk."""
+
+        event_id = _validated_identifier(event_id, "event ID")
+        requeued_at_ms = _timestamp_ms(now_ms)
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT status FROM relay_events WHERE event_id = ?",
+                (event_id,),
+            ).fetchone()
+            if row is None:
+                raise StateTransitionError("reconciled event does not exist")
+            if row["status"] != QueueStatus.ACKNOWLEDGED.value:
+                return False
+            connection.execute(
+                """
+                UPDATE relay_events
+                SET status = 'queued', next_attempt_at_ms = ?,
+                    retry_cycle_attempt_count = 0, last_error_code = NULL,
+                    acknowledged_at_ms = NULL, dead_lettered_at_ms = NULL
+                WHERE event_id = ? AND status = 'acknowledged'
+                """,
+                (requeued_at_ms, event_id),
+            )
+            return True
+
     def acknowledge(
         self,
         event_id: str,
@@ -592,6 +717,38 @@ class RelayStateStore:
                 """,
                 (status.value,),
             )
+        return tuple(self._entry_from_row(row) for row in rows)
+
+    def list_entries_page(
+        self,
+        *,
+        after_source_rowid: int = 0,
+        after_event_id: str = "",
+        limit: int = MAX_RECONCILIATION_PAGE_SIZE,
+    ) -> tuple[QueueEntry, ...]:
+        """Return one keyset-paginated page without loading the full queue."""
+
+        after_rowid = _nonnegative_int(after_source_rowid, "page source ROWID")
+        if not isinstance(after_event_id, str) or len(after_event_id) > 256:
+            raise StateIntegrityError("page event ID is invalid")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= MAX_RECONCILIATION_PAGE_SIZE
+        ):
+            raise ValueError(
+                f"page limit must be from 1 through {MAX_RECONCILIATION_PAGE_SIZE}"
+            )
+        rows = self._execute_read_all(
+            """
+            SELECT * FROM relay_events
+            WHERE source_rowid > ?
+               OR (source_rowid = ? AND event_id > ?)
+            ORDER BY source_rowid, event_id
+            LIMIT ?
+            """,
+            (after_rowid, after_rowid, after_event_id, limit),
+        )
         return tuple(self._entry_from_row(row) for row in rows)
 
     def list_issues(
@@ -1052,6 +1209,19 @@ def _validate_scan_batch(batch: ScanBatch, expected_after_rowid: int) -> None:
             expected_after_rowid < issue.source_rowid <= scanned_through
         ):
             raise StateIntegrityError("scan issue lies outside its source cursor range")
+
+
+def _validate_reconciliation_batch(
+    batch: ScanBatch,
+    *,
+    expected_after_rowid: int,
+    start_timestamp_raw_ns: int,
+    end_timestamp_raw_ns: int,
+) -> None:
+    _validate_scan_batch(batch, expected_after_rowid)
+    for event in batch.events:
+        if not start_timestamp_raw_ns <= event.timestamp_raw_ns < end_timestamp_raw_ns:
+            raise StateIntegrityError("reconciliation event lies outside its time window")
 
 
 def _validated_name(value: object, label: str, max_length: int) -> str:

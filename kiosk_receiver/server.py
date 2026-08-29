@@ -13,7 +13,16 @@ from typing import Mapping
 
 from .auth import AuthenticationError, RequestAuthenticator
 from .config import ReceiverConfig, ReceiverConfigError, load_receiver_config
-from .protocol import PROTOCOL_VERSION, ProtocolError, decode_event_envelope, response_body
+from .protocol import (
+    EVENT_PATH,
+    PROTOCOL_VERSION,
+    RECONCILIATION_PATH,
+    ProtocolError,
+    decode_event_envelope,
+    decode_reconciliation_request,
+    reconciliation_response_body,
+    response_body,
+)
 from .store import (
     EventConflictError,
     IngestResult,
@@ -88,7 +97,18 @@ class ReceiverApplication:
                         "uptime_seconds": max(0, now_seconds - self._started_at),
                     },
                 )
-            if method != "POST" or path != "/v1/events":
+            if method == "POST" and path == RECONCILIATION_PATH:
+                reconciliation = decode_reconciliation_request(body)
+                request_id = reconciliation.request_id
+                receipts = self.store.reconcile_receipts(reconciliation.candidates)
+                return ApplicationResponse(
+                    200,
+                    reconciliation_response_body(
+                        request_id=request_id,
+                        receipts=receipts,
+                    ),
+                )
+            if method != "POST" or path != EVENT_PATH:
                 return ApplicationResponse(
                     404,
                     response_body(

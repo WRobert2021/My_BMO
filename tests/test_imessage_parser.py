@@ -346,6 +346,46 @@ class IMessageParserTests(unittest.TestCase):
         self.assertEqual(first.events, repeated.events)
         self.assertEqual(first.events[0].event_id, "STABLE-GUID")
 
+    def test_window_scan_is_half_open_paginated_and_read_only(self) -> None:
+        self.fixture.add_message(guid="BEFORE", date=1_000_000_000)
+        first_rowid = self.fixture.add_message(guid="FIRST", date=2_000_000_000)
+        second_rowid = self.fixture.add_message(guid="SECOND", date=3_000_000_000)
+        self.fixture.add_message(guid="AFTER", date=4_000_000_000)
+        source_hash = _sha256(self.fixture.database_path)
+        reader = self.fixture.reader()
+
+        first = reader.scan_window(
+            start_timestamp_raw_ns=2_000_000_000,
+            end_timestamp_raw_ns=4_000_000_000,
+            limit=1,
+        )
+        second = reader.scan_window(
+            start_timestamp_raw_ns=2_000_000_000,
+            end_timestamp_raw_ns=4_000_000_000,
+            after_rowid=first.scanned_through_rowid,
+            limit=1,
+        )
+        empty = reader.scan_window(
+            start_timestamp_raw_ns=2_000_000_000,
+            end_timestamp_raw_ns=4_000_000_000,
+            after_rowid=second.scanned_through_rowid,
+            limit=1,
+        )
+
+        self.assertEqual([event.event_id for event in first.events], ["FIRST"])
+        self.assertEqual([event.event_id for event in second.events], ["SECOND"])
+        self.assertEqual(first.scanned_through_rowid, first_rowid)
+        self.assertEqual(second.scanned_through_rowid, second_rowid)
+        self.assertEqual(empty.scanned_row_count, 0)
+        self.assertEqual(empty.scanned_through_rowid, second_rowid)
+        self.assertEqual(_sha256(self.fixture.database_path), source_hash)
+
+        with self.assertRaises(ValueError):
+            reader.scan_window(
+                start_timestamp_raw_ns=4,
+                end_timestamp_raw_ns=4,
+            )
+
     def test_schema_validation_fails_before_scanning(self) -> None:
         self.fixture.close()
         bad_path = Path(self.temporary_directory.name) / "bad.db"

@@ -124,35 +124,73 @@ class MessagesReader:
     def scan(self, *, after_rowid: int = 0, limit: int = 100) -> ScanBatch:
         """Return the next normalized batch after a source insertion cursor."""
 
-        if (
-            isinstance(after_rowid, bool)
-            or not isinstance(after_rowid, int)
-            or after_rowid < 0
-        ):
-            raise ValueError("after_rowid must be a non-negative integer")
-        if (
-            isinstance(limit, bool)
-            or not isinstance(limit, int)
-            or not 1 <= limit <= MAX_SCAN_LIMIT
-        ):
-            raise ValueError(f"limit must be an integer from 1 through {MAX_SCAN_LIMIT}")
+        return self._scan(after_rowid=after_rowid, limit=limit)
+
+    def scan_window(
+        self,
+        *,
+        start_timestamp_raw_ns: int,
+        end_timestamp_raw_ns: int,
+        after_rowid: int = 0,
+        limit: int = 100,
+    ) -> ScanBatch:
+        """Return one bounded page from an explicit half-open source-time window."""
+
+        start = _nonnegative_scan_integer(
+            start_timestamp_raw_ns,
+            "window start timestamp",
+        )
+        end = _nonnegative_scan_integer(
+            end_timestamp_raw_ns,
+            "window end timestamp",
+        )
+        if end <= start:
+            raise ValueError("window end timestamp must be after its start")
+        return self._scan(
+            after_rowid=after_rowid,
+            limit=limit,
+            start_timestamp_raw_ns=start,
+            end_timestamp_raw_ns=end,
+        )
+
+    def _scan(
+        self,
+        *,
+        after_rowid: int,
+        limit: int,
+        start_timestamp_raw_ns: int | None = None,
+        end_timestamp_raw_ns: int | None = None,
+    ) -> ScanBatch:
+        after_rowid, limit = _scan_arguments(after_rowid, limit)
 
         with open_read_only_database(self.database_path) as connection:
             self._validate_schema(connection)
             connection.execute("BEGIN")
+            selection = "ROWID > ? AND service = 'iMessage'"
+            parameters: tuple[object, ...]
+            if start_timestamp_raw_ns is None:
+                parameters = (after_rowid, limit)
+            else:
+                selection += " AND date >= ? AND date < ?"
+                parameters = (
+                    after_rowid,
+                    start_timestamp_raw_ns,
+                    end_timestamp_raw_ns,
+                    limit,
+                )
             rows = connection.execute(
-                """
+                f"""
                 SELECT
                     ROWID, guid, text, attributedBody, handle_id, service,
                     account_guid, date, is_from_me, associated_message_guid,
                     associated_message_type, associated_message_range_location,
                     associated_message_range_length, reply_to_guid
                 FROM message NOT INDEXED
-                WHERE ROWID > ? AND service = 'iMessage'
+                WHERE {selection}
                 ORDER BY ROWID ASC
                 LIMIT ?
                 """,
-                (after_rowid, limit),
+                parameters,
             ).fetchall()
 
             events: list[NormalizedEvent] = []
@@ -425,6 +463,32 @@ class MessagesReader:
                     )
                 )
         return tuple(attachments), issues, bool(rows)
+
+
+def _scan_arguments(after_rowid: object, limit: object) -> tuple[int, int]:
+    if (
+        isinstance(after_rowid, bool)
+        or not isinstance(after_rowid, int)
+        or after_rowid < 0
+    ):
+        raise ValueError("after_rowid must be a non-negative integer")
+    if (
+        isinstance(limit, bool)
+        or not isinstance(limit, int)
+        or not 1 <= limit <= MAX_SCAN_LIMIT
+    ):
+        raise ValueError(f"limit must be an integer from 1 through {MAX_SCAN_LIMIT}")
+    return after_rowid, limit
+
+
+def _nonnegative_scan_integer(value: object, label: str) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= 9_223_372_036_854_775_807
+    ):
+        raise ValueError(f"{label} must be a supported non-negative integer")
+    return value
 
 
 def _required_string(value: object, message: str) -> str:

@@ -16,12 +16,17 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from kiosk_receiver.auth import sign_request
-from kiosk_receiver.protocol import PROTOCOL_VERSION, ProtocolError, encode_event_envelope
+from kiosk_receiver.protocol import (
+    EVENT_PATH,
+    PROTOCOL_VERSION,
+    RECONCILIATION_PATH,
+    ProtocolError,
+    encode_event_envelope,
+)
 
 from .state import QueueStatus, RelayStateStore, StateSummary
 
 
-EVENT_PATH = "/v1/events"
 MAX_RESPONSE_BYTES = 64 * 1024
 _SAFE_ERROR_CODE = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 _ACK_STATUSES = {"accepted": 201, "duplicate": 200}
@@ -68,7 +73,13 @@ class TransportResponse:
 
 
 class EventTransport(Protocol):
-    def send(self, *, body: bytes, headers: Mapping[str, str]) -> TransportResponse:
+    def send(
+        self,
+        *,
+        body: bytes,
+        headers: Mapping[str, str],
+        path: str = EVENT_PATH,
+    ) -> TransportResponse:
         """Send one event request and return the complete bounded response."""
 
     def close(self) -> None:
@@ -155,9 +166,17 @@ class HTTPEventTransport:
         self._ssl_context = ssl_context
         self._closed = False
 
-    def send(self, *, body: bytes, headers: Mapping[str, str]) -> TransportResponse:
+    def send(
+        self,
+        *,
+        body: bytes,
+        headers: Mapping[str, str],
+        path: str = EVENT_PATH,
+    ) -> TransportResponse:
         if self._closed:
             raise SenderClosedError("relay sender transport is closed")
+        if path not in {EVENT_PATH, RECONCILIATION_PATH}:
+            raise ValueError("relay request path is unsupported")
         connection: http.client.HTTPConnection
         if self._scheme == "https":
             connection = http.client.HTTPSConnection(
@@ -175,7 +194,7 @@ class HTTPEventTransport:
         try:
             connection.request(
                 "POST",
-                EVENT_PATH,
+                path,
                 body=body,
                 headers=dict(headers),
             )

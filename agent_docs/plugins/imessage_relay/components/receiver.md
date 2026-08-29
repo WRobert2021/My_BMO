@@ -28,6 +28,11 @@ event ID and durable `(key_id, nonce)` replay records. Identical content returns
 duplicate; conflict or storage error never ACKs. Status returns counts and last
 receipt only.
 
+Stage 6 adds a read-only, bounded receipt membership lookup. Under the same
+store lock it classifies at most 20 sender-provided event ID/digest pairs as
+`present`, `missing`, or `conflict` in request order. It never returns other
+kiosk IDs and has no delete or overwrite path.
+
 `ReceiverServer` is threaded, size/time bounded, rejects chunked/unsupported
 bodies, suppresses content logging, and closes incomplete connections. The
 standalone main loop runs until Ctrl-C, then closes socket and store. A future
@@ -46,4 +51,5 @@ python -m kiosk_receiver.server --config config/imessage_receiver.json
 only after deliberate local provisioning. Primary
 `tests/test_imessage_receiver.py` covers schema/path stripping, HMAC and replay,
 durable restart/idempotency/conflict, auth-first health/status, failure mapping,
-config security, socket cleanup, real loopback HTTP, bounds, and timeout.
+config security, socket cleanup, real loopback HTTP, reconciliation membership
+and bounds, kiosk-only preservation, and timeout.

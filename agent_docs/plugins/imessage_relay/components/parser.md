@@ -41,6 +41,12 @@ stable GUID-based event IDs. Stage 3 must durably store normalized events and
 issues before it persists any source cursor; `scanned_through_rowid` is an
 observation boundary, not proof that an event was queued or acknowledged.
 
+Stage 6 adds `scan_window(start_timestamp_raw_ns=...,
+end_timestamp_raw_ns=..., after_rowid=..., limit=...)`. It uses the same
+read-only normalization inside an explicit half-open Apple-epoch time window
+and returns one source-ROWID page. The reconciliation store path persists the
+page without advancing the normal discovery cursor.
+
 ## Supported normalization
 
 - Positive `message.service = 'iMessage'` and `chat.service_name = 'iMessage'`
@@ -116,7 +122,8 @@ shape, timestamps, repeat scans and cursor gaps, all six reaction additions,
 the demonstrated removal, unknown reactions, bounded typedstream extraction,
 ordinary photo/video/Live Photo discovery, declared versus actual sizes,
 missing files, traversal/symlink containment, schema errors, and per-record
-failure isolation.
+failure isolation. Stage 6 tests additionally cover bounded half-open window
+paging and source hash preservation.
 
 No snapshot data, attachment bytes, handles, message text, or credentials were
 added to tracked fixtures.

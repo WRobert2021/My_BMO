@@ -28,6 +28,16 @@ duplicate request, NACK/malformed response, sender/receiver restart, ordered
 backlog, poison event, recovery, SIGINT, and resource cleanup. Stop when the
 simulated acceptance matrix passes.
 
+## Stage 6 acceptance shape
+
+Only after explicit authorization, support exact recent and UTC calendar-month
+windows with bounded source and state paging. Compare only sender-provided
+stable IDs plus canonical wire digests, selectively requeue acknowledged
+missing receipts, preserve conflicts, reuse normal idempotent delivery, and
+never enumerate or delete kiosk-only history. Test repeated runs, malformed or
+mismatched responses, maximum wire bounds, restart-safe durable receipts, and
+both transport-neutral and real loopback paths. Stop when this matrix passes.
+
 ## Later safety gates
 
 Stage 6 must keep memory bounded and reuse idempotent receipt. Stage 7 decides

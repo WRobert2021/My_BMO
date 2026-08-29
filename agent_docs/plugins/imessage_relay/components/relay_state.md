@@ -2,11 +2,12 @@
 
 ## Status and boundary
 
-Stage 3 implements a local, relay-owned SQLite state manager. Stage 5 now uses
-its public claim/failure/ACK transitions from `sender.py`; the store itself
-remains independent of the kiosk application runtime and contains no network
-client, receiver, authentication, live-iPhone access, launch daemon, or UI
-integration. Current stage authority lives only in `../progress.md`.
+Stage 3 implements a local, relay-owned SQLite state manager. Stage 5 uses its
+public claim/failure/ACK transitions from `sender.py`, and Stage 6 uses bounded
+lookback commits, keyset pages, and selective acknowledged-event requeue. The
+store itself remains independent of the kiosk application runtime and contains
+no network client, receiver, authentication, live-iPhone access, launch daemon,
+or UI integration. Current stage authority lives only in `../progress.md`.
 
 The store must never point at Apple's Messages files. `RelayStateStore`
 explicitly rejects the Apple `sms.db` and `chat.db` filenames and their WAL/SHM
@@ -32,9 +33,10 @@ attachment metadata, availability, and contained source paths. Until Stage 7
 defines attachment spooling and completion-aware ACK semantics, removal of an
 Apple attachment remains a delivery risk.
 
-Acknowledged events remain stored for stable-ID deduplication and later
-reconciliation. Stage 3 intentionally defines no pruning policy; retention and
-storage-growth limits must be decided with the reconciliation protocol.
+Acknowledged events remain stored for stable-ID deduplication and
+reconciliation. Stage 6 does not add pruning: sender absence is not deletion
+authority, and retention/storage-growth policy remains a later explicit
+decision.
 
 ## Database schema
 
@@ -111,6 +113,20 @@ The delivery lease is not a claim that transmission succeeded. The Stage 5
 sender calls `acknowledge()` only after a strict expected kiosk ACK that follows
 durable, idempotent kiosk processing; every other result uses
 `record_failure()`.
+
+## Reconciliation transitions
+
+`commit_reconciliation_batch()` applies the normal canonical round-trip,
+stable-ID conflict, atomic insert, and issue rules to one bounded time-window
+page without reading or modifying the live source cursor. `list_entries_page()`
+uses a `(source_rowid, event_id)` keyset and caps each decoded page at 20.
+
+An authenticated receiver `missing` result calls
+`requeue_acknowledged_for_reconciliation()`. It changes only an acknowledged
+entry to queued, clears the old ACK timestamp, resets its retry-cycle count,
+and preserves total attempts/history. Pending or dead-letter entries are not
+implicitly reset. A `present` result may use the normal late-ACK path only when
+the local event already has an attempt. Conflict never mutates delivery state.
 
 ## Configuration
 

@@ -11,7 +11,11 @@ import stat
 import threading
 import time
 
-from .protocol import ValidatedEnvelope
+from .protocol import (
+    ReconciliationCandidate,
+    ReconciliationReceipt,
+    ValidatedEnvelope,
+)
 
 
 RECEIVER_SCHEMA_VERSION = 1
@@ -195,6 +199,32 @@ class ReceiverStateStore:
             except sqlite3.Error as exc:
                 raise ReceiverStoreError("event could not be read") from exc
         return str(row["event_json"]) if row is not None else None
+
+    def reconcile_receipts(
+        self,
+        candidates: tuple[ReconciliationCandidate, ...],
+    ) -> tuple[ReconciliationReceipt, ...]:
+        """Classify only sender-provided candidates without mutating kiosk history."""
+
+        connection = self._require_connection()
+        receipts: list[ReconciliationReceipt] = []
+        with self._lock:
+            try:
+                for candidate in candidates:
+                    row = connection.execute(
+                        "SELECT event_digest FROM received_events WHERE event_id = ?",
+                        (candidate.event_id,),
+                    ).fetchone()
+                    if row is None:
+                        status = "missing"
+                    elif row["event_digest"] == candidate.event_digest:
+                        status = "present"
+                    else:
+                        status = "conflict"
+                    receipts.append(ReconciliationReceipt(candidate.event_id, status))
+            except sqlite3.Error as exc:
+                raise ReceiverStoreError("receipts could not be reconciled") from exc
+        return tuple(receipts)
 
     def summary(self) -> ReceiverSummary:
         connection = self._require_connection()

@@ -281,6 +281,74 @@ class RelayStateTests(unittest.TestCase):
             self.assertEqual(store.get_entry("ONE").retry_cycle_attempt_count, 1)
             self.assertEqual(len(store.list_attempts("ONE")), 3)
 
+    def test_reconciliation_commit_pagination_and_selective_requeue_are_bounded(self) -> None:
+        with self._store() as store:
+            store.commit_scan(
+                ScanBatch(
+                    (_message_event(1, "ONE"), _message_event(3, "THREE")),
+                    (),
+                    3,
+                    3,
+                ),
+                expected_after_rowid=0,
+                now_ms=10,
+            )
+            first_attempt = store.claim_next(now_ms=20)
+            store.acknowledge(first_attempt.event.event_id, now_ms=21)
+
+            lookback = ScanBatch((_message_event(2, "TWO"),), (), 1, 2)
+            committed = store.commit_reconciliation_batch(
+                lookback,
+                expected_after_rowid=0,
+                start_timestamp_raw_ns=0,
+                end_timestamp_raw_ns=4_000_000_000,
+                now_ms=30,
+            )
+            repeated = store.commit_reconciliation_batch(
+                lookback,
+                expected_after_rowid=0,
+                start_timestamp_raw_ns=0,
+                end_timestamp_raw_ns=4_000_000_000,
+                now_ms=31,
+            )
+
+            page_one = store.list_entries_page(limit=1)
+            page_two = store.list_entries_page(
+                after_source_rowid=page_one[-1].event.source_rowid,
+                after_event_id=page_one[-1].event.event_id,
+                limit=1,
+            )
+            page_three = store.list_entries_page(
+                after_source_rowid=page_two[-1].event.source_rowid,
+                after_event_id=page_two[-1].event.event_id,
+                limit=1,
+            )
+
+            self.assertEqual(store.source_cursor(), 3)
+            self.assertEqual(committed.inserted_event_count, 1)
+            self.assertEqual(repeated.inserted_event_count, 0)
+            self.assertEqual(
+                [page[0].event.event_id for page in (page_one, page_two, page_three)],
+                ["ONE", "TWO", "THREE"],
+            )
+            self.assertTrue(
+                store.requeue_acknowledged_for_reconciliation("ONE", now_ms=40)
+            )
+            self.assertFalse(
+                store.requeue_acknowledged_for_reconciliation("ONE", now_ms=41)
+            )
+            self.assertEqual(store.get_entry("ONE").status, QueueStatus.QUEUED)
+
+            with self.assertRaises(StateIntegrityError):
+                store.commit_reconciliation_batch(
+                    ScanBatch((_message_event(2, "TWO", text="changed"),), (), 1, 2),
+                    expected_after_rowid=0,
+                    start_timestamp_raw_ns=0,
+                    end_timestamp_raw_ns=4_000_000_000,
+                    now_ms=50,
+                )
+            self.assertEqual(store.get_entry("TWO").event.text, "hello")
+
     def test_ack_requires_a_known_attempted_event(self) -> None:
         self._commit_events(_message_event(1, "ONE"))
         with self._store() as store:

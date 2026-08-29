@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import http.client
 import json
 from pathlib import Path
@@ -27,7 +28,10 @@ from iphone_relay import (
 from kiosk_receiver import (
     AuthenticationError,
     IngestResult,
+    MAX_RECONCILIATION_CANDIDATES,
     ProtocolError,
+    ReconciliationCandidate,
+    ReconciliationReceipt,
     ReceiverApplication,
     ReceiverConfig,
     ReceiverConfigError,
@@ -35,8 +39,13 @@ from kiosk_receiver import (
     ReceiverStateStore,
     RequestAuthenticator,
     decode_event_envelope,
+    decode_reconciliation_request,
+    decode_reconciliation_response,
     encode_event_envelope,
+    encode_reconciliation_request,
+    event_wire_digest,
     event_to_wire_mapping,
+    reconciliation_response_body,
     build_server,
     load_receiver_config,
     sign_request,
@@ -118,6 +127,59 @@ class ReceiverProtocolTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             decode_event_envelope(json.dumps(value).encode())
 
+    def test_reconciliation_request_and_response_are_strict_and_bounded(self) -> None:
+        candidate = ReconciliationCandidate(
+            "EVENT-INVENTED",
+            event_wire_digest(_message_event()),
+        )
+        request = decode_reconciliation_request(
+            encode_reconciliation_request((candidate,), "reconcile-1")
+        )
+        response = decode_reconciliation_response(
+            reconciliation_response_body(
+                request_id=request.request_id,
+                receipts=(ReconciliationReceipt(candidate.event_id, "present"),),
+            )
+        )
+
+        self.assertEqual(request.candidates, (candidate,))
+        self.assertEqual(response.receipts[0].status, "present")
+
+        duplicate = json.loads(encode_reconciliation_request((candidate,), "duplicate"))
+        duplicate["candidates"].append(duplicate["candidates"][0])
+        with self.assertRaises(ProtocolError):
+            decode_reconciliation_request(json.dumps(duplicate).encode())
+        with self.assertRaises(ProtocolError):
+            encode_reconciliation_request(
+                (candidate,) * (MAX_RECONCILIATION_CANDIDATES + 1),
+                "oversized",
+            )
+        with self.assertRaises(ProtocolError):
+            encode_reconciliation_request(
+                (ReconciliationCandidate("EVENT-INVENTED", "not-a-digest"),),
+                "bad-digest",
+            )
+        maximum_candidates = tuple(
+            ReconciliationCandidate("\x01" * 510 + f"{index:02d}", "0" * 64)
+            for index in range(MAX_RECONCILIATION_CANDIDATES)
+        )
+        maximum_receipts = tuple(
+            ReconciliationReceipt(candidate.event_id, "missing")
+            for candidate in maximum_candidates
+        )
+        self.assertLessEqual(
+            len(encode_reconciliation_request(maximum_candidates, "maximum")),
+            64 * 1024,
+        )
+        self.assertLessEqual(
+            len(
+                reconciliation_response_body(
+                    request_id="maximum",
+                    receipts=maximum_receipts,
+                )
+            ),
+            64 * 1024,
+        )
 
 class ReceiverAuthenticationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -229,6 +291,41 @@ class ReceiverStoreTests(unittest.TestCase):
                 store.ingest(self.envelope, received_at_ms=100)
             self.assertEqual(store.summary().event_count, 0)
 
+    def test_reconciliation_classifies_candidates_without_deleting_kiosk_history(self) -> None:
+        kiosk_only = decode_event_envelope(
+            encode_event_envelope(
+                replace(
+                    _message_event(text="kiosk-only"),
+                    event_id="KIOSK-ONLY",
+                    message_id="KIOSK-ONLY",
+                ),
+                "kiosk-only-request",
+            )
+        )
+        with ReceiverStateStore(self.state_path) as store:
+            store.ingest(self.envelope, received_at_ms=100)
+            store.ingest(kiosk_only, received_at_ms=101)
+            receipts = store.reconcile_receipts(
+                (
+                    ReconciliationCandidate(
+                        self.envelope.event_id,
+                        self.envelope.event_digest,
+                    ),
+                    ReconciliationCandidate("MISSING", "0" * 64),
+                    ReconciliationCandidate(
+                        "KIOSK-ONLY",
+                        "1" * 64,
+                    ),
+                )
+            )
+
+            self.assertEqual(
+                [receipt.status for receipt in receipts],
+                ["present", "missing", "conflict"],
+            )
+            self.assertEqual(store.summary().event_count, 2)
+            self.assertIsNotNone(store.get_event_json("KIOSK-ONLY"))
+
 
 class ReceiverApplicationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -294,6 +391,33 @@ class ReceiverApplicationTests(unittest.TestCase):
         self.assertEqual(_json(malformed.body)["result"], "nack")
         self.assertEqual(unavailable.status_code, 503)
         self.assertEqual(_json(unavailable.body)["error"]["code"], "storage_unavailable")
+
+    def test_authenticated_reconciliation_reports_only_requested_receipts(self) -> None:
+        event_body = encode_event_envelope(_message_event(), "seed-request")
+        self._request("POST", "/v1/events", event_body, "seed-nonce")
+        candidate = ReconciliationCandidate(
+            "EVENT-INVENTED",
+            event_wire_digest(_message_event()),
+        )
+        body = encode_reconciliation_request(
+            (candidate, ReconciliationCandidate("MISSING", "0" * 64)),
+            "reconcile-request",
+        )
+
+        response = self._request(
+            "POST",
+            "/v1/reconciliation",
+            body,
+            "reconcile-nonce",
+        )
+        decoded = decode_reconciliation_response(response.body)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [receipt.status for receipt in decoded.receipts],
+            ["present", "missing"],
+        )
+        self.assertEqual(self.store.summary().event_count, 1)
 
     def _request(self, method: str, path: str, body: bytes, nonce: str):
         return self.app.handle(
@@ -367,6 +491,38 @@ class ReceiverHTTPTests(unittest.TestCase):
         self.assertEqual(event_response.status, 201)
         self.assertEqual(_json(event_response.read())["event_id"], "EVENT-INVENTED")
         self.assertEqual(self.store.summary().event_count, 1)
+
+        reconciliation_body = encode_reconciliation_request(
+            (
+                ReconciliationCandidate(
+                    "EVENT-INVENTED",
+                    event_wire_digest(_message_event()),
+                ),
+            ),
+            "http-reconcile-1",
+        )
+        reconciliation_headers = sign_request(
+            SECRET,
+            key_id="test-client",
+            method="POST",
+            path="/v1/reconciliation",
+            timestamp=timestamp,
+            nonce="http-reconciliation",
+            body=reconciliation_body,
+        )
+        reconciliation_headers["Content-Type"] = "application/json"
+        connection.request(
+            "POST",
+            "/v1/reconciliation",
+            body=reconciliation_body,
+            headers=reconciliation_headers,
+        )
+        reconciliation_response = connection.getresponse()
+        decoded_reconciliation = decode_reconciliation_response(
+            reconciliation_response.read()
+        )
+        self.assertEqual(reconciliation_response.status, 200)
+        self.assertEqual(decoded_reconciliation.receipts[0].status, "present")
 
         oversized = b"{" + b"x" * 4096
         connection.request(

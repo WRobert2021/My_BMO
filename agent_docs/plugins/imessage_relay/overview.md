@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: future registry adapter; current packages iphone_relay and kiosk_receiver
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py]
 ---
 
 # Plugin: iMessage Relay
@@ -25,6 +25,7 @@ through Messages are out of scope.
 | normalized contracts/read-only parser | `iphone_relay/contracts.py`, `reader.py`, `attachments.py`, `attributed_body.py`, `timestamps.py` |
 | sender-side discovery/queue state | `iphone_relay/state.py`, `state_codec.py`, `state_config.py` |
 | simulated sender/delivery loop | `iphone_relay/sender.py` |
+| bounded reconciliation/selective resend | `iphone_relay/reconciliation.py`, `reader.py`, `state.py` |
 | kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
 | kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json` |
@@ -48,6 +49,10 @@ failure isolation; do not move packages merely to make paths look integrated.
    HTTP(S) transport with fresh request authentication, strict ACK identity,
    durable retry/dead-letter outcomes, and content-free status. The complete
    path is verified only against invented local simulation data.
+5. `RelayReconciler` re-scans an explicit recent/month window without moving
+   the live cursor, compares bounded canonical event digests with kiosk
+   receipts, and selectively requeues acknowledged events reported missing.
+   Conflicts and kiosk-only history are never overwritten or deleted.
 
 ## Safety and failure boundaries
 

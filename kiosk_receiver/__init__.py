@@ -3,12 +3,24 @@
 from .auth import AUTH_SCHEME, AuthenticationError, RequestAuthenticator, sign_request
 from .config import ReceiverConfig, ReceiverConfigError, load_receiver_config
 from .protocol import (
+    EVENT_PATH,
+    MAX_RECONCILIATION_CANDIDATES,
     PROTOCOL_VERSION,
+    RECONCILIATION_PATH,
     ProtocolError,
+    ReconciliationCandidate,
+    ReconciliationReceipt,
     ValidatedEnvelope,
+    ValidatedReconciliationRequest,
+    ValidatedReconciliationResponse,
     decode_event_envelope,
+    decode_reconciliation_request,
+    decode_reconciliation_response,
     encode_event_envelope,
+    encode_reconciliation_request,
+    event_wire_digest,
     event_to_wire_mapping,
+    reconciliation_response_body,
 )
 from .server import ReceiverApplication, ReceiverServer, build_server
 from .store import IngestResult, ReceiverStateStore, ReceiverStoreError
@@ -16,9 +28,14 @@ from .store import IngestResult, ReceiverStateStore, ReceiverStoreError
 __all__ = [
     "AUTH_SCHEME",
     "AuthenticationError",
+    "EVENT_PATH",
     "IngestResult",
+    "MAX_RECONCILIATION_CANDIDATES",
     "PROTOCOL_VERSION",
+    "RECONCILIATION_PATH",
     "ProtocolError",
+    "ReconciliationCandidate",
+    "ReconciliationReceipt",
     "ReceiverApplication",
     "ReceiverConfig",
     "ReceiverConfigError",
@@ -27,10 +44,17 @@ __all__ = [
     "ReceiverStoreError",
     "RequestAuthenticator",
     "ValidatedEnvelope",
+    "ValidatedReconciliationRequest",
+    "ValidatedReconciliationResponse",
     "build_server",
     "decode_event_envelope",
+    "decode_reconciliation_request",
+    "decode_reconciliation_response",
     "encode_event_envelope",
+    "encode_reconciliation_request",
+    "event_wire_digest",
     "event_to_wire_mapping",
     "load_receiver_config",
+    "reconciliation_response_body",
     "sign_request",
 ]

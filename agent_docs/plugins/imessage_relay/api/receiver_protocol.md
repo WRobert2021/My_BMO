@@ -6,8 +6,8 @@ Current stage/status is intentionally omitted; see `../progress.md`.
 
 ## Status and Boundary
 
-This document records the Stage 4 kiosk receiver protocol as used by the Stage
-5 simulated sender on 2026-08-28. The receiver is a standalone,
+This document records the Stage 4 kiosk receiver protocol as extended by the
+Stage 6 reconciliation endpoint on 2026-08-28. The receiver is a standalone,
 standard-library Python package. It is not registered with application startup,
 does not read Apple Messages data, and does not contact an iPhone.
 
@@ -42,6 +42,7 @@ message content.
 | Method and path | Purpose | Success |
 | --- | --- | --- |
 | `POST /v1/events` | Validate and durably ingest one event | `201` accepted or `200` duplicate ACK |
+| `POST /v1/reconciliation` | Classify bounded sender receipt candidates | `200` ordered receipt statuses |
 | `GET /v1/health` | Confirm the authenticated service is responsive | `200` health document |
 | `GET /v1/status` | Return content-free durable counts and uptime | `200` status document |
 
@@ -138,9 +139,9 @@ receiver restart. Nonces older than twice the configured acceptance window are
 removed during later nonce transactions. A rejected payload consumes its nonce;
 a legitimate retry must use a new nonce and request ID.
 
-Clock synchronization remains an operational prerequisite. Stage 5 must expose
-the `stale_request` NACK as a distinct sender failure and must never respond by
-silently widening the replay window.
+Clock synchronization remains an operational prerequisite. The sender exposes
+the `stale_request` NACK as a distinct failure and never responds by silently
+widening the replay window.
 
 ## Durable Ingestion and Idempotency
 
@@ -164,6 +165,27 @@ network transmission as delivery.
 The receiver serializes transactions around its shared SQLite connection while
 the standard-library HTTP server may handle independent connections in worker
 threads. Shutdown closes the listening socket and state store explicitly.
+
+## Reconciliation Interface
+
+`POST /v1/reconciliation` accepts exactly a protocol version, request ID, and
+one through 20 unique candidates. Each candidate contains an event ID and the
+lowercase SHA-256 digest of the canonical path-free event JSON. The 20-item cap
+keeps maximum escaped identifiers within the sender's 64-KiB response bound.
+
+The successful response repeats the request ID and every candidate event ID in
+the same order with one status:
+
+- `present`: the kiosk has the same stable ID and canonical digest;
+- `missing`: the kiosk has no receipt for that stable ID; or
+- `conflict`: the kiosk has that stable ID with a different digest.
+
+The endpoint is authentication-first and consumes its nonce like every other
+request. Receipt lookup is bounded and read-only. It does not expose kiosk-only
+IDs, delete receipts, overwrite conflicts, accept event bodies, or itself queue
+a resend. The sender validates HTTP status, media type, protocol/request
+identity, exact candidate order, unique IDs, and every status before applying
+selective local transitions.
 
 ## Attachment Boundary
 
@@ -189,7 +211,7 @@ interpreted as a later request.
 
 | HTTP status | Stable error/result |
 | --- | --- |
-| `200` | Duplicate event ACK, or successful health/status |
+| `200` | Duplicate event ACK, successful reconciliation, health, or status |
 | `201` | Newly committed event ACK |
 | `400` | Malformed JSON/schema, incomplete body, or unsupported framing |
 | `401` | Missing, unknown, stale, or invalid authentication |

@@ -15,9 +15,12 @@ from iphone_relay.timestamps import apple_nanoseconds_to_datetime
 
 
 PROTOCOL_VERSION = 1
+EVENT_PATH = "/v1/events"
+RECONCILIATION_PATH = "/v1/reconciliation"
 MAX_EVENT_ID_LENGTH = 512
 MAX_REQUEST_ID_LENGTH = 128
 MAX_STRING_LENGTH = 1_000_000
+MAX_RECONCILIATION_CANDIDATES = 20
 
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _EVENT_KINDS = {"message", "reaction_added", "reaction_removed"}
@@ -35,6 +38,8 @@ _REACTION_KINDS = {
     "question",
     "unknown",
 }
+_RECEIPT_STATUSES = {"present", "missing", "conflict"}
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class ProtocolError(ValueError):
@@ -53,6 +58,30 @@ class ValidatedEnvelope:
     event_kind: str
     event_json: str
     event_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationCandidate:
+    event_id: str
+    event_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedReconciliationRequest:
+    request_id: str
+    candidates: tuple[ReconciliationCandidate, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationReceipt:
+    event_id: str
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedReconciliationResponse:
+    request_id: str
+    receipts: tuple[ReconciliationReceipt, ...]
 
 
 def event_to_wire_mapping(event: NormalizedEvent) -> dict[str, Any]:
@@ -159,6 +188,101 @@ def decode_event_envelope(body: bytes) -> ValidatedEnvelope:
     )
 
 
+def event_wire_digest(event: NormalizedEvent) -> str:
+    """Return the receiver's canonical digest for one path-free event."""
+
+    validated = _event(event_to_wire_mapping(event))
+    return hashlib.sha256(_canonical_json(validated).encode("utf-8")).hexdigest()
+
+
+def encode_reconciliation_request(
+    candidates: tuple[ReconciliationCandidate, ...],
+    request_id: str,
+) -> bytes:
+    """Encode one bounded sender receipt-membership request."""
+
+    validated = _reconciliation_candidates(candidates)
+    return _canonical_json(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": _request_id(request_id),
+            "candidates": [
+                {
+                    "event_id": candidate.event_id,
+                    "event_digest": candidate.event_digest,
+                }
+                for candidate in validated
+            ],
+        }
+    ).encode("utf-8")
+
+
+def decode_reconciliation_request(body: bytes) -> ValidatedReconciliationRequest:
+    """Strictly decode a bounded receipt-membership request."""
+
+    value = _decode_json_object(body, "reconciliation request")
+    _exact_keys(value, {"protocol_version", "request_id", "candidates"})
+    if _integer(value["protocol_version"], "protocol version") != PROTOCOL_VERSION:
+        raise ProtocolError(
+            "unsupported_protocol_version",
+            "protocol version is unsupported",
+        )
+    raw_candidates = value["candidates"]
+    if not isinstance(raw_candidates, list):
+        raise ProtocolError("invalid_schema", "candidates must be a list")
+    candidates = _reconciliation_candidates(tuple(raw_candidates))
+    return ValidatedReconciliationRequest(
+        request_id=_request_id(value["request_id"]),
+        candidates=candidates,
+    )
+
+
+def reconciliation_response_body(
+    *,
+    request_id: str,
+    receipts: tuple[ReconciliationReceipt, ...],
+) -> bytes:
+    """Encode the receiver's bounded, order-preserving receipt classifications."""
+
+    validated = _reconciliation_receipts(receipts)
+    return _canonical_json(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": _request_id(request_id),
+            "result": "reconciliation",
+            "receipts": [
+                {"event_id": receipt.event_id, "status": receipt.status}
+                for receipt in validated
+            ],
+        }
+    ).encode("utf-8")
+
+
+def decode_reconciliation_response(body: bytes) -> ValidatedReconciliationResponse:
+    """Strictly decode a successful reconciliation response."""
+
+    value = _decode_json_object(body, "reconciliation response")
+    _exact_keys(
+        value,
+        {"protocol_version", "request_id", "result", "receipts"},
+    )
+    if _integer(value["protocol_version"], "protocol version") != PROTOCOL_VERSION:
+        raise ProtocolError(
+            "unsupported_protocol_version",
+            "protocol version is unsupported",
+        )
+    if value["result"] != "reconciliation":
+        raise ProtocolError("invalid_schema", "response result is invalid")
+    raw_receipts = value["receipts"]
+    if not isinstance(raw_receipts, list):
+        raise ProtocolError("invalid_schema", "receipts must be a list")
+    receipts = _reconciliation_receipts(tuple(raw_receipts))
+    return ValidatedReconciliationResponse(
+        request_id=_request_id(value["request_id"]),
+        receipts=receipts,
+    )
+
+
 def response_body(
     *,
     request_id: str | None,
@@ -177,6 +301,102 @@ def response_body(
     else:
         value["error"] = {"code": error_code}
     return _canonical_json(value).encode("utf-8")
+
+
+def _decode_json_object(body: bytes, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(
+            body.decode("utf-8"),
+            object_pairs_hook=_strict_object,
+            parse_constant=_reject_constant,
+        )
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise ProtocolError("malformed_json", f"{label} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ProtocolError("invalid_schema", f"{label} must be an object")
+    return value
+
+
+def _reconciliation_candidates(
+    values: tuple[object, ...],
+) -> tuple[ReconciliationCandidate, ...]:
+    if not 1 <= len(values) <= MAX_RECONCILIATION_CANDIDATES:
+        raise ProtocolError(
+            "invalid_schema",
+            "candidate count is outside the supported range",
+        )
+    result: list[ReconciliationCandidate] = []
+    seen: set[str] = set()
+    for value in values:
+        if isinstance(value, ReconciliationCandidate):
+            candidate = value
+        else:
+            if not isinstance(value, dict):
+                raise ProtocolError("invalid_schema", "candidate must be an object")
+            _exact_keys(value, {"event_id", "event_digest"})
+            candidate = ReconciliationCandidate(
+                event_id=_string(
+                    value["event_id"],
+                    "event ID",
+                    maximum=MAX_EVENT_ID_LENGTH,
+                ),
+                event_digest=_digest(value["event_digest"]),
+            )
+        event_id = _string(
+            candidate.event_id,
+            "event ID",
+            maximum=MAX_EVENT_ID_LENGTH,
+        )
+        digest = _digest(candidate.event_digest)
+        if event_id in seen:
+            raise ProtocolError("invalid_schema", "candidate event IDs must be unique")
+        seen.add(event_id)
+        result.append(ReconciliationCandidate(event_id, digest))
+    return tuple(result)
+
+
+def _reconciliation_receipts(
+    values: tuple[object, ...],
+) -> tuple[ReconciliationReceipt, ...]:
+    if not 1 <= len(values) <= MAX_RECONCILIATION_CANDIDATES:
+        raise ProtocolError(
+            "invalid_schema",
+            "receipt count is outside the supported range",
+        )
+    result: list[ReconciliationReceipt] = []
+    seen: set[str] = set()
+    for value in values:
+        if isinstance(value, ReconciliationReceipt):
+            receipt = value
+        else:
+            if not isinstance(value, dict):
+                raise ProtocolError("invalid_schema", "receipt must be an object")
+            _exact_keys(value, {"event_id", "status"})
+            receipt = ReconciliationReceipt(
+                event_id=_string(
+                    value["event_id"],
+                    "event ID",
+                    maximum=MAX_EVENT_ID_LENGTH,
+                ),
+                status=_choice(value["status"], _RECEIPT_STATUSES, "receipt status"),
+            )
+        event_id = _string(
+            receipt.event_id,
+            "event ID",
+            maximum=MAX_EVENT_ID_LENGTH,
+        )
+        status = _choice(receipt.status, _RECEIPT_STATUSES, "receipt status")
+        if event_id in seen:
+            raise ProtocolError("invalid_schema", "receipt event IDs must be unique")
+        seen.add(event_id)
+        result.append(ReconciliationReceipt(event_id, status))
+    return tuple(result)
+
+
+def _digest(value: object) -> str:
+    if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+        raise ProtocolError("invalid_schema", "event digest is invalid")
+    return value
 
 
 def _event(value: object) -> dict[str, Any]:
