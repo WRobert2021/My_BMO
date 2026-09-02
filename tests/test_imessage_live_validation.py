@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
+from contextlib import redirect_stdout
 
 from scripts import validate_imessage_live_readonly as live_validation
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class LiveValidationFixture:
@@ -170,6 +177,40 @@ class IMessageLiveValidationTests(unittest.TestCase):
                         self.fixture.messages_root,
                         scan_limit=invalid,
                     )
+
+    def test_direct_cli_help_resolves_project_imports(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "validate_imessage_live_readonly.py"),
+                "--help",
+            ],
+            cwd=PROJECT_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("read-only mount", completed.stdout)
+
+    def test_keyboard_interrupt_is_content_free_and_returns_130(self) -> None:
+        output = io.StringIO()
+        arguments = mock.Mock(messages_root=self.fixture.messages_root, scan_limit=10)
+
+        with (
+            mock.patch.object(live_validation, "parse_args", return_value=arguments),
+            mock.patch.object(
+                live_validation,
+                "validate_live_readonly",
+                side_effect=KeyboardInterrupt,
+            ),
+            redirect_stdout(output),
+        ):
+            status = live_validation.main()
+
+        self.assertEqual(status, 130)
+        self.assertEqual(json.loads(output.getvalue()), {"status": "interrupted"})
 
 
 def _sha256(path: Path) -> str:

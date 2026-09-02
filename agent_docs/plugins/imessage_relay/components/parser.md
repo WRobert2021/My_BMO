@@ -2,7 +2,8 @@
 
 ## Status and boundary
 
-Stage 2 is complete. Stage 8 live compatibility validation is in progress. The
+Stage 2 is complete, and Stage 8 live compatibility validation was accepted on
+2026-09-02. The
 `iphone_relay` package is a stateless, local parser
 for the conclusively supported Stage 1 schema. It is not a relay daemon, does
 not contain a queue or networking code, and has not been deployed to or run
@@ -114,9 +115,10 @@ outside the explicit private state and wire policies.
 - The typedstream fallback is verified with a sanitized archive shaped from
   the exact observed prefix. The supplied device snapshot has no natural row
   with null/empty `text` and usable attributed-body text.
-- Live schema/version compatibility, permissions, Python/SQLite behavior, and
-  WAL shared-memory effects remain Stage 8 acceptance work until the
-  authorized target is reachable and the manual checklist is recorded.
+- Live schema 89, source permissions, remote Python 3.9.9/SQLite 3.36.0,
+  WAL/disposable-copy behavior, the ROWID-range plan, bounded discovery, and
+  real attachment containment were accepted in Stage 8. The semantic cases
+  above remain explicitly unsupported or unverified.
 
 ## Stage 2 verification
 

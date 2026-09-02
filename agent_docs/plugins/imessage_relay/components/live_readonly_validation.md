@@ -28,13 +28,13 @@ chat IDs, GUIDs, ROWIDs, filenames, paths, attachment bytes, and hashes.
 
 ## Authorized manual procedure
 
-Use existing key-based SSH access. Do not put a password, key, device address,
-or private path in tracked configuration or shell history. First collect only
+Use existing authorized SSH access. Do not put a password, key, device address,
+or private path in tracked configuration. First collect only
 non-content compatibility facts:
 
 ```sh
 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes <authorized-target> \
-  'uname -sr; sysctl -n kern.osversion; python3 --version; python3 -c "import sqlite3; print(sqlite3.sqlite_version)"; stat -f "%Sp %Su %Sg" /var/mobile/Library/SMS/sms.db /var/mobile/Library/SMS/sms.db-wal /var/mobile/Library/SMS/sms.db-shm'
+  'uname -sr; uname -v; PYTHONDONTWRITEBYTECODE=1 python3 -B --version; PYTHONDONTWRITEBYTECODE=1 python3 -B -c "import sqlite3; print(sqlite3.sqlite_version)"; ls -ld /var/mobile/Library/SMS /var/mobile/Library/SMS/sms.db /var/mobile/Library/SMS/sms.db-wal /var/mobile/Library/SMS/sms.db-shm'
 ```
 
 Expose only the Messages root through a local read-only SSHFS mount, then run
@@ -83,9 +83,14 @@ is inconclusive rather than evidence of mutation and must be repeated during a
 quiet window. Do not proceed to Stage 9 until the complete checklist is
 recorded in `progress.md`.
 
+Stage 8 was accepted on 2026-09-02. The content-free environment, validation,
+new-row, interruption, immutability, and cleanup record is archived in
+`../history/stage_8.md`. Acceptance did not authorize Stage 9.
+
 ## Tests
 
 `tests/test_imessage_live_validation.py` uses invented temporary WAL fixtures.
 It verifies disposable-copy parsing, ROWID-plan and aggregate diagnostics,
 source/attachment hash preservation, output redaction, trio failure, bounded
-scan input, and fail-closed handling of a source change during copying.
+scan input, direct CLI loading, content-free interruption, and fail-closed
+handling of a source change during copying.

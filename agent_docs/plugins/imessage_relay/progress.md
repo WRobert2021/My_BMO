@@ -1,10 +1,10 @@
 # iMessage Relay Progress
 
 current_stage: 8
-current_chapter: Live iPhone read-only integration
-state: in_progress
-next_action: Restore local reachability to the authorized iPhone, then run and record the Stage 8 live checklist.
-last_verified: 2026-09-01
+current_chapter: Stage 8 acceptance gate
+state: complete
+next_action: Stop and wait for explicit authorization before Stage 9 live relay validation.
+last_verified: 2026-09-02
 
 ## Stage index
 
@@ -18,8 +18,8 @@ last_verified: 2026-09-01
 | 5 — simulated end-to-end relay | complete | local fault matrix and cleanup accepted |
 | 6 — reconciliation | complete | bounded recent/month selective repair accepted |
 | 7 — attachment transfer | complete | bounded resumable digest-verified transfer accepted |
-| 8 — live iPhone read-only integration | in progress | authorized; local validator ready; target unreachable |
-| 9 — live relay | not started | blocked by Stage 8 acceptance |
+| 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
+| 9 — live relay | not started | requires separate live-delivery authorization |
 | 10 — runtime/UI integration | not started | blocked by stable backend contracts |
 
 ## Current chapter
@@ -32,35 +32,28 @@ database, WAL/SHM, attachment, message, or metadata state.
 
 ### Completed
 
-- Received explicit Stage 8 authorization and an SSH target; the private target
-  is not stored in tracked files.
-- Added a privacy-safe validator that never opens the live SQLite database. It
-  fingerprints and copies the DB/WAL/SHM trio into disposable local storage,
-  validates stability, schema/WAL/query-plan/parser behavior on that copy, and
-  emits only aggregate diagnostics.
-- Added bounded attachment read verification and invented WAL-fixture tests for
-  source and attachment immutability, output redaction, trio/source-change
-  failures, and scan bounds.
-- Attempted non-interactive SSH and ICMP reachability. Both stopped before
-  authentication with `No route to host`; no command reached the phone.
+- Added and tested a privacy-safe validator that fingerprints and copies the
+  live DB/WAL/SHM trio into disposable local storage, opens SQLite only on the
+  copy, exercises bounded parser/attachment reads, and emits aggregate
+  diagnostics without content or identifiers.
+- Accepted the authorized live environment, schema 89/WAL/query plan,
+  filtering, clean repeat/restart, real attachment containment and unchanged
+  bytes/metadata, content-free permission failure, graceful SIGINT, source
+  fingerprint stability, and cleanup.
+- A user-created non-sensitive incoming message changed the bounded live
+  observation from 36 to 37 source rows and from 24 to 25 normalized message
+  events with no parser issue or relay transmission.
+- Cleanly unmounted SSHFS, closed the temporary authenticated control
+  connection, and removed every Stage 8 temporary directory. Detailed
+  content-free evidence is archived in `history/stage_8.md`.
 
-### Remaining acceptance work
+### Remaining and boundary
 
-- Record iOS/kernel, remote Python/SQLite, and Messages trio permission facts.
-- Run the validator through a read-only mount during a quiet source window and
-  record a content-free passing report, including a real available attachment
-  when present.
-- Verify a clean second run/restart, bounded discovery of a user-created test
-  row, graceful interruption/unmount, and fail-closed permission behavior.
-- Confirm before/after Apple DB/WAL/SHM and attachment observations are stable.
-
-### Blocker and boundary
-
-The local host currently has a route assigned through `en0`, but the authorized
-device does not answer and reports `No route to host`. Stage 8 acceptance is
-therefore incomplete. No live database was opened, no remote file or setting
-was changed, and no kiosk endpoint, sender delivery, deployment, daemon, or BMO
-runtime integration was attempted. Stage 9 remains unauthorized.
+No Stage 8 acceptance work remains. SQLite never opened the live source, no
+write-capability probe was attempted, no remote file or setting was changed,
+and no kiosk endpoint, sender delivery, deployment, daemon, or BMO runtime
+integration was attempted. Stage 9 remains unauthorized until a separate
+explicit request.
 
 Known later-stage risks remain: production endpoint trust, TLS/key provisioning,
 iPhone clock skew, scheduling, retention/pruning, and unverified edits,

@@ -19,8 +19,12 @@ from pathlib import Path
 import shutil
 import sqlite3
 import stat
+import sys
 import tempfile
 from typing import Any, Iterable
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from iphone_relay import (
     AttachmentAvailability,
@@ -363,6 +367,9 @@ def main() -> int:
     args = parse_args()
     try:
         report = validate_live_readonly(args.messages_root, scan_limit=args.scan_limit)
+    except KeyboardInterrupt:
+        print(json.dumps({"status": "interrupted"}, indent=2, sort_keys=True))
+        return 130
     except LiveValidationError as exc:
         report = {"status": "failed", "error_code": exc.code}
     except Exception:

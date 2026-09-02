@@ -64,6 +64,9 @@ failure isolation; do not move packages merely to make paths look integrated.
    copies the live DB/WAL/SHM trio to disposable local storage, and runs only
    privacy-safe schema, query-plan, parser, and attachment-read diagnostics.
 
+Stage 8 live read-only acceptance completed on 2026-09-02. It did not contact a
+kiosk endpoint or authorize Stage 9 live delivery.
+
 ## Safety and failure boundaries
 
 Apple's Messages database, WAL/SHM, attachments, metadata, and state are
