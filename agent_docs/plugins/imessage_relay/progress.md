@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 9
-current_chapter: Physical Raspberry Pi live-delivery acceptance
+current_stage: 10
+current_chapter: Physical kiosk runtime/UI acceptance
 state: in_progress
-next_action: Run the documented matrix in the authorized Raspberry Pi kiosk `.venv`, including a post-baseline live event and shutdown/retention decision.
+next_action: When the kiosk returns online, run the documented Stage 9 Pi matrix, then Stage 10 touch/VNC, listener binding, shutdown/restart, and stability acceptance without default enablement or deployment.
 last_verified: 2026-09-02
 
 ## Stage index
@@ -20,15 +20,15 @@ last_verified: 2026-09-02
 | 7 — attachment transfer | complete | bounded resumable digest-verified transfer accepted |
 | 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
 | 9 — live relay | in progress | authorized; checklist written; Pi acceptance pending |
-| 10 — runtime/UI integration | not started | blocked by stable backend contracts |
+| 10 — runtime/UI integration | in progress | offline implementation/tests complete; physical kiosk acceptance pending |
 
 ## Current chapter
 
 ### Objective
 
-Validate authenticated at-least-once delivery of real phone data into durable
-Raspberry Pi kiosk receiver state without weakening Apple-source safety or
-enabling automatic startup.
+Integrate the stable backend contracts into BMO's opt-in feature lifecycle with
+content-free status and explicit reconciliation controls. The kiosk is offline,
+so implementation and tests use invented local data only.
 
 ### Completed
 
@@ -49,20 +49,40 @@ enabling automatic startup.
   relay/receiver restart, stable source evidence, and missing-source failure.
 - A second macOS pass discovered and durably acknowledged exactly one new
   post-baseline text event with no issue or pending entry. The read-only mount
-  and authenticated control session then closed cleanly; private acceptance
-  state remains retained pending the operator's explicit cleanup decision.
+  and authenticated control session then closed cleanly. The operator chose
+  cleanup, and the private macOS acceptance-state directory was deleted and
+  verified absent.
 - Passed the complete isolated plugin suite: 99 tests and 17 subtests.
+- Received explicit Stage 10 authorization while the kiosk is offline and wrote
+  `components/runtime_integration.md` before implementation. Stage 9 remains
+  incomplete rather than being implicitly waived.
+- Implemented the non-default `bmo.features.imessage_relay` adapter. Enabled
+  registration owns one receiver listener/store; missing private config yields
+  a content-free degraded status surface, while disabled/metadata loading opens
+  no resources.
+- Added the Qt status view with aggregate receiver counts and explicit recent/
+  UTC-month reconciliation controls. Reconciliation is single-job, uses stable
+  disposable source copies and the existing authenticated Stage 6 protocol,
+  and opens relay state only inside its worker.
+- Added invented Stage 10 tests for lifecycle, isolation, real loopback receipt,
+  recent/month repair, source/config failure, redaction, Qt actions, cleanup,
+  worker join, store close, and port release. Focused result: 12 passed. Shared
+  extension/runtime-menu/Qt result: 114 passed and 51 subtests passed.
+- Passed the complete iMessage Relay suite: 111 tests and 17 subtests. Passed
+  the complete repository suite: 820 tests and 10,002 subtests.
 
 ### Remaining and boundary
 
-The current host is macOS, so its successful live rehearsal cannot complete
-Stage 9. Physical Raspberry Pi 5/aarch64/Python 3.13.5 evidence remains
-required, including the mount-loss/recovery window, a post-baseline user-made
-non-sensitive event, synchronized-clock evidence, deliberate shutdown, and an
-explicit operator decision about private acceptance-state retention. The Mac
-rehearsal covered its equivalents but cannot substitute for Pi evidence. No
-deployment, daemon, automatic startup, BMO registration, or Stage 10 work is
-authorized.
+Offline Stage 10 implementation acceptance is complete. Stage 10 remains absent
+from defaults and reads private config or starts resources only when explicitly
+enabled. Physical touch/VNC, listener binding, shutdown/restart, and long-run
+stability remain unverified while the kiosk is offline. No phone/kiosk contact,
+private provisioning, deployment, daemon, sender loop, or outbound Messages
+action was performed.
+
+Stage 9 still requires its physical Raspberry Pi 5/aarch64/Python 3.13.5 matrix.
+Stage 10 additionally requires physical kiosk touch/VNC, listener binding,
+shutdown/restart, and stability evidence after the kiosk returns online.
 
 Known later-stage risks remain: production endpoint trust, TLS/key provisioning,
 iPhone clock skew, scheduling, retention/pruning, and unverified edits,

@@ -82,3 +82,19 @@ evidence of no Apple-state mutation. Stage 9 requires a written live acceptance
 checklist. Stage 10 must use the normal plugin lifecycle: disabled means no
 port/listener/worker/store, failure cannot block startup, and cleanup releases
 every resource.
+
+## Stage 10 acceptance shape
+
+After explicit authorization, add an opt-in BMO feature/service adapter without
+changing the default feature list. Imports and menu metadata remain
+resource-free; enabled registration starts the owned receiver listener only
+after private config validation. Startup failure leaves a content-free degraded
+status UI and cannot block BMO or later plugins. Provide aggregate status plus
+explicit recent/month reconciliation controls that use stable disposable source
+copies and the existing bounded idempotent protocol. Reject concurrent jobs and
+fail closed when config, source, authentication, or storage is unavailable.
+Close the view, reconciliation worker, listener, store, socket, and port exactly
+once on registry shutdown. Validate with invented local data and offscreen Qt,
+then stop before default enablement, private provisioning, deployment, daemon
+installation, phone contact, or outbound Messages actions. Physical kiosk
+touch/VNC, binding, restart, and stability evidence remains a final gate.

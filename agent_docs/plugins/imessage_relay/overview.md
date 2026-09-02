@@ -2,10 +2,10 @@
 id: plugin.imessage_relay
 type: plugin
 plugin_type: feature/service
-entrypoint: future registry adapter; current packages iphone_relay and kiosk_receiver
+entrypoint: bmo.features.imessage_relay (opt-in); backend packages iphone_relay and kiosk_receiver
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py]
 ---
 
 # Plugin: iMessage Relay
@@ -32,13 +32,14 @@ through Messages are out of scope.
 | manual live-delivery acceptance | `scripts/run_imessage_live_delivery.py` |
 | kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
 | kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
-| configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json` |
-| UI/registry adapter | not implemented |
+| configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json`, disabled entry in `config/example.features.json` |
+| BMO lifecycle/status/reconciliation adapter | `bmo/features/imessage_relay.py` |
+| Qt status view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
 
-The current source is intentionally standalone and is not imported, enabled,
-or started by the BMO runtime. Architectural ownership is nevertheless the
-iMessage Relay plugin. Future integration must use normal plugin lifecycle and
-failure isolation; do not move packages merely to make paths look integrated.
+The backend packages remain standalone and reusable. The Stage 10 adapter is
+absent from feature defaults and starts only when an explicit enabled feature
+entry names it. This preserves the development boundary without exempting the
+listener, worker, stores, UI, or cleanup from normal plugin contracts.
 
 ## Implemented flow
 
@@ -69,6 +70,10 @@ failure isolation; do not move packages merely to make paths look integrated.
    durable queue, attachment sender, and real loopback receiver. It injects
    bounded auth, outage, lost-ACK, and restart faults and emits only aggregate
    acceptance status. It creates no daemon or BMO integration.
+9. The Stage 10 adapter owns an opt-in BMO receiver listener and content-free
+   Qt status view. Explicit recent/month controls start at most one worker,
+   use a disposable source snapshot, and reuse Stage 6 reconciliation against
+   the in-process authenticated receiver application. It has no sender loop.
 
 Stage 8 live read-only acceptance completed on 2026-09-02. Stage 9 has passed
 its macOS rehearsal but remains incomplete until the same matrix passes on the
@@ -85,11 +90,12 @@ directory.
 Logs omit content/handles/paths by default. Network receipt never means
 delivery without a validated kiosk ACK.
 
-The receiver currently runs only as an explicitly started standalone process,
-and the sender has no process entrypoint. No launch daemon is authorized.
-Current stores/listeners/transports close explicitly. Future plugin startup
-failure must mark only Relay unavailable/degraded while the application and
-unrelated plugins continue.
+The receiver can run either as its explicit standalone process or inside the
+enabled BMO feature lifecycle. BMO registration failure is content-free and
+isolated; invalid private receiver configuration registers a visibly degraded
+menu surface without a listener. Registry cleanup closes the view, joins a
+reconciliation job, shuts the listener, closes the store, and releases its
+port. No launch daemon or default enablement is authorized.
 
 ## Detailed routing
 

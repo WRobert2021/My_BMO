@@ -113,6 +113,7 @@ Rectangle {
             case "learning": return learningView
             case "music": return musicView
             case "galaxy_rvr": return galaxyRvrView
+            case "imessage_relay": return imessageRelayView
             default: return unknownView
             }
         }
@@ -124,6 +125,15 @@ Rectangle {
         wrapMode: Text.Wrap
         color: "#b3261e"
         font.pixelSize: 14
+    }
+
+    Component {
+        id: imessageRelayView
+
+        IMessageRelayView {
+            controller: root.controller
+            viewModel: root.viewModel
+        }
     }
 
     Component {

@@ -107,6 +107,16 @@
       }
     },
     {
+      "module": "bmo.features.imessage_relay",
+      "enabled": false,
+      "settings": {
+        "receiver_config_path": "config/imessage_receiver.json",
+        "relay_config_path": "config/imessage_relay.json",
+        "messages_root": "/mnt/imessage/SMS",
+        "reconciliation_recent_days": 7
+      }
+    },
+    {
       "module": "bmo.features.say_hello",
       "enabled": false,
       "settings": {

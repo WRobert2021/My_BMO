@@ -2,16 +2,15 @@
 
 ## Ownership model
 
-iMessage Relay is a first-class feature/service plugin even though its current
-Stage 2–7 code remains in standalone `iphone_relay/` and `kiosk_receiver/`
-packages. That separation was a development safety boundary, not a permanent
-exemption from plugin contracts. No source package move or runtime adapter is
-part of the documentation refactor.
+iMessage Relay is a first-class feature/service plugin. Its Stage 2–9 backend
+remains in standalone `iphone_relay/` and `kiosk_receiver/` packages; Stage 10
+adds the opt-in adapter at `bmo.features.imessage_relay` without moving either
+backend. The reusable separation is not an exemption from plugin contracts.
 
 Current boundaries are: Apple read-only parsing; relay-owned discovery/delivery
 state and reconciliation; a simulated sender and bounded HTTP(S) event/chunk
 transport; kiosk-owned authenticated receipt lookup, pending manifests, and
-attachment storage; and a future plugin lifecycle adapter. Discovery cursor,
+attachment storage; and an optional BMO lifecycle/status adapter. Discovery cursor,
 lookback observation, queued transmission, pending manifest, partial upload,
 complete kiosk receipt, and sender ACK are distinct states. Stable event GUIDs
 provide idempotency; source ROWIDs are local scan cursors only.
@@ -37,25 +36,30 @@ provide idempotency; source ROWIDs are local scan cursors only.
   service installation, live-iPhone access, or deployment occurs outside its
   explicitly authorized stage.
 
-## Intended runtime lifecycle
+## Runtime lifecycle
 
-When a future authorized stage adds the registry adapter:
+When an explicit feature entry enables the Stage 10 adapter:
 
 1. Import and menu metadata remain resource-free.
-2. If enabled, plugin runtime registration validates private config and starts
-   the owned service/listener.
-3. The listener remains active, authenticates iPhone traffic, commits through
-   relay-owned stores, and publishes content-free status/future UI state.
+2. Enabled registration validates the private receiver and relay config paths
+   and starts the owned receiver listener. The module remains outside defaults.
+3. The listener authenticates relay traffic, commits through the receiver-owned
+   store, and publishes content-free aggregate status. Recent/month
+   reconciliation starts only from an explicit UI action and opens its relay
+   store inside the single owned worker thread.
 4. If disabled, no port, listener, worker, or unnecessary store opens.
-5. Startup failure marks Relay unavailable/degraded and is isolated from app
-   startup and unrelated plugins.
-6. Cleanup stops accepting traffic, stops/joins workers, closes both owned
-   stores, closes the server socket, and releases the port exactly once.
+5. Invalid private receiver configuration leaves a visibly degraded registered
+   surface; malformed feature settings are isolated by loader rollback. Neither
+   case blocks app startup or unrelated plugins.
+6. Cleanup invalidates late callbacks, closes the view, joins the optional
+   reconciliation worker, stops accepting traffic, closes its per-job relay
+   store and long-lived receiver store, closes the socket, and releases the
+   port exactly once.
 
-The current implementation differs: `python -m kiosk_receiver.server` starts a
-standalone receiver explicitly, the Stage 5 sender has no standalone process
-entrypoint, and BMO's feature loader knows nothing about Relay. Document and
-preserve that distinction until the roadmap stage that authorizes integration.
+`python -m kiosk_receiver.server` remains an explicit standalone alternative.
+The Stage 5 sender still has no unattended process entrypoint, and Stage 10
+does not add a discovery/delivery loop, launch daemon, default feature entry,
+private provisioning, or outbound Messages action.
 
 ## Reliability model
 

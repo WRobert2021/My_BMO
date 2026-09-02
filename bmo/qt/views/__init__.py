@@ -4,6 +4,7 @@ from bmo.qt.views.album import QtAlbumView
 from bmo.qt.views.alarm_clock import QtAlarmClockView
 from bmo.qt.views.calendar import QtCalendarView
 from bmo.qt.views.galaxy_rvr import QtGalaxyRVRView
+from bmo.qt.views.imessage_relay import QtIMessageRelayView
 from bmo.qt.views.learning import QtLearningView
 from bmo.qt.views.matching_game import QtMatchingGameView
 from bmo.qt.views.music import QtMusicView
@@ -16,6 +17,7 @@ __all__ = [
     "QtAlarmClockView",
     "QtCalendarView",
     "QtGalaxyRVRView",
+    "QtIMessageRelayView",
     "QtLearningView",
     "QtMatchingGameView",
     "QtMusicView",

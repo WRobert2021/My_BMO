@@ -101,6 +101,7 @@ authentication failure, lost ACK, receiver outage, relay/receiver restart,
 duplicate prevention, stable-source checks, and fail-closed missing-source
 behavior. A second pass discovered and durably acknowledged exactly one
 post-baseline text event, then the read-only mount and SSH control connection
-closed cleanly. Private receiver/relay state was retained pending an explicit
-operator decision. This is evidence for runner readiness only and does not
-satisfy the physical-Pi acceptance gate.
+closed cleanly. The operator explicitly chose cleanup, and the private macOS
+receiver/relay state directory was deleted and verified absent. This is
+evidence for runner readiness only and does not satisfy the physical-Pi
+acceptance gate.
