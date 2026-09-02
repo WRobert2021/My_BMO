@@ -45,9 +45,12 @@ requeue transition. Repeating a reconciliation is idempotent: matching source
 events are not copied and an already requeued missing receipt is not requeued
 again.
 
-Kiosk receipt lookup is read-only and order-preserving under the store lock. It
-never enumerates kiosk-only IDs to the sender, deletes a receipt, overwrites a
-conflict, or treats sender absence as deletion authority.
+Kiosk receipt lookup is read-only and order-preserving under the store lock. A
+Stage 7 pending manifest is not a complete receipt and therefore classifies as
+missing; because its sender event is not acknowledged, reconciliation does not
+requeue or delete it. Lookup never enumerates kiosk-only IDs to the sender,
+deletes a receipt, overwrites a conflict, or treats sender absence as deletion
+authority.
 
 ## Bounds and failure behavior
 

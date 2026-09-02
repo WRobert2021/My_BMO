@@ -4,21 +4,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import hashlib
 import os
 from pathlib import Path
 import sqlite3
 import stat
 import threading
 import time
+from uuid import uuid4
 
 from .protocol import (
+    MAX_ATTACHMENT_CHUNK_BYTES,
     ReconciliationCandidate,
     ReconciliationReceipt,
     ValidatedEnvelope,
+    ValidatedUploadSessionRequest,
 )
 
 
-RECEIVER_SCHEMA_VERSION = 1
+RECEIVER_SCHEMA_VERSION = 2
 RECEIVER_APPLICATION_ID = 0x494D4B52  # ASCII "IMKR"
 
 
@@ -42,15 +46,71 @@ class ReplayError(ReceiverStoreError):
     pass
 
 
+class AttachmentStoreError(ReceiverStoreError):
+    code = "attachment_storage_unavailable"
+    http_status = 503
+
+
+class AttachmentUnavailableError(AttachmentStoreError):
+    code = "attachment_unavailable"
+    http_status = 422
+
+
+class AttachmentSessionError(AttachmentStoreError):
+    code = "attachment_session_invalid"
+    http_status = 409
+
+
+class AttachmentOffsetError(AttachmentStoreError):
+    code = "attachment_offset_mismatch"
+    http_status = 409
+
+
+class AttachmentDigestError(AttachmentStoreError):
+    code = "attachment_digest_mismatch"
+    http_status = 409
+
+
 class IngestResult(StrEnum):
     ACCEPTED = "accepted"
     DUPLICATE = "duplicate"
+    ATTACHMENTS_PENDING = "attachments_pending"
 
 
 @dataclass(frozen=True, slots=True)
 class ReceiverSummary:
     event_count: int
     last_received_at_ms: int | None
+    pending_event_count: int
+    partial_attachment_count: int
+    complete_attachment_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class AttachmentUploadSession:
+    upload_id: str
+    next_offset: int
+    expected_bytes: int
+    complete: bool
+    created: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AttachmentChunkResult:
+    upload_id: str
+    next_offset: int
+    complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StoredAttachment:
+    event_id: str
+    blob_id: str
+    expected_bytes: int
+    received_bytes: int
+    content_sha256: str | None
+    complete: bool
+    storage_path: Path | None
 
 
 class ReceiverStateStore:
@@ -58,6 +118,9 @@ class ReceiverStateStore:
 
     def __init__(self, database_path: Path | str) -> None:
         self.database_path = _validated_path(database_path)
+        self.attachment_root = self.database_path.parent / (
+            self.database_path.name + ".attachments"
+        )
         self._lock = threading.RLock()
         self._connection: sqlite3.Connection | None = None
         created = _create_private_file(self.database_path)
@@ -138,7 +201,7 @@ class ReceiverStateStore:
         *,
         received_at_ms: int | None = None,
     ) -> IngestResult:
-        """Commit exactly one event or identify an identical prior commit."""
+        """Commit an event only after every required attachment is durable."""
 
         when = _timestamp_ms(received_at_ms)
         connection = self._require_connection()
@@ -163,6 +226,91 @@ class ReceiverStateStore:
                         )
                     connection.execute("COMMIT")
                     return IngestResult.DUPLICATE
+
+                pending = connection.execute(
+                    """
+                    SELECT event_kind, event_json, event_digest
+                    FROM pending_events WHERE event_id = ?
+                    """,
+                    (envelope.event_id,),
+                ).fetchone()
+                if pending is not None:
+                    if (
+                        pending["event_kind"] != envelope.event_kind
+                        or pending["event_json"] != envelope.event_json
+                        or pending["event_digest"] != envelope.event_digest
+                    ):
+                        raise EventConflictError(
+                            "event ID is already associated with a different pending payload"
+                        )
+                    incomplete = connection.execute(
+                        """
+                        SELECT COUNT(*) AS count
+                        FROM attachment_uploads
+                        WHERE event_id = ? AND status != 'complete'
+                        """,
+                        (envelope.event_id,),
+                    ).fetchone()
+                    if int(incomplete["count"]) != 0:
+                        connection.execute("COMMIT")
+                        return IngestResult.ATTACHMENTS_PENDING
+                    connection.execute(
+                        """
+                        INSERT INTO received_events(
+                            event_id, event_kind, event_json, event_digest,
+                            first_request_id, received_at_ms
+                        )
+                        SELECT event_id, event_kind, event_json, event_digest,
+                               first_request_id, ?
+                        FROM pending_events WHERE event_id = ?
+                        """,
+                        (when, envelope.event_id),
+                    )
+                    connection.execute(
+                        "DELETE FROM pending_events WHERE event_id = ?",
+                        (envelope.event_id,),
+                    )
+                    connection.execute("COMMIT")
+                    return IngestResult.ACCEPTED
+
+                if envelope.unavailable_attachment_count:
+                    raise AttachmentUnavailableError(
+                        "event includes an attachment that cannot be transferred"
+                    )
+                if envelope.attachment_requirements:
+                    connection.execute(
+                        """
+                        INSERT INTO pending_events(
+                            event_id, event_kind, event_json, event_digest,
+                            first_request_id, received_at_ms
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            envelope.event_id,
+                            envelope.event_kind,
+                            envelope.event_json,
+                            envelope.event_digest,
+                            envelope.request_id,
+                            when,
+                        ),
+                    )
+                    for requirement in envelope.attachment_requirements:
+                        connection.execute(
+                            """
+                            INSERT INTO attachment_uploads(
+                                event_id, blob_id, expected_bytes,
+                                received_bytes, status, updated_at_ms
+                            ) VALUES (?, ?, ?, 0, 'awaiting', ?)
+                            """,
+                            (
+                                envelope.event_id,
+                                requirement.blob_id,
+                                requirement.expected_bytes,
+                                when,
+                            ),
+                        )
+                    connection.execute("COMMIT")
+                    return IngestResult.ATTACHMENTS_PENDING
                 connection.execute(
                     """
                     INSERT INTO received_events(
@@ -184,6 +332,9 @@ class ReceiverStateStore:
             except EventConflictError:
                 _rollback(connection)
                 raise
+            except AttachmentStoreError:
+                _rollback(connection)
+                raise
             except sqlite3.Error as exc:
                 _rollback(connection)
                 raise ReceiverStoreError("event could not be committed") from exc
@@ -199,6 +350,236 @@ class ReceiverStateStore:
             except sqlite3.Error as exc:
                 raise ReceiverStoreError("event could not be read") from exc
         return str(row["event_json"]) if row is not None else None
+
+    def begin_attachment_upload(
+        self,
+        request: ValidatedUploadSessionRequest,
+        *,
+        updated_at_ms: int | None = None,
+    ) -> AttachmentUploadSession:
+        """Create or resume one receiver-owned bounded attachment session."""
+
+        when = _timestamp_ms(updated_at_ms)
+        connection = self._require_connection()
+        with self._lock:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                pending = connection.execute(
+                    "SELECT 1 FROM pending_events WHERE event_id = ?",
+                    (request.event_id,),
+                ).fetchone()
+                row = connection.execute(
+                    """
+                    SELECT * FROM attachment_uploads
+                    WHERE event_id = ? AND blob_id = ?
+                    """,
+                    (request.event_id, request.blob_id),
+                ).fetchone()
+                if pending is None or row is None:
+                    raise AttachmentSessionError(
+                        "attachment session does not match a pending event manifest"
+                    )
+                if int(row["expected_bytes"]) != request.expected_bytes:
+                    raise AttachmentSessionError(
+                        "attachment size does not match the pending manifest"
+                    )
+                existing_digest = row["content_sha256"]
+                if (
+                    existing_digest is not None
+                    and existing_digest != request.content_sha256
+                    and int(row["received_bytes"]) != 0
+                ):
+                    raise AttachmentDigestError(
+                        "attachment digest changed after transfer began"
+                    )
+                created = row["upload_id"] is None
+                upload_id = row["upload_id"] or str(uuid4())
+                storage_name = row["storage_name"] or f"{upload_id}.blob"
+                _ensure_private_directory(self.attachment_root)
+                storage_path = self.attachment_root / storage_name
+                _create_private_upload_file(storage_path)
+                _normalize_upload_file(storage_path, int(row["received_bytes"]))
+
+                status = str(row["status"])
+                received_bytes = int(row["received_bytes"])
+                if request.expected_bytes == 0:
+                    if request.content_sha256 != hashlib.sha256(b"").hexdigest():
+                        raise AttachmentDigestError(
+                            "empty attachment digest does not match its content"
+                        )
+                    status = "complete"
+                elif status == "awaiting":
+                    status = "partial"
+                connection.execute(
+                    """
+                    UPDATE attachment_uploads
+                    SET upload_id = ?, content_sha256 = ?, status = ?,
+                        storage_name = ?, updated_at_ms = ?
+                    WHERE event_id = ? AND blob_id = ?
+                    """,
+                    (
+                        upload_id,
+                        request.content_sha256,
+                        status,
+                        storage_name,
+                        when,
+                        request.event_id,
+                        request.blob_id,
+                    ),
+                )
+                connection.execute("COMMIT")
+                return AttachmentUploadSession(
+                    upload_id=upload_id,
+                    next_offset=received_bytes,
+                    expected_bytes=request.expected_bytes,
+                    complete=status == "complete",
+                    created=created,
+                )
+            except AttachmentStoreError:
+                _rollback(connection)
+                raise
+            except (OSError, sqlite3.Error) as exc:
+                _rollback(connection)
+                raise AttachmentStoreError(
+                    "attachment session could not be prepared"
+                ) from exc
+
+    def append_attachment_chunk(
+        self,
+        *,
+        upload_id: str,
+        offset: int,
+        chunk: bytes,
+        updated_at_ms: int | None = None,
+    ) -> AttachmentChunkResult:
+        """Durably append one authenticated chunk and verify at completion."""
+
+        if not isinstance(chunk, bytes) or not 1 <= len(chunk) <= MAX_ATTACHMENT_CHUNK_BYTES:
+            raise ValueError("attachment chunk size is outside the supported range")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("attachment chunk offset is invalid")
+        when = _timestamp_ms(updated_at_ms)
+        connection = self._require_connection()
+        with self._lock:
+            prior_size: int | None = None
+            storage_path: Path | None = None
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                row = connection.execute(
+                    "SELECT * FROM attachment_uploads WHERE upload_id = ?",
+                    (upload_id,),
+                ).fetchone()
+                if row is None or row["storage_name"] is None:
+                    raise AttachmentSessionError("attachment upload session does not exist")
+                expected_bytes = int(row["expected_bytes"])
+                received_bytes = int(row["received_bytes"])
+                _ensure_private_directory(self.attachment_root)
+                storage_path = _attachment_storage_path(
+                    self.attachment_root,
+                    str(row["storage_name"]),
+                )
+                _normalize_upload_file(storage_path, received_bytes)
+
+                if offset < received_bytes:
+                    if offset + len(chunk) > received_bytes:
+                        raise AttachmentOffsetError(
+                            "attachment chunk overlaps the durable offset"
+                        )
+                    if _read_exact(storage_path, offset, len(chunk)) != chunk:
+                        raise AttachmentOffsetError(
+                            "replayed attachment chunk does not match durable bytes"
+                        )
+                    connection.execute("COMMIT")
+                    return AttachmentChunkResult(
+                        upload_id=upload_id,
+                        next_offset=received_bytes,
+                        complete=str(row["status"]) == "complete",
+                    )
+                if offset != received_bytes or offset + len(chunk) > expected_bytes:
+                    raise AttachmentOffsetError(
+                        "attachment chunk does not match the durable offset"
+                    )
+
+                prior_size = received_bytes
+                _write_chunk(storage_path, offset, chunk)
+                next_offset = offset + len(chunk)
+                status = "partial"
+                if next_offset == expected_bytes:
+                    digest = _sha256_file(storage_path)
+                    if digest != row["content_sha256"]:
+                        _truncate_upload(storage_path, 0)
+                        connection.execute(
+                            """
+                            UPDATE attachment_uploads
+                            SET received_bytes = 0, status = 'partial', updated_at_ms = ?
+                            WHERE upload_id = ?
+                            """,
+                            (when, upload_id),
+                        )
+                        connection.execute("COMMIT")
+                        raise AttachmentDigestError(
+                            "completed attachment digest does not match"
+                        )
+                    status = "complete"
+                connection.execute(
+                    """
+                    UPDATE attachment_uploads
+                    SET received_bytes = ?, status = ?, updated_at_ms = ?
+                    WHERE upload_id = ?
+                    """,
+                    (next_offset, status, when, upload_id),
+                )
+                connection.execute("COMMIT")
+                return AttachmentChunkResult(
+                    upload_id=upload_id,
+                    next_offset=next_offset,
+                    complete=status == "complete",
+                )
+            except AttachmentDigestError:
+                raise
+            except AttachmentStoreError:
+                _rollback(connection)
+                raise
+            except (OSError, sqlite3.Error) as exc:
+                _rollback(connection)
+                if prior_size is not None and storage_path is not None:
+                    try:
+                        _truncate_upload(storage_path, prior_size)
+                    except OSError:
+                        pass
+                raise AttachmentStoreError(
+                    "attachment chunk could not be committed"
+                ) from exc
+
+    def get_attachment(self, event_id: str, blob_id: str) -> StoredAttachment | None:
+        connection = self._require_connection()
+        with self._lock:
+            try:
+                row = connection.execute(
+                    """
+                    SELECT * FROM attachment_uploads
+                    WHERE event_id = ? AND blob_id = ?
+                    """,
+                    (event_id, blob_id),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                raise ReceiverStoreError("attachment state could not be read") from exc
+        if row is None:
+            return None
+        storage_path = (
+            _attachment_storage_path(self.attachment_root, str(row["storage_name"]))
+            if row["storage_name"] is not None
+            else None
+        )
+        return StoredAttachment(
+            event_id=str(row["event_id"]),
+            blob_id=str(row["blob_id"]),
+            expected_bytes=int(row["expected_bytes"]),
+            received_bytes=int(row["received_bytes"]),
+            content_sha256=row["content_sha256"],
+            complete=str(row["status"]) == "complete",
+            storage_path=storage_path,
+        )
 
     def reconcile_receipts(
         self,
@@ -237,8 +618,21 @@ class ReceiverStateStore:
                     FROM received_events
                     """
                 ).fetchone()
+                pending_row = connection.execute(
+                    "SELECT COUNT(*) AS count FROM pending_events"
+                ).fetchone()
+                attachment_rows = connection.execute(
+                    """
+                    SELECT status, COUNT(*) AS count
+                    FROM attachment_uploads GROUP BY status
+                    """
+                ).fetchall()
             except sqlite3.Error as exc:
                 raise ReceiverStoreError("receiver status could not be read") from exc
+        attachment_counts = {
+            str(attachment_row["status"]): int(attachment_row["count"])
+            for attachment_row in attachment_rows
+        }
         return ReceiverSummary(
             event_count=int(row["event_count"]),
             last_received_at_ms=(
@@ -246,6 +640,12 @@ class ReceiverStateStore:
                 if row["last_received_at_ms"] is not None
                 else None
             ),
+            pending_event_count=int(pending_row["count"]),
+            partial_attachment_count=(
+                attachment_counts.get("awaiting", 0)
+                + attachment_counts.get("partial", 0)
+            ),
+            complete_attachment_count=attachment_counts.get("complete", 0),
         )
 
     def _require_connection(self) -> sqlite3.Connection:
@@ -286,15 +686,78 @@ class ReceiverStateStore:
                     ) WITHOUT ROWID;
                     CREATE INDEX authentication_nonces_signed_at
                         ON authentication_nonces(signed_at_seconds);
+                    CREATE TABLE pending_events (
+                        event_id TEXT PRIMARY KEY NOT NULL,
+                        event_kind TEXT NOT NULL,
+                        event_json TEXT NOT NULL,
+                        event_digest TEXT NOT NULL CHECK(length(event_digest) = 64),
+                        first_request_id TEXT NOT NULL,
+                        received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0)
+                    ) WITHOUT ROWID;
+                    CREATE TABLE attachment_uploads (
+                        event_id TEXT NOT NULL,
+                        blob_id TEXT NOT NULL,
+                        expected_bytes INTEGER NOT NULL CHECK(expected_bytes >= 0),
+                        content_sha256 TEXT CHECK(
+                            content_sha256 IS NULL OR length(content_sha256) = 64
+                        ),
+                        upload_id TEXT UNIQUE,
+                        received_bytes INTEGER NOT NULL CHECK(received_bytes >= 0),
+                        status TEXT NOT NULL CHECK(status IN (
+                            'awaiting', 'partial', 'complete'
+                        )),
+                        storage_name TEXT,
+                        updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+                        PRIMARY KEY(event_id, blob_id)
+                    ) WITHOUT ROWID;
+                    CREATE INDEX attachment_uploads_status
+                        ON attachment_uploads(status, updated_at_ms);
                     PRAGMA application_id = {RECEIVER_APPLICATION_ID};
                     PRAGMA user_version = {RECEIVER_SCHEMA_VERSION};
                     COMMIT;
                     """
                 )
                 return
-            expected = {"received_events", "authentication_nonces"}
             if application_id != RECEIVER_APPLICATION_ID:
                 raise ReceiverStoreSchemaError("file is not a receiver database")
+            version_one = {"received_events", "authentication_nonces"}
+            if user_version == 1 and tables == version_one:
+                connection.executescript(
+                    f"""
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE pending_events (
+                        event_id TEXT PRIMARY KEY NOT NULL,
+                        event_kind TEXT NOT NULL,
+                        event_json TEXT NOT NULL,
+                        event_digest TEXT NOT NULL CHECK(length(event_digest) = 64),
+                        first_request_id TEXT NOT NULL,
+                        received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0)
+                    ) WITHOUT ROWID;
+                    CREATE TABLE attachment_uploads (
+                        event_id TEXT NOT NULL,
+                        blob_id TEXT NOT NULL,
+                        expected_bytes INTEGER NOT NULL CHECK(expected_bytes >= 0),
+                        content_sha256 TEXT CHECK(
+                            content_sha256 IS NULL OR length(content_sha256) = 64
+                        ),
+                        upload_id TEXT UNIQUE,
+                        received_bytes INTEGER NOT NULL CHECK(received_bytes >= 0),
+                        status TEXT NOT NULL CHECK(status IN (
+                            'awaiting', 'partial', 'complete'
+                        )),
+                        storage_name TEXT,
+                        updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+                        PRIMARY KEY(event_id, blob_id)
+                    ) WITHOUT ROWID;
+                    CREATE INDEX attachment_uploads_status
+                        ON attachment_uploads(status, updated_at_ms);
+                    PRAGMA user_version = {RECEIVER_SCHEMA_VERSION};
+                    COMMIT;
+                    """
+                )
+                user_version = RECEIVER_SCHEMA_VERSION
+                tables = version_one | {"pending_events", "attachment_uploads"}
+            expected = version_one | {"pending_events", "attachment_uploads"}
             if user_version != RECEIVER_SCHEMA_VERSION:
                 raise ReceiverStoreSchemaError("receiver database schema is unsupported")
             if tables != expected:
@@ -322,6 +785,88 @@ def _validated_path(value: Path | str) -> Path:
         if mode & 0o077:
             raise ReceiverStoreSecurityError("receiver state must not be accessible by group or others")
     return path
+
+
+def _ensure_private_directory(path: Path) -> None:
+    if path.is_symlink():
+        raise AttachmentStoreError("attachment storage cannot be a symbolic link")
+    try:
+        path.mkdir(mode=0o700, parents=False, exist_ok=True)
+        if not path.is_dir() or stat.S_IMODE(path.stat().st_mode) & 0o077:
+            raise AttachmentStoreError("attachment storage must be a private directory")
+    except OSError as exc:
+        raise AttachmentStoreError("attachment storage directory is unavailable") from exc
+
+
+def _attachment_storage_path(root: Path, storage_name: str) -> Path:
+    if (
+        not storage_name
+        or Path(storage_name).name != storage_name
+        or storage_name in {".", ".."}
+    ):
+        raise AttachmentStoreError("attachment storage name is invalid")
+    return root / storage_name
+
+
+def _create_private_upload_file(path: Path) -> None:
+    if path.is_symlink():
+        raise AttachmentStoreError("attachment upload cannot be a symbolic link")
+    if path.exists():
+        if not path.is_file() or stat.S_IMODE(path.stat().st_mode) & 0o077:
+            raise AttachmentStoreError("attachment upload file is not private")
+        return
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+    except OSError as exc:
+        raise AttachmentStoreError("attachment upload file could not be created") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _normalize_upload_file(path: Path, durable_bytes: int) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise AttachmentStoreError("attachment upload file is unavailable")
+    if stat.S_IMODE(path.stat().st_mode) & 0o077:
+        raise AttachmentStoreError("attachment upload file is not private")
+    actual_bytes = path.stat().st_size
+    if actual_bytes < durable_bytes:
+        raise AttachmentStoreError("attachment upload is shorter than durable state")
+    if actual_bytes > durable_bytes:
+        _truncate_upload(path, durable_bytes)
+
+
+def _write_chunk(path: Path, offset: int, chunk: bytes) -> None:
+    with path.open("r+b", buffering=0) as stream:
+        stream.seek(offset)
+        written = stream.write(chunk)
+        if written != len(chunk):
+            raise OSError("attachment chunk write was incomplete")
+        os.fsync(stream.fileno())
+
+
+def _read_exact(path: Path, offset: int, length: int) -> bytes:
+    with path.open("rb", buffering=0) as stream:
+        stream.seek(offset)
+        return stream.read(length)
+
+
+def _truncate_upload(path: Path, length: int) -> None:
+    with path.open("r+b", buffering=0) as stream:
+        stream.truncate(length)
+        os.fsync(stream.fileno())
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb", buffering=0) as stream:
+        while True:
+            chunk = stream.read(MAX_ATTACHMENT_CHUNK_BYTES)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _create_private_file(path: Path) -> bool:

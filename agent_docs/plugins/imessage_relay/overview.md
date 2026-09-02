@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: future registry adapter; current packages iphone_relay and kiosk_receiver
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py]
 ---
 
 # Plugin: iMessage Relay
@@ -26,6 +26,7 @@ through Messages are out of scope.
 | sender-side discovery/queue state | `iphone_relay/state.py`, `state_codec.py`, `state_config.py` |
 | simulated sender/delivery loop | `iphone_relay/sender.py` |
 | bounded reconciliation/selective resend | `iphone_relay/reconciliation.py`, `reader.py`, `state.py` |
+| bounded attachment streaming | `iphone_relay/sender.py`, `kiosk_receiver/protocol.py`, `store.py`, `server.py` |
 | kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
 | kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json` |
@@ -53,13 +54,20 @@ failure isolation; do not move packages merely to make paths look integrated.
    the live cursor, compares bounded canonical event digests with kiosk
    receipts, and selectively requeues acknowledged events reported missing.
    Conflicts and kiosk-only history are never overwritten or deleted.
+6. For an event with available attachment data, the receiver first persists a
+   pending manifest. `RelaySender` hashes and sends each ordinary file or Live
+   Photo component in authenticated 64-KiB chunks, resumes from kiosk-owned
+   durable offsets, and acknowledges sender state only after a repeated event
+   receives an attachment-complete ACK.
 
 ## Safety and failure boundaries
 
 Apple's Messages database, WAL/SHM, attachments, metadata, and state are
 strictly read-only: no insert/update/delete, read-state/reaction change, send,
 checkpoint, attachment modification, or live-device deployment outside an
-authorized stage. Relay and receiver state are separate private SQLite files.
+authorized stage. Relay and receiver state are separate private SQLite files;
+receiver-owned partial and complete attachment files use a private sibling
+directory.
 Logs omit content/handles/paths by default. Network receipt never means
 delivery without a validated kiosk ACK.
 

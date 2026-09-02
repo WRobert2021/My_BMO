@@ -14,16 +14,24 @@ from typing import Mapping
 from .auth import AuthenticationError, RequestAuthenticator
 from .config import ReceiverConfig, ReceiverConfigError, load_receiver_config
 from .protocol import (
+    ATTACHMENT_CHUNK_PATH_PREFIX,
+    ATTACHMENT_SESSION_PATH,
     EVENT_PATH,
+    MAX_ATTACHMENT_CHUNK_BYTES,
     PROTOCOL_VERSION,
     RECONCILIATION_PATH,
     ProtocolError,
+    attachment_chunk_response_body,
+    decode_attachment_chunk_path,
     decode_event_envelope,
     decode_reconciliation_request,
+    decode_upload_session_request,
     reconciliation_response_body,
     response_body,
+    upload_session_response_body,
 )
 from .store import (
+    AttachmentStoreError,
     EventConflictError,
     IngestResult,
     ReceiverStateStore,
@@ -93,9 +101,52 @@ class ReceiverApplication:
                         "service": SERVER_NAME,
                         "status": "ok",
                         "event_count": summary.event_count,
+                        "pending_event_count": summary.pending_event_count,
+                        "partial_attachment_count": summary.partial_attachment_count,
+                        "complete_attachment_count": summary.complete_attachment_count,
                         "last_received_at_ms": summary.last_received_at_ms,
                         "uptime_seconds": max(0, now_seconds - self._started_at),
                     },
+                )
+            if method == "POST" and path == ATTACHMENT_SESSION_PATH:
+                upload_request = decode_upload_session_request(body)
+                request_id = upload_request.request_id
+                session = self.store.begin_attachment_upload(
+                    upload_request,
+                    updated_at_ms=now_seconds * 1_000,
+                )
+                return ApplicationResponse(
+                    201 if session.created else 200,
+                    upload_session_response_body(
+                        request_id=request_id,
+                        upload_id=session.upload_id,
+                        next_offset=session.next_offset,
+                        expected_bytes=session.expected_bytes,
+                        status="complete" if session.complete else "ready",
+                    ),
+                )
+            if method == "PUT" and path.startswith(ATTACHMENT_CHUNK_PATH_PREFIX):
+                upload_id, offset, request_id = decode_attachment_chunk_path(path)
+                if not 1 <= len(body) <= MAX_ATTACHMENT_CHUNK_BYTES:
+                    raise ProtocolError(
+                        "attachment_chunk_size_invalid",
+                        "attachment chunk size is outside the supported range",
+                        http_status=413,
+                    )
+                chunk = self.store.append_attachment_chunk(
+                    upload_id=upload_id,
+                    offset=offset,
+                    chunk=body,
+                    updated_at_ms=now_seconds * 1_000,
+                )
+                return ApplicationResponse(
+                    200,
+                    attachment_chunk_response_body(
+                        request_id=request_id,
+                        upload_id=chunk.upload_id,
+                        next_offset=chunk.next_offset,
+                        status="complete" if chunk.complete else "partial",
+                    ),
                 )
             if method == "POST" and path == RECONCILIATION_PATH:
                 reconciliation = decode_reconciliation_request(body)
@@ -123,6 +174,17 @@ class ReceiverApplication:
                 envelope,
                 received_at_ms=now_seconds * 1_000,
             )
+            if result is IngestResult.ATTACHMENTS_PENDING:
+                return ApplicationResponse(
+                    202,
+                    response_body(
+                        request_id=request_id,
+                        result="pending",
+                        status=result.value,
+                        event_id=envelope.event_id,
+                        attachment_status="partial",
+                    ),
+                )
             status_code = 201 if result is IngestResult.ACCEPTED else 200
             return ApplicationResponse(
                 status_code,
@@ -131,6 +193,9 @@ class ReceiverApplication:
                     result="ack",
                     status=result.value,
                     event_id=envelope.event_id,
+                    attachment_status=(
+                        "complete" if envelope.attachment_requirements else None
+                    ),
                 ),
             )
         except AuthenticationError as exc:
@@ -155,6 +220,15 @@ class ReceiverApplication:
                     request_id=request_id,
                     result="nack",
                     error_code="event_conflict",
+                ),
+            )
+        except AttachmentStoreError as exc:
+            return ApplicationResponse(
+                exc.http_status,
+                response_body(
+                    request_id=request_id,
+                    result="nack",
+                    error_code=exc.code,
                 ),
             )
         except ReceiverStoreError:
@@ -234,7 +308,41 @@ class ReceiverRequestHandler(BaseHTTPRequestHandler):
         self._dispatch(body=body)
 
     def do_PUT(self) -> None:
-        self._send_nack(405, "method_not_allowed")
+        if not self.path.startswith(ATTACHMENT_CHUNK_PATH_PREFIX):
+            self._send_nack(405, "method_not_allowed")
+            return
+        if self.headers.get("Transfer-Encoding") is not None:
+            self.close_connection = True
+            self._send_nack(400, "unsupported_transfer_encoding")
+            return
+        length_raw = self.headers.get("Content-Length")
+        try:
+            length = int(length_raw) if length_raw is not None else -1
+        except ValueError:
+            length = -1
+        if length < 0:
+            self.close_connection = True
+            self._send_nack(411, "content_length_required")
+            return
+        if length == 0 or length > MAX_ATTACHMENT_CHUNK_BYTES:
+            self.close_connection = True
+            self._send_nack(413, "attachment_chunk_size_invalid")
+            return
+        if self.headers.get_content_type() != "application/octet-stream":
+            self.close_connection = True
+            self._send_nack(415, "unsupported_media_type")
+            return
+        try:
+            body = self.rfile.read(length)
+        except (OSError, TimeoutError):
+            self.close_connection = True
+            self._send_nack(408, "request_timeout")
+            return
+        if len(body) != length:
+            self.close_connection = True
+            self._send_nack(400, "incomplete_request")
+            return
+        self._dispatch(body=body)
 
     def do_DELETE(self) -> None:
         self._send_nack(405, "method_not_allowed")

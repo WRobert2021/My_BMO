@@ -6,14 +6,15 @@ Current stage/status is intentionally omitted; see `../progress.md`.
 
 ## Status and Boundary
 
-This document records the Stage 4 kiosk receiver protocol as extended by the
-Stage 6 reconciliation endpoint on 2026-08-28. The receiver is a standalone,
+This document records the Stage 4 kiosk receiver protocol as extended by Stage
+6 reconciliation and Stage 7 attachment transfer on 2026-09-01. The receiver is a standalone,
 standard-library Python package. It is not registered with application startup,
 does not read Apple Messages data, and does not contact an iPhone.
 
 The protocol accepts normalized message and reaction events from the Stage 2
-contract. It deliberately excludes Apple source ROWIDs, filesystem paths, and
-attachment bytes from the network representation.
+contract. It deliberately excludes Apple source ROWIDs and filesystem paths.
+Attachment bytes use a separate bounded binary endpoint and never enter event
+JSON.
 
 ## Transport Decision
 
@@ -43,6 +44,8 @@ message content.
 | --- | --- | --- |
 | `POST /v1/events` | Validate and durably ingest one event | `201` accepted or `200` duplicate ACK |
 | `POST /v1/reconciliation` | Classify bounded sender receipt candidates | `200` ordered receipt statuses |
+| `POST /v1/attachment-sessions` | Create/resume one manifest-bound blob upload | `201` created or `200` resumed |
+| `PUT /v1/attachment-chunks/{upload_id}/{offset}/{request_id}` | Commit one bounded binary chunk | `200` partial/complete offset |
 | `GET /v1/health` | Confirm the authenticated service is responsive | `200` health document |
 | `GET /v1/status` | Return content-free durable counts and uptime | `200` status document |
 
@@ -146,21 +149,24 @@ widening the replay window.
 ## Durable Ingestion and Idempotency
 
 The receiver owns a separate private SQLite database with application ID
-`IMKR`, schema version 1, `0600` file creation, WAL journaling, foreign keys,
+`IMKR`, schema version 2, `0600` file creation, WAL journaling, foreign keys,
 and `synchronous=FULL`. Its tables contain:
 
 - canonical event JSON and its SHA-256 digest, keyed by stable event ID;
 - first request ID, event kind, and receipt time;
 - authenticated nonces keyed by client key ID and nonce.
+- pending canonical manifests and per-blob expected sizes, digests, upload IDs,
+  committed offsets, completion states, and private storage names.
 
-The server starts an immediate transaction, checks the event ID, and inserts a
-new canonical payload exactly once. It emits `201 accepted` only after the
-transaction commits. If the stable event ID and digest already exist, it emits
-`200 duplicate`; if the ID exists with different canonical content, it rolls
-back and emits `409 event_conflict`. Storage errors roll back and emit
-`503 storage_unavailable`, never an ACK. These rules persist across process
-restart and provide the kiosk half of at-least-once delivery without treating
-network transmission as delivery.
+The server starts an immediate transaction and checks the event ID. Events with
+no required blobs insert directly. Events with available attachment data first
+commit a pending manifest and return `202 attachments_pending`, which is not an
+ACK. After every required blob is complete, an identical repeated event promotes
+the manifest and emits `201 accepted` with `attachment_status: complete`. If the
+stable ID/digest already exists it emits `200 duplicate`; conflicting content
+rolls back with `409 event_conflict`. Storage errors never ACK. These rules
+persist across process restart and provide the kiosk half of at-least-once
+delivery without treating network transmission as delivery.
 
 The receiver serializes transactions around its shared SQLite connection while
 the standard-library HTTP server may handle independent connections in worker
@@ -189,21 +195,44 @@ selective local transitions.
 
 ## Attachment Boundary
 
-Stage 4 transmits attachment metadata only: stable IDs, parent message ID,
-display/type metadata, media category, declared and observed sizes,
-availability, and path-free Live Photo component metadata. Local `source_path`
-values and Apple ROWIDs are not part of the wire schema and are rejected as
-unknown fields.
+Event JSON carries stable IDs, parent message ID, display/type metadata, media
+category, declared/observed sizes, availability, and path-free Live Photo
+component metadata. Local `source_path` values and Apple ROWIDs are rejected.
 
-The `/v1/events` endpoint accepts only JSON and never accepts binary bodies or
-base64 attachment data. Stage 7 must define a separate authenticated streaming
-boundary with a declared byte count and content digest before attachment bytes
-can cross the network. Until then, an event ACK covers only the normalized
-event and attachment manifest, not the external attachment bytes.
+For an available ordinary attachment, the attachment ID is its blob ID. For a
+Live Photo, the still and motion component IDs are separate required blobs and
+the top-level still path is not transferred again. Missing or unsafe manifest
+entries cannot receive an event ACK.
+
+`POST /v1/attachment-sessions` accepts exact JSON fields for protocol/request
+identity, event ID, blob ID, expected byte count, and lowercase whole-blob
+SHA-256. The event must already exist as an identical pending manifest and the
+blob ID/size must match its requirement. The response supplies a receiver-owned
+upload ID, exact next durable offset, expected bytes, and `ready` or `complete`.
+
+Each chunk uses `application/octet-stream` and a generated path:
+
+```text
+/v1/attachment-chunks/UPLOAD-ID/65536/chunk-request-id
+```
+
+The upload ID, canonical decimal offset, request ID, and exact chunk body are
+bound by the normal HMAC because the signature covers the exact request target
+and body digest. Chunk responses repeat request/upload identity and return the
+next offset with `partial` or `complete`. Lost-response replays at an older
+offset are accepted only when the bytes exactly match durable storage.
+
+The receiver writes at most 64 KiB per request, flushes before committing the
+offset, and hashes the completed private file in bounded reads. A mismatched
+digest resets the partial offset to zero and never promotes the event. Valid
+version-1 receiver databases migrate to schema version 2 without losing event
+receipts or replay nonces.
 
 ## Limits, Timeouts, and Error Mapping
 
-The default request body limit is 2 MiB, configurable up to 8 MiB. The default
+The default JSON request body limit is 2 MiB, configurable up to 8 MiB. Binary
+chunks have an independent hard 64-KiB limit and one blob has a hard 2-GiB
+limit. The default
 read timeout is 10 seconds, configurable up to 120 seconds. Chunked transfer
 encoding is not accepted. Rejected oversized, incomplete, timed-out, or
 unsupported-media requests close the connection so unread body bytes cannot be
@@ -211,16 +240,18 @@ interpreted as a later request.
 
 | HTTP status | Stable error/result |
 | --- | --- |
-| `200` | Duplicate event ACK, successful reconciliation, health, or status |
-| `201` | Newly committed event ACK |
+| `200` | Duplicate/complete event ACK, reconciliation, upload resume/chunk, health, or status |
+| `201` | Newly committed event ACK or attachment session |
+| `202` | Pending attachment manifest; explicitly not an ACK |
 | `400` | Malformed JSON/schema, incomplete body, or unsupported framing |
 | `401` | Missing, unknown, stale, or invalid authentication |
 | `404` | Authenticated route is unknown |
 | `408` | Request body timeout |
-| `409` | Replayed nonce or conflicting event payload |
+| `409` | Replayed nonce, event/session/digest/offset conflict |
 | `411` | Missing content length |
-| `413` | Request body exceeds configured limit |
-| `415` | Event request is not JSON |
+| `413` | JSON request or binary chunk exceeds its limit |
+| `415` | Wrong JSON/binary media type |
+| `422` | Event includes an unavailable attachment |
 | `503` | Durable state is unavailable |
 
 ## Configuration and Operation
@@ -262,5 +293,15 @@ It additionally requires JSON media type, a bounded strict response body, the
 exact protocol version, the expected request/event IDs, and the defined HTTP
 status/ACK-status pairing before acknowledging sender state. Loopback plaintext
 is permitted only by explicit simulation opt-in. This integration does not
-authorize reconciliation, attachment bytes, live-device access, deployment,
-daemon installation, or application runtime registration.
+authorize live-device access, deployment, daemon installation, or application
+runtime registration.
+
+## Stage 7 Sender Integration
+
+An attachment-bearing event is not acknowledged on `202`. The sender hashes
+each required regular source file in 64-KiB reads, creates/resumes a session,
+sends bounded chunks with a fresh nonce/request ID, validates every next offset,
+and repeats the identical event after all blobs report complete. Sender state
+acknowledges only an exact final ACK containing `attachment_status: complete`.
+A legacy metadata-only ACK, missing/unsafe/changed source, timeout, mismatch,
+or negative response follows the existing bounded retry/dead-letter policy.

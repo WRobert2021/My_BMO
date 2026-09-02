@@ -38,11 +38,23 @@ never enumerate or delete kiosk-only history. Test repeated runs, malformed or
 mismatched responses, maximum wire bounds, restart-safe durable receipts, and
 both transport-neutral and real loopback paths. Stop when this matrix passes.
 
+## Stage 7 acceptance shape
+
+Only after explicit authorization, persist attachment-bearing events as pending
+until every available ordinary file or Live Photo component passes declared
+size and whole-file SHA-256 validation. Transfer with authenticated requests no
+larger than 64 KiB, persist receiver-owned offsets/files for restart resume,
+reject unavailable/changed sources and metadata-only ACKs, migrate existing
+receiver receipts without loss, and never load a whole file into memory. Test
+interruption/lost response, duplicate chunks, digest/offset mismatch, both
+sender and receiver restart, source immutability, transport-neutral calls, and
+real loopback HTTP. Stop before any live-iPhone access.
+
 ## Later safety gates
 
-Stage 6 must keep memory bounded and reuse idempotent receipt. Stage 7 decides
-whether event ACK requires all mandatory attachments and must represent partial
-state explicitly. Stage 8 requires separate live access authorization and
+Stage 6 must keep memory bounded and reuse idempotent receipt. Stage 7 requires
+all transferable attachment blobs before event ACK and represents partial state
+explicitly. Stage 8 requires separate live access authorization and
 evidence of no Apple-state mutation. Stage 9 requires a written live acceptance
 checklist. Stage 10 must use the normal plugin lifecycle: disabled means no
 port/listener/worker/store, failure cannot block startup, and cleanup releases

@@ -1,4 +1,4 @@
-"""Versioned, strict JSON contracts for kiosk relay ingestion."""
+"""Versioned strict event, reconciliation, and attachment contracts."""
 
 from __future__ import annotations
 
@@ -17,10 +17,14 @@ from iphone_relay.timestamps import apple_nanoseconds_to_datetime
 PROTOCOL_VERSION = 1
 EVENT_PATH = "/v1/events"
 RECONCILIATION_PATH = "/v1/reconciliation"
+ATTACHMENT_SESSION_PATH = "/v1/attachment-sessions"
+ATTACHMENT_CHUNK_PATH_PREFIX = "/v1/attachment-chunks/"
 MAX_EVENT_ID_LENGTH = 512
 MAX_REQUEST_ID_LENGTH = 128
 MAX_STRING_LENGTH = 1_000_000
 MAX_RECONCILIATION_CANDIDATES = 20
+MAX_ATTACHMENT_CHUNK_BYTES = 64 * 1024
+MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024 * 1024
 
 _SAFE_REQUEST_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _EVENT_KINDS = {"message", "reaction_added", "reaction_removed"}
@@ -40,6 +44,11 @@ _REACTION_KINDS = {
 }
 _RECEIPT_STATUSES = {"present", "missing", "conflict"}
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_UPLOAD_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
+_ATTACHMENT_CHUNK_PATH = re.compile(
+    r"/v1/attachment-chunks/([A-Za-z0-9][A-Za-z0-9_.:-]{0,127})/"
+    r"([0-9]+)/([A-Za-z0-9][A-Za-z0-9_.:-]{0,127})\Z"
+)
 
 
 class ProtocolError(ValueError):
@@ -58,6 +67,40 @@ class ValidatedEnvelope:
     event_kind: str
     event_json: str
     event_digest: str
+    attachment_requirements: tuple[AttachmentRequirement, ...]
+    unavailable_attachment_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class AttachmentRequirement:
+    blob_id: str
+    expected_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedUploadSessionRequest:
+    request_id: str
+    event_id: str
+    blob_id: str
+    expected_bytes: int
+    content_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedUploadSessionResponse:
+    request_id: str
+    upload_id: str
+    next_offset: int
+    expected_bytes: int
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedAttachmentChunkResponse:
+    request_id: str
+    upload_id: str
+    next_offset: int
+    status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +221,7 @@ def decode_event_envelope(body: bytes) -> ValidatedEnvelope:
         )
     request_id = _request_id(value["request_id"])
     event = _event(value["event"])
+    requirements, unavailable_count = _attachment_requirements(event)
     event_json = _canonical_json(event)
     return ValidatedEnvelope(
         request_id=request_id,
@@ -185,6 +229,209 @@ def decode_event_envelope(body: bytes) -> ValidatedEnvelope:
         event_kind=event["event_kind"],
         event_json=event_json,
         event_digest=hashlib.sha256(event_json.encode("utf-8")).hexdigest(),
+        attachment_requirements=requirements,
+        unavailable_attachment_count=unavailable_count,
+    )
+
+
+def encode_upload_session_request(
+    *,
+    request_id: str,
+    event_id: str,
+    blob_id: str,
+    expected_bytes: int,
+    content_sha256: str,
+) -> bytes:
+    """Encode one attachment upload create/resume request."""
+
+    return _canonical_json(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": _request_id(request_id),
+            "event_id": _string(event_id, "event ID", maximum=MAX_EVENT_ID_LENGTH),
+            "blob_id": _string(
+                blob_id,
+                "attachment blob ID",
+                maximum=MAX_EVENT_ID_LENGTH,
+            ),
+            "expected_bytes": _attachment_size(expected_bytes),
+            "content_sha256": _digest(content_sha256),
+        }
+    ).encode("utf-8")
+
+
+def decode_upload_session_request(body: bytes) -> ValidatedUploadSessionRequest:
+    """Strictly decode an attachment upload create/resume request."""
+
+    value = _decode_json_object(body, "attachment session request")
+    _exact_keys(
+        value,
+        {
+            "protocol_version",
+            "request_id",
+            "event_id",
+            "blob_id",
+            "expected_bytes",
+            "content_sha256",
+        },
+    )
+    if _integer(value["protocol_version"], "protocol version") != PROTOCOL_VERSION:
+        raise ProtocolError(
+            "unsupported_protocol_version",
+            "protocol version is unsupported",
+        )
+    return ValidatedUploadSessionRequest(
+        request_id=_request_id(value["request_id"]),
+        event_id=_string(
+            value["event_id"],
+            "event ID",
+            maximum=MAX_EVENT_ID_LENGTH,
+        ),
+        blob_id=_string(
+            value["blob_id"],
+            "attachment blob ID",
+            maximum=MAX_EVENT_ID_LENGTH,
+        ),
+        expected_bytes=_attachment_size(value["expected_bytes"]),
+        content_sha256=_digest(value["content_sha256"]),
+    )
+
+
+def upload_session_response_body(
+    *,
+    request_id: str,
+    upload_id: str,
+    next_offset: int,
+    expected_bytes: int,
+    status: str,
+) -> bytes:
+    """Encode a bounded attachment upload session response."""
+
+    if status not in {"ready", "complete"}:
+        raise ProtocolError("invalid_schema", "attachment session status is invalid")
+    return _canonical_json(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": _request_id(request_id),
+            "result": "attachment_session",
+            "upload_id": _upload_id(upload_id),
+            "next_offset": _attachment_size(next_offset),
+            "expected_bytes": _attachment_size(expected_bytes),
+            "status": status,
+        }
+    ).encode("utf-8")
+
+
+def decode_upload_session_response(body: bytes) -> ValidatedUploadSessionResponse:
+    value = _decode_json_object(body, "attachment session response")
+    _exact_keys(
+        value,
+        {
+            "protocol_version",
+            "request_id",
+            "result",
+            "upload_id",
+            "next_offset",
+            "expected_bytes",
+            "status",
+        },
+    )
+    if _integer(value["protocol_version"], "protocol version") != PROTOCOL_VERSION:
+        raise ProtocolError(
+            "unsupported_protocol_version",
+            "protocol version is unsupported",
+        )
+    if value["result"] != "attachment_session" or value["status"] not in {
+        "ready",
+        "complete",
+    }:
+        raise ProtocolError("invalid_schema", "attachment session response is invalid")
+    expected_bytes = _attachment_size(value["expected_bytes"])
+    next_offset = _attachment_size(value["next_offset"])
+    if next_offset > expected_bytes:
+        raise ProtocolError("invalid_schema", "attachment session offset is invalid")
+    if value["status"] == "complete" and next_offset != expected_bytes:
+        raise ProtocolError("invalid_schema", "completed attachment size is inconsistent")
+    return ValidatedUploadSessionResponse(
+        request_id=_request_id(value["request_id"]),
+        upload_id=_upload_id(value["upload_id"]),
+        next_offset=next_offset,
+        expected_bytes=expected_bytes,
+        status=value["status"],
+    )
+
+
+def attachment_chunk_path(*, upload_id: str, offset: int, request_id: str) -> str:
+    """Build the exact HMAC-bound path for one bounded binary chunk."""
+
+    return (
+        f"{ATTACHMENT_CHUNK_PATH_PREFIX}{_upload_id(upload_id)}/"
+        f"{_attachment_size(offset)}/{_request_id(request_id)}"
+    )
+
+
+def decode_attachment_chunk_path(path: str) -> tuple[str, int, str]:
+    if not isinstance(path, str):
+        raise ProtocolError("invalid_schema", "attachment chunk path is invalid")
+    match = _ATTACHMENT_CHUNK_PATH.fullmatch(path)
+    if match is None:
+        raise ProtocolError("invalid_schema", "attachment chunk path is invalid")
+    upload_id, offset_raw, request_id = match.groups()
+    offset = _attachment_size(int(offset_raw))
+    if str(offset) != offset_raw:
+        raise ProtocolError("invalid_schema", "attachment chunk offset is invalid")
+    return upload_id, offset, request_id
+
+
+def attachment_chunk_response_body(
+    *,
+    request_id: str,
+    upload_id: str,
+    next_offset: int,
+    status: str,
+) -> bytes:
+    if status not in {"partial", "complete"}:
+        raise ProtocolError("invalid_schema", "attachment chunk status is invalid")
+    return _canonical_json(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": _request_id(request_id),
+            "result": "attachment_chunk",
+            "upload_id": _upload_id(upload_id),
+            "next_offset": _attachment_size(next_offset),
+            "status": status,
+        }
+    ).encode("utf-8")
+
+
+def decode_attachment_chunk_response(body: bytes) -> ValidatedAttachmentChunkResponse:
+    value = _decode_json_object(body, "attachment chunk response")
+    _exact_keys(
+        value,
+        {
+            "protocol_version",
+            "request_id",
+            "result",
+            "upload_id",
+            "next_offset",
+            "status",
+        },
+    )
+    if _integer(value["protocol_version"], "protocol version") != PROTOCOL_VERSION:
+        raise ProtocolError(
+            "unsupported_protocol_version",
+            "protocol version is unsupported",
+        )
+    if value["result"] != "attachment_chunk" or value["status"] not in {
+        "partial",
+        "complete",
+    }:
+        raise ProtocolError("invalid_schema", "attachment chunk response is invalid")
+    return ValidatedAttachmentChunkResponse(
+        request_id=_request_id(value["request_id"]),
+        upload_id=_upload_id(value["upload_id"]),
+        next_offset=_attachment_size(value["next_offset"]),
+        status=value["status"],
     )
 
 
@@ -290,14 +537,19 @@ def response_body(
     status: str | None = None,
     event_id: str | None = None,
     error_code: str | None = None,
+    attachment_status: str | None = None,
 ) -> bytes:
     value: dict[str, Any] = {
         "protocol_version": PROTOCOL_VERSION,
         "request_id": request_id,
         "result": result,
     }
-    if result == "ack":
+    if result in {"ack", "pending"}:
         value.update({"status": status, "event_id": event_id})
+        if attachment_status is not None:
+            if attachment_status not in {"partial", "complete"}:
+                raise ProtocolError("invalid_schema", "attachment status is invalid")
+            value["attachment_status"] = attachment_status
     else:
         value["error"] = {"code": error_code}
     return _canonical_json(value).encode("utf-8")
@@ -397,6 +649,19 @@ def _digest(value: object) -> str:
     if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
         raise ProtocolError("invalid_schema", "event digest is invalid")
     return value
+
+
+def _upload_id(value: object) -> str:
+    if not isinstance(value, str) or _UPLOAD_ID.fullmatch(value) is None:
+        raise ProtocolError("invalid_schema", "upload ID is invalid")
+    return value
+
+
+def _attachment_size(value: object) -> int:
+    result = _nonnegative_integer(value, "attachment byte count")
+    if result > MAX_ATTACHMENT_BYTES:
+        raise ProtocolError("invalid_schema", "attachment exceeds the supported size")
+    return result
 
 
 def _event(value: object) -> dict[str, Any]:
@@ -530,6 +795,45 @@ def _attachment(value: object, message_id: str) -> str:
         _choice(component["role"], _COMPONENT_ROLES, "component role")
         _nonnegative_integer(component["actual_bytes"], "component byte count")
     return attachment_id
+
+
+def _attachment_requirements(
+    event: dict[str, Any],
+) -> tuple[tuple[AttachmentRequirement, ...], int]:
+    if event["event_kind"] != "message":
+        return (), 0
+    requirements: list[AttachmentRequirement] = []
+    seen: set[str] = set()
+    unavailable_count = 0
+    for attachment in event["attachments"]:
+        if attachment["availability"] != "available":
+            unavailable_count += 1
+            continue
+        components = attachment["components"]
+        blobs = (
+            (
+                (component["component_id"], component["actual_bytes"])
+                for component in components
+            )
+            if components
+            else ((attachment["attachment_id"], attachment["actual_bytes"]),)
+        )
+        for blob_id, expected_bytes in blobs:
+            blob_id = _string(
+                blob_id,
+                "attachment blob ID",
+                maximum=MAX_EVENT_ID_LENGTH,
+            )
+            if blob_id in seen:
+                raise ProtocolError(
+                    "invalid_schema",
+                    "attachment blob IDs must be unique within an event",
+                )
+            seen.add(blob_id)
+            requirements.append(
+                AttachmentRequirement(blob_id, _attachment_size(expected_bytes))
+            )
+    return tuple(requirements), unavailable_count
 
 
 def _canonical_json(value: object) -> str:

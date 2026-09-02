@@ -4,8 +4,10 @@
 
 Stage 3 implements a local, relay-owned SQLite state manager. Stage 5 uses its
 public claim/failure/ACK transitions from `sender.py`, and Stage 6 uses bounded
-lookback commits, keyset pages, and selective acknowledged-event requeue. The
-store itself remains independent of the kiosk application runtime and contains
+lookback commits, keyset pages, and selective acknowledged-event requeue.
+Stage 7 keeps relay schema version 1 and uses the same attempt lifecycle, but
+sender ACK now requires a kiosk attachment-complete event response. The store
+itself remains independent of the kiosk application runtime and contains
 no network client, receiver, authentication, live-iPhone access, launch daemon,
 or UI integration. Current stage authority lives only in `../progress.md`.
 
@@ -29,9 +31,11 @@ before a retry. Persisting the bounded normalized payload allows metadata and
 text retries without depending on the continued existence of the Apple row.
 
 Attachment bytes are not copied into SQLite. Payloads retain their normalized
-attachment metadata, availability, and contained source paths. Until Stage 7
-defines attachment spooling and completion-aware ACK semantics, removal of an
-Apple attachment remains a delivery risk.
+attachment metadata, availability, and contained source paths. Stage 7 reads
+available source files in bounded chunks while the attempt is in flight;
+missing, unsafe, size-changed, or metadata-changed sources fail into the normal
+retry/dead-letter policy. Durable partial bytes and offsets belong to the kiosk
+receiver rather than this sender database.
 
 Acknowledged events remain stored for stable-ID deduplication and
 reconciliation. Stage 6 does not add pruning: sender absence is not deletion
@@ -113,6 +117,12 @@ The delivery lease is not a claim that transmission succeeded. The Stage 5
 sender calls `acknowledge()` only after a strict expected kiosk ACK that follows
 durable, idempotent kiosk processing; every other result uses
 `record_failure()`.
+
+For an event with required attachment blobs, Stage 7 rejects a metadata-only
+ACK. `acknowledge()` is reached only after every blob is receiver-complete and a
+repeated canonical event returns `attachment_status: complete`. An interrupted
+chunk therefore finishes the current delivery attempt as failed while keeping
+its kiosk offset resumable for the next normal attempt.
 
 ## Reconciliation transitions
 

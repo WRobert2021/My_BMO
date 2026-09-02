@@ -1,15 +1,19 @@
-"""Stage 5 sender for simulated, at-least-once relay delivery."""
+"""Stage 5–7 sender for simulated, at-least-once relay delivery."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import hashlib
 import http.client
 import ipaddress
 import json
+import os
+from pathlib import Path
 import re
 import socket
 import ssl
+import stat
 import time
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import urlsplit
@@ -17,13 +21,22 @@ from uuid import uuid4
 
 from kiosk_receiver.auth import sign_request
 from kiosk_receiver.protocol import (
+    ATTACHMENT_CHUNK_PATH_PREFIX,
+    ATTACHMENT_SESSION_PATH,
     EVENT_PATH,
+    MAX_ATTACHMENT_BYTES,
+    MAX_ATTACHMENT_CHUNK_BYTES,
     PROTOCOL_VERSION,
     RECONCILIATION_PATH,
     ProtocolError,
+    attachment_chunk_path,
+    decode_attachment_chunk_response,
+    decode_upload_session_response,
     encode_event_envelope,
+    encode_upload_session_request,
 )
 
+from .contracts import AttachmentAvailability, MessageEvent, NormalizedEvent
 from .state import QueueStatus, RelayStateStore, StateSummary
 
 
@@ -51,6 +64,12 @@ _KNOWN_NACK_CODES = {
     "unsupported_media_type",
     "unsupported_protocol_version",
     "unsupported_transfer_encoding",
+    "attachment_chunk_size_invalid",
+    "attachment_digest_mismatch",
+    "attachment_offset_mismatch",
+    "attachment_session_invalid",
+    "attachment_storage_unavailable",
+    "attachment_unavailable",
 }
 
 
@@ -79,6 +98,7 @@ class EventTransport(Protocol):
         body: bytes,
         headers: Mapping[str, str],
         path: str = EVENT_PATH,
+        method: str = "POST",
     ) -> TransportResponse:
         """Send one event request and return the complete bounded response."""
 
@@ -90,6 +110,19 @@ class EventTransport(Protocol):
 class DeliveryResult:
     disposition: DeliveryDisposition
     error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _AttachmentSource:
+    blob_id: str
+    path: Path
+    expected_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class _EventResponse:
+    error_code: str | None
+    attachments_pending: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,10 +205,19 @@ class HTTPEventTransport:
         body: bytes,
         headers: Mapping[str, str],
         path: str = EVENT_PATH,
+        method: str = "POST",
     ) -> TransportResponse:
         if self._closed:
             raise SenderClosedError("relay sender transport is closed")
-        if path not in {EVENT_PATH, RECONCILIATION_PATH}:
+        if method == "POST" and path in {
+            EVENT_PATH,
+            RECONCILIATION_PATH,
+            ATTACHMENT_SESSION_PATH,
+        }:
+            pass
+        elif method == "PUT" and path.startswith(ATTACHMENT_CHUNK_PATH_PREFIX):
+            pass
+        else:
             raise ValueError("relay request path is unsupported")
         connection: http.client.HTTPConnection
         if self._scheme == "https":
@@ -193,7 +235,7 @@ class HTTPEventTransport:
             )
         try:
             connection.request(
-                "POST",
+                method,
                 path,
                 body=body,
                 headers=dict(headers),
@@ -214,7 +256,7 @@ class HTTPEventTransport:
 
 
 class RelaySender:
-    """Claim Stage 3 queue entries and deliver them under the Stage 4 protocol."""
+    """Claim queue entries and deliver events plus required attachment bytes."""
 
     def __init__(
         self,
@@ -271,32 +313,25 @@ class RelaySender:
             return DeliveryResult(DeliveryDisposition.IDLE, None)
         self._attempts_started += 1
 
-        request_id = self._fresh_identifier("request")
-        nonce = self._fresh_identifier("nonce")
         try:
-            body = encode_event_envelope(lease.event, request_id)
-            timestamp = int(self._clock())
-            headers = sign_request(
-                self._shared_secret,
-                key_id=self.key_id,
-                method="POST",
-                path=EVENT_PATH,
-                timestamp=timestamp,
-                nonce=nonce,
-                body=body,
+            attachment_sources = _attachment_sources(lease.event)
+            event_response = self._send_event(
+                lease.event,
+                has_attachments=bool(attachment_sources),
             )
-            headers.update(
-                {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                }
-            )
-            response = self.transport.send(body=body, headers=headers)
-            error_code = _response_error(
-                response,
-                expected_request_id=request_id,
-                expected_event_id=lease.event.event_id,
-            )
+            error_code = event_response.error_code
+            if error_code is None and event_response.attachments_pending:
+                for source in attachment_sources:
+                    self._upload_attachment(lease.event.event_id, source)
+                final_response = self._send_event(
+                    lease.event,
+                    has_attachments=True,
+                )
+                error_code = final_response.error_code
+                if error_code is None and final_response.attachments_pending:
+                    error_code = "attachments_incomplete"
+        except _AttachmentDeliveryError as exc:
+            error_code = exc.code
         except (TimeoutError, socket.timeout):
             error_code = "ack_timeout"
         except ProtocolError:
@@ -325,6 +360,125 @@ class RelaySender:
             else DeliveryDisposition.RETRY_SCHEDULED
         )
         return DeliveryResult(disposition, error_code)
+
+    def _send_event(
+        self,
+        event: NormalizedEvent,
+        *,
+        has_attachments: bool,
+    ) -> _EventResponse:
+        request_id = self._fresh_identifier("request")
+        nonce = self._fresh_identifier("nonce")
+        body = encode_event_envelope(event, request_id)
+        headers = sign_request(
+            self._shared_secret,
+            key_id=self.key_id,
+            method="POST",
+            path=EVENT_PATH,
+            timestamp=int(self._clock()),
+            nonce=nonce,
+            body=body,
+        )
+        headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+        response = self.transport.send(body=body, headers=headers)
+        return _event_response(
+            response,
+            expected_request_id=request_id,
+            expected_event_id=event.event_id,
+            has_attachments=has_attachments,
+        )
+
+    def _upload_attachment(self, event_id: str, source: _AttachmentSource) -> None:
+        descriptor, fingerprint = _open_attachment_source(source)
+        try:
+            content_sha256 = _hash_descriptor(descriptor)
+            request_id = self._fresh_identifier("request")
+            nonce = self._fresh_identifier("nonce")
+            body = encode_upload_session_request(
+                request_id=request_id,
+                event_id=event_id,
+                blob_id=source.blob_id,
+                expected_bytes=source.expected_bytes,
+                content_sha256=content_sha256,
+            )
+            headers = sign_request(
+                self._shared_secret,
+                key_id=self.key_id,
+                method="POST",
+                path=ATTACHMENT_SESSION_PATH,
+                timestamp=int(self._clock()),
+                nonce=nonce,
+                body=body,
+            )
+            headers.update(
+                {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                }
+            )
+            response = self.transport.send(
+                body=body,
+                headers=headers,
+                path=ATTACHMENT_SESSION_PATH,
+            )
+            session = _validated_upload_session_response(
+                response,
+                expected_request_id=request_id,
+                expected_bytes=source.expected_bytes,
+            )
+            offset = session.next_offset
+            os.lseek(descriptor, offset, os.SEEK_SET)
+            while offset < source.expected_bytes:
+                chunk = os.read(
+                    descriptor,
+                    min(MAX_ATTACHMENT_CHUNK_BYTES, source.expected_bytes - offset),
+                )
+                if not chunk:
+                    raise _AttachmentDeliveryError("attachment_source_changed")
+                chunk_request_id = self._fresh_identifier("request")
+                chunk_path = attachment_chunk_path(
+                    upload_id=session.upload_id,
+                    offset=offset,
+                    request_id=chunk_request_id,
+                )
+                chunk_headers = sign_request(
+                    self._shared_secret,
+                    key_id=self.key_id,
+                    method="PUT",
+                    path=chunk_path,
+                    timestamp=int(self._clock()),
+                    nonce=self._fresh_identifier("nonce"),
+                    body=chunk,
+                )
+                chunk_headers.update(
+                    {
+                        "Content-Type": "application/octet-stream",
+                        "Accept": "application/json",
+                    }
+                )
+                chunk_response = self.transport.send(
+                    body=chunk,
+                    headers=chunk_headers,
+                    path=chunk_path,
+                    method="PUT",
+                )
+                offset = _validated_chunk_response(
+                    chunk_response,
+                    expected_request_id=chunk_request_id,
+                    expected_upload_id=session.upload_id,
+                    prior_offset=offset,
+                    chunk_bytes=len(chunk),
+                    expected_bytes=source.expected_bytes,
+                )
+            if _descriptor_fingerprint(descriptor) != fingerprint:
+                raise _AttachmentDeliveryError("attachment_source_changed")
+        finally:
+            os.close(descriptor)
 
     def status(self) -> SenderStatus:
         """Return content-free queue and attempt counters."""
@@ -382,14 +536,15 @@ class RelaySender:
             raise SenderClosedError("relay sender is closed")
 
 
-def _response_error(
+def _event_response(
     response: TransportResponse,
     *,
     expected_request_id: str,
     expected_event_id: str,
-) -> str | None:
+    has_attachments: bool,
+) -> _EventResponse:
     if len(response.body) > MAX_RESPONSE_BYTES:
-        return "malformed_response"
+        return _EventResponse("malformed_response", False)
     content_type = next(
         (
             value
@@ -399,7 +554,7 @@ def _response_error(
         "",
     )
     if content_type.split(";", 1)[0].strip().lower() != "application/json":
-        return "malformed_response"
+        return _EventResponse("malformed_response", False)
     try:
         value = json.loads(
             response.body.decode("utf-8"),
@@ -407,22 +562,25 @@ def _response_error(
             parse_constant=_reject_constant,
         )
     except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError):
-        return "malformed_response"
+        return _EventResponse("malformed_response", False)
     if not isinstance(value, dict):
-        return "malformed_response"
+        return _EventResponse("malformed_response", False)
     version = value.get("protocol_version")
     if type(version) is not int or version != PROTOCOL_VERSION:
-        return "malformed_response"
+        return _EventResponse("malformed_response", False)
 
     if value.get("result") == "ack":
-        if set(value) != {
+        expected_keys = {
             "protocol_version",
             "request_id",
             "result",
             "status",
             "event_id",
-        }:
-            return "malformed_response"
+        }
+        if has_attachments:
+            expected_keys.add("attachment_status")
+        if set(value) != expected_keys:
+            return _EventResponse("malformed_response", False)
         status = value.get("status")
         if (
             value.get("request_id") != expected_request_id
@@ -430,27 +588,237 @@ def _response_error(
             or not isinstance(status, str)
             or status not in _ACK_STATUSES
             or response.status_code != _ACK_STATUSES[status]
+            or (has_attachments and value.get("attachment_status") != "complete")
         ):
-            return "ack_mismatch"
-        return None
+            return _EventResponse("ack_mismatch", False)
+        return _EventResponse(None, False)
+
+    if value.get("result") == "pending":
+        if (
+            not has_attachments
+            or set(value)
+            != {
+                "protocol_version",
+                "request_id",
+                "result",
+                "status",
+                "event_id",
+                "attachment_status",
+            }
+            or value.get("request_id") != expected_request_id
+            or value.get("event_id") != expected_event_id
+            or value.get("status") != "attachments_pending"
+            or value.get("attachment_status") != "partial"
+            or response.status_code != 202
+        ):
+            return _EventResponse("ack_mismatch", False)
+        return _EventResponse(None, True)
 
     if value.get("result") == "nack":
         if set(value) != {"protocol_version", "request_id", "result", "error"}:
-            return "malformed_response"
+            return _EventResponse("malformed_response", False)
         request_id = value.get("request_id")
         if request_id not in {None, expected_request_id}:
-            return "malformed_response"
+            return _EventResponse("malformed_response", False)
         error = value.get("error")
         if not isinstance(error, dict) or set(error) != {"code"}:
-            return "malformed_response"
+            return _EventResponse("malformed_response", False)
         code = error.get("code")
         if not isinstance(code, str) or not _SAFE_ERROR_CODE.fullmatch(code):
-            return "malformed_response"
+            return _EventResponse("malformed_response", False)
         if 200 <= response.status_code < 300:
-            return "malformed_response"
-        return code if code in _KNOWN_NACK_CODES else "receiver_nack"
+            return _EventResponse("malformed_response", False)
+        return _EventResponse(
+            code if code in _KNOWN_NACK_CODES else "receiver_nack",
+            False,
+        )
 
-    return "malformed_response"
+    return _EventResponse("malformed_response", False)
+
+
+class _AttachmentDeliveryError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def _attachment_sources(event: NormalizedEvent) -> tuple[_AttachmentSource, ...]:
+    if not isinstance(event, MessageEvent):
+        return ()
+    sources: list[_AttachmentSource] = []
+    seen: set[str] = set()
+    for attachment in event.attachments:
+        if attachment.availability is not AttachmentAvailability.AVAILABLE:
+            raise _AttachmentDeliveryError("attachment_source_unavailable")
+        if attachment.components:
+            candidates = (
+                (component.component_id, component.source_path, component.actual_bytes)
+                for component in attachment.components
+            )
+        else:
+            candidates = (
+                (attachment.attachment_id, attachment.source_path, attachment.actual_bytes),
+            )
+        for blob_id, source_path, expected_bytes in candidates:
+            if (
+                blob_id in seen
+                or source_path is None
+                or expected_bytes is None
+                or expected_bytes < 0
+                or expected_bytes > MAX_ATTACHMENT_BYTES
+            ):
+                raise _AttachmentDeliveryError("attachment_source_unavailable")
+            seen.add(blob_id)
+            sources.append(
+                _AttachmentSource(
+                    blob_id=blob_id,
+                    path=Path(source_path),
+                    expected_bytes=expected_bytes,
+                )
+            )
+    return tuple(sources)
+
+
+def _open_attachment_source(
+    source: _AttachmentSource,
+) -> tuple[int, tuple[int, int, int, int, int]]:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(source.path, flags)
+        metadata = os.fstat(descriptor)
+    except OSError as exc:
+        raise _AttachmentDeliveryError("attachment_source_unavailable") from exc
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != source.expected_bytes:
+        os.close(descriptor)
+        raise _AttachmentDeliveryError("attachment_source_changed")
+    return descriptor, _metadata_fingerprint(metadata)
+
+
+def _descriptor_fingerprint(descriptor: int) -> tuple[int, int, int, int, int]:
+    return _metadata_fingerprint(os.fstat(descriptor))
+
+
+def _metadata_fingerprint(metadata: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _hash_descriptor(descriptor: int) -> str:
+    digest = hashlib.sha256()
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    while True:
+        chunk = os.read(descriptor, MAX_ATTACHMENT_CHUNK_BYTES)
+        if not chunk:
+            break
+        digest.update(chunk)
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    return digest.hexdigest()
+
+
+def _validated_upload_session_response(
+    response: TransportResponse,
+    *,
+    expected_request_id: str,
+    expected_bytes: int,
+):
+    body = _attachment_response_body(
+        response,
+        expected_request_id=expected_request_id,
+        success_statuses={200, 201},
+    )
+    try:
+        session = decode_upload_session_response(body)
+    except ProtocolError as exc:
+        raise _AttachmentDeliveryError("malformed_response") from exc
+    if (
+        session.request_id != expected_request_id
+        or session.expected_bytes != expected_bytes
+        or session.next_offset > expected_bytes
+        or (session.status == "complete") != (session.next_offset == expected_bytes)
+    ):
+        raise _AttachmentDeliveryError("attachment_response_mismatch")
+    return session
+
+
+def _validated_chunk_response(
+    response: TransportResponse,
+    *,
+    expected_request_id: str,
+    expected_upload_id: str,
+    prior_offset: int,
+    chunk_bytes: int,
+    expected_bytes: int,
+) -> int:
+    body = _attachment_response_body(
+        response,
+        expected_request_id=expected_request_id,
+        success_statuses={200},
+    )
+    try:
+        chunk = decode_attachment_chunk_response(body)
+    except ProtocolError as exc:
+        raise _AttachmentDeliveryError("malformed_response") from exc
+    expected_offset = prior_offset + chunk_bytes
+    if (
+        chunk.request_id != expected_request_id
+        or chunk.upload_id != expected_upload_id
+        or chunk.next_offset != expected_offset
+        or chunk.next_offset > expected_bytes
+        or (chunk.status == "complete") != (chunk.next_offset == expected_bytes)
+    ):
+        raise _AttachmentDeliveryError("attachment_response_mismatch")
+    return chunk.next_offset
+
+
+def _attachment_response_body(
+    response: TransportResponse,
+    *,
+    expected_request_id: str,
+    success_statuses: set[int],
+) -> bytes:
+    if len(response.body) > MAX_RESPONSE_BYTES:
+        raise _AttachmentDeliveryError("malformed_response")
+    content_type = next(
+        (
+            value
+            for name, value in response.headers.items()
+            if name.lower() == "content-type"
+        ),
+        "",
+    )
+    if content_type.split(";", 1)[0].strip().lower() != "application/json":
+        raise _AttachmentDeliveryError("malformed_response")
+    if response.status_code in success_statuses:
+        return response.body
+    try:
+        value = json.loads(
+            response.body.decode("utf-8"),
+            object_pairs_hook=_strict_object,
+            parse_constant=_reject_constant,
+        )
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as exc:
+        raise _AttachmentDeliveryError("malformed_response") from exc
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"protocol_version", "request_id", "result", "error"}
+        or value.get("protocol_version") != PROTOCOL_VERSION
+        or value.get("result") != "nack"
+        or value.get("request_id") not in {None, expected_request_id}
+        or not isinstance(value.get("error"), dict)
+        or set(value["error"]) != {"code"}
+        or not isinstance(value["error"].get("code"), str)
+        or _SAFE_ERROR_CODE.fullmatch(value["error"]["code"]) is None
+    ):
+        raise _AttachmentDeliveryError("malformed_response")
+    code = value["error"]["code"]
+    raise _AttachmentDeliveryError(
+        code if code in _KNOWN_NACK_CODES else "receiver_nack"
+    )
 
 
 def _strict_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

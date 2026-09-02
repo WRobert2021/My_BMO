@@ -3,17 +3,18 @@
 ## Ownership model
 
 iMessage Relay is a first-class feature/service plugin even though its current
-Stage 2–6 code remains in standalone `iphone_relay/` and `kiosk_receiver/`
+Stage 2–7 code remains in standalone `iphone_relay/` and `kiosk_receiver/`
 packages. That separation was a development safety boundary, not a permanent
 exemption from plugin contracts. No source package move or runtime adapter is
 part of the documentation refactor.
 
 Current boundaries are: Apple read-only parsing; relay-owned discovery/delivery
-state and reconciliation; a simulated sender and bounded HTTP(S) transport;
-kiosk-owned authenticated receipt lookup; and a future plugin lifecycle
-adapter. Discovery cursor, lookback observation, queued transmission, kiosk
-receipt, and ACK are distinct states. Stable event GUIDs provide idempotency;
-source ROWIDs are local scan cursors only.
+state and reconciliation; a simulated sender and bounded HTTP(S) event/chunk
+transport; kiosk-owned authenticated receipt lookup, pending manifests, and
+attachment storage; and a future plugin lifecycle adapter. Discovery cursor,
+lookback observation, queued transmission, pending manifest, partial upload,
+complete kiosk receipt, and sender ACK are distinct states. Stable event GUIDs
+provide idempotency; source ROWIDs are local scan cursors only.
 
 ## Non-negotiable source safety
 
@@ -24,7 +25,8 @@ source ROWIDs are local scan cursors only.
 - Use SQLite URI `mode=ro`, `PRAGMA query_only=ON`, and one read transaction.
   Do not use `immutable=1` for the changing live WAL database.
 - Relay cursors, payloads, attempts, retries, ACKs, errors, dead letters,
-  nonces, and kiosk receipts live only in separate relay-owned stores.
+  nonces, kiosk receipts, partial offsets, and received attachment bytes live
+  only in separate relay/kiosk-owned stores and private files.
 - Private content, handles, chat IDs, paths, attachment names/bytes, snapshots,
   credentials, and keys never enter tracked docs/fixtures or default logs.
 - Initial iPhone operation stays manual with graceful Ctrl-C. No daemon,
@@ -65,4 +67,11 @@ sender-candidate receipt comparison: missing acknowledged entries may be
 requeued, present attempted entries may be confirmed, conflicts remain
 unchanged, and kiosk-only history is never enumerated or deleted. Status and
 reports contain counts and bounded error codes only. These stages do not change
-the later attachment, live-device, deployment, or runtime gates.
+the later live-device, deployment, or runtime gates.
+
+Stage 7 makes event ACK attachment-aware. Available ordinary files and Live
+Photo components are hashed and transferred in bounded authenticated chunks;
+the kiosk owns restart-safe offsets and promotes a pending event only after all
+required blobs pass exact size and digest checks. Missing/unsafe/changed source
+files and legacy metadata-only ACKs fail closed. Neither side loads a whole
+attachment into memory, and no Stage 7 code contacts a live device.

@@ -2,12 +2,12 @@
 
 ## Status and boundary
 
-Stage 5 is complete. `iphone_relay.sender` connects Stage 3 queue claims to the
-fixed Stage 4 receiver protocol for local simulation. It uses only the Python
-standard library, does not read Apple data itself, and has no CLI, deployment,
-daemon, automatic startup, BMO registration, or attachment-byte transfer.
-Stage 6 reconciliation is a separate explicit module that reuses its bounded
-transport. Live-iPhone access remains prohibited until Stage 8.
+Stages 5 and 7 are complete. `iphone_relay.sender` connects Stage 3 queue claims
+to event delivery and bounded attachment transfer for local simulation. It uses
+only the Python standard library and has no CLI, deployment, daemon, automatic
+startup, or BMO registration. Stage 6 reconciliation remains a separate module
+that reuses its bounded transport. Live-iPhone access remains prohibited until
+Stage 8.
 
 The sender module is imported explicitly as `iphone_relay.sender`; it is not
 re-exported by `iphone_relay.__init__` because the kiosk protocol already
@@ -36,6 +36,15 @@ exception text or response content. A lost ACK retries the identical canonical
 event with fresh request authentication, allowing the receiver's stable-ID
 idempotency to return a duplicate ACK.
 
+For an event with attachments, sender acknowledgement additionally requires
+`attachment_status: complete`. A `202 attachments_pending` response starts or
+resumes one upload session per ordinary attachment or Live Photo component.
+Each source is opened read-only as a regular non-symlink file, checked against
+its persisted size, hashed in 64-KiB reads, and sent in at-most-64-KiB chunks.
+The sender validates every session/upload/request identity and next offset, then
+repeats the event for final promotion. It rejects legacy metadata-only ACKs,
+missing/unsafe/changed sources, and any malformed or mismatched partial result.
+
 `SenderStatus` contains queue and attempt counts plus one bounded error code.
 It excludes event IDs, handles, chats, message text, paths, and response bodies.
 The manual `run_forever()` loop emits this content-free status through an
@@ -52,8 +61,10 @@ loopback simulation endpoint. Credentials in URLs, paths, query strings, and
 fragments are rejected. The transport has bounded connect/read time and a
 64-KiB response limit, and `close()` is idempotent.
 
-Stage 6 permits the same transport to send only the fixed event and
-reconciliation paths. Event delivery behavior is otherwise unchanged.
+Stage 6 permits the same transport to send fixed event and reconciliation
+paths. Stage 7 adds the fixed attachment-session path and strictly generated,
+HMAC-bound chunk paths. Each HTTP request holds at most one 64-KiB chunk; no
+whole attachment body is buffered by the transport.
 
 Construction opens no socket. Importing the module starts no worker, listener,
 store, or loop. Stage 5 deliberately has no sender configuration file or
@@ -72,3 +83,11 @@ server, thread, store, and connection cleanup.
 
 No test contacts an iPhone, uses a private configuration, deploys a service, or
 installs a daemon.
+
+## Stage 7 verification
+
+`tests/test_imessage_attachments.py` covers ordinary and Live Photo component
+transfer, source hash preservation, hard size/chunk bounds, partial restart
+resume, lost chunk responses, digest failure, unavailable sources,
+metadata-only ACK rejection, transport-neutral application calls, real
+loopback HTTP, and sender/receiver cleanup.

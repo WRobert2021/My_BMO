@@ -261,7 +261,7 @@ class ReceiverStoreTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.state_path.stat().st_mode), 0o600)
         raw = sqlite3.connect(self.state_path)
         self.assertEqual(raw.execute("PRAGMA application_id").fetchone()[0], 0x494D4B52)
-        self.assertEqual(raw.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertEqual(raw.execute("PRAGMA user_version").fetchone()[0], 2)
         raw.close()
 
     def test_symlink_and_broad_permissions_are_rejected(self) -> None:

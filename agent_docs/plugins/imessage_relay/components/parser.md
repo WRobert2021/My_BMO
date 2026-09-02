@@ -90,8 +90,10 @@ Issue strings describe only the violated contract; they never include GUIDs,
 handles, chat IDs, text, blob bytes, filenames, or paths.
 
 Normalized events necessarily contain private source values and resolved
-attachment paths. Callers must treat the records as sensitive and must not log
-or serialize them without the later protocol's explicit privacy policy.
+attachment paths. Stage 7 uses those paths only to open regular, non-symlink
+files read-only for bounded hashing/transfer; paths remain absent from the wire.
+Callers must treat the records as sensitive and must not log or serialize them
+outside the explicit private state and wire policies.
 
 ## Explicitly unsupported or unverified
 
@@ -123,7 +125,8 @@ the demonstrated removal, unknown reactions, bounded typedstream extraction,
 ordinary photo/video/Live Photo discovery, declared versus actual sizes,
 missing files, traversal/symlink containment, schema errors, and per-record
 failure isolation. Stage 6 tests additionally cover bounded half-open window
-paging and source hash preservation.
+paging, and Stage 7 verifies attachment source hashes remain unchanged during
+simulated transfer.
 
 No snapshot data, attachment bytes, handles, message text, or credentials were
 added to tracked fixtures.
