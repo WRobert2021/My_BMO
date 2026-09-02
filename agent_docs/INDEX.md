@@ -50,6 +50,7 @@ or status changes. Evidence and history are opt-in.
 | simulated sender, delivery loop, fault handling | [components/sender.md](plugins/imessage_relay/components/sender.md) |
 | recent/month reconciliation and selective resend | [components/reconciliation.md](plugins/imessage_relay/components/reconciliation.md) |
 | attachment streaming, partial state, completion ACK | [components/attachment_transfer.md](plugins/imessage_relay/components/attachment_transfer.md) |
+| authorized live read-only validation | [components/live_readonly_validation.md](plugins/imessage_relay/components/live_readonly_validation.md) |
 | HTTP/HMAC wire contract | [api/receiver_protocol.md](plugins/imessage_relay/api/receiver_protocol.md) |
 | Apple Messages schema evidence only | [evidence/messages_schema.md](plugins/imessage_relay/evidence/messages_schema.md) |
 | completed-stage detail or legacy contradictions | [history](plugins/imessage_relay/history/) |

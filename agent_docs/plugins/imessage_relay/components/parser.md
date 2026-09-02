@@ -2,7 +2,8 @@
 
 ## Status and boundary
 
-Stage 2 is complete. The `iphone_relay` package is a stateless, local parser
+Stage 2 is complete. Stage 8 live compatibility validation is in progress. The
+`iphone_relay` package is a stateless, local parser
 for the conclusively supported Stage 1 schema. It is not a relay daemon, does
 not contain a queue or networking code, and has not been deployed to or run
 against the live iPhone.
@@ -26,8 +27,9 @@ batch = reader.scan(after_rowid=0, limit=100)
 
 When `messages_root` is omitted, it defaults to the database's parent
 directory. The configured root is the directory that contains `Attachments/`.
-Production's eventual value is expected to be `/var/mobile/Library/SMS`, but
-live use is prohibited until Stage 8.
+Production's live value is `/var/mobile/Library/SMS`. Stage 8 exercises it only
+through the disposable-copy procedure in `live_readonly_validation.md`;
+delivery and daemon use remain prohibited.
 
 `scan()` returns an immutable `ScanBatch` containing:
 
@@ -113,7 +115,8 @@ outside the explicit private state and wire policies.
   the exact observed prefix. The supplied device snapshot has no natural row
   with null/empty `text` and usable attributed-body text.
 - Live schema/version compatibility, permissions, Python/SQLite behavior, and
-  WAL shared-memory effects remain Stage 8 acceptance work.
+  WAL shared-memory effects remain Stage 8 acceptance work until the
+  authorized target is reachable and the manual checklist is recorded.
 
 ## Stage 2 verification
 

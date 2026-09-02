@@ -24,6 +24,10 @@ provide idempotency; source ROWIDs are local scan cursors only.
   VACUUM, message sending, reaction changes, or attachment modifications.
 - Use SQLite URI `mode=ro`, `PRAGMA query_only=ON`, and one read transaction.
   Do not use `immutable=1` for the changing live WAL database.
+- Stage 8 validation mounts only the authorized Messages root read-only and
+  opens SQLite solely against a disposable local copy of the DB/WAL/SHM trio.
+  A source change makes the observation inconclusive; it never authorizes a
+  checkpoint, Messages shutdown, permission change, or writable remount.
 - Relay cursors, payloads, attempts, retries, ACKs, errors, dead letters,
   nonces, kiosk receipts, partial offsets, and received attachment bytes live
   only in separate relay/kiosk-owned stores and private files.

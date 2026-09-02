@@ -50,6 +50,17 @@ interruption/lost response, duplicate chunks, digest/offset mismatch, both
 sender and receiver restart, source immutability, transport-neutral calls, and
 real loopback HTTP. Stop before any live-iPhone access.
 
+## Stage 8 acceptance shape
+
+Only after explicit authorization, collect non-content environment and file
+permission facts, mount only `/var/mobile/Library/SMS` read-only, and copy the
+DB/WAL/SHM trio to disposable local storage before SQLite inspection. Validate
+the live schema, WAL mode, expected ROWID-range plan, bounded iMessage
+discovery, contained attachment access, restart/SIGINT behavior, and unchanged
+source fingerprints. Natural concurrent Messages changes make a run
+inconclusive. Do not change permissions, stop Messages, write to the phone,
+contact the kiosk, install a daemon, or begin Stage 9 delivery.
+
 ## Later safety gates
 
 Stage 6 must keep memory bounded and reuse idempotent receipt. Stage 7 requires

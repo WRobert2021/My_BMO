@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: future registry adapter; current packages iphone_relay and kiosk_receiver
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py]
 ---
 
 # Plugin: iMessage Relay
@@ -27,6 +27,7 @@ through Messages are out of scope.
 | simulated sender/delivery loop | `iphone_relay/sender.py` |
 | bounded reconciliation/selective resend | `iphone_relay/reconciliation.py`, `reader.py`, `state.py` |
 | bounded attachment streaming | `iphone_relay/sender.py`, `kiosk_receiver/protocol.py`, `store.py`, `server.py` |
+| privacy-safe live read-only validation | `scripts/validate_imessage_live_readonly.py` |
 | kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
 | kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json` |
@@ -59,6 +60,9 @@ failure isolation; do not move packages merely to make paths look integrated.
    Photo component in authenticated 64-KiB chunks, resumes from kiosk-owned
    durable offsets, and acknowledges sender state only after a repeated event
    receives an attachment-complete ACK.
+7. Stage 8 exposes an authorized Messages root through a read-only mount,
+   copies the live DB/WAL/SHM trio to disposable local storage, and runs only
+   privacy-safe schema, query-plan, parser, and attachment-read diagnostics.
 
 ## Safety and failure boundaries
 
