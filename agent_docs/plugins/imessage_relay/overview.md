@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: future registry adapter; current packages iphone_relay and kiosk_receiver
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py]
 ---
 
 # Plugin: iMessage Relay
@@ -28,6 +28,8 @@ through Messages are out of scope.
 | bounded reconciliation/selective resend | `iphone_relay/reconciliation.py`, `reader.py`, `state.py` |
 | bounded attachment streaming | `iphone_relay/sender.py`, `kiosk_receiver/protocol.py`, `store.py`, `server.py` |
 | privacy-safe live read-only validation | `scripts/validate_imessage_live_readonly.py` |
+| stable live source snapshots | `iphone_relay/live_source.py` |
+| manual live-delivery acceptance | `scripts/run_imessage_live_delivery.py` |
 | kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
 | kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json` |
@@ -63,9 +65,14 @@ failure isolation; do not move packages merely to make paths look integrated.
 7. Stage 8 exposes an authorized Messages root through a read-only mount,
    copies the live DB/WAL/SHM trio to disposable local storage, and runs only
    privacy-safe schema, query-plan, parser, and attachment-read diagnostics.
+8. The Stage 9 manual runner composes stable disposable source snapshots, the
+   durable queue, attachment sender, and real loopback receiver. It injects
+   bounded auth, outage, lost-ACK, and restart faults and emits only aggregate
+   acceptance status. It creates no daemon or BMO integration.
 
-Stage 8 live read-only acceptance completed on 2026-09-02. It did not contact a
-kiosk endpoint or authorize Stage 9 live delivery.
+Stage 8 live read-only acceptance completed on 2026-09-02. Stage 9 has passed
+its macOS rehearsal but remains incomplete until the same matrix passes on the
+physical Raspberry Pi kiosk.
 
 ## Safety and failure boundaries
 

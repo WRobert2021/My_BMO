@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 8
-current_chapter: Stage 8 acceptance gate
-state: complete
-next_action: Stop and wait for explicit authorization before Stage 9 live relay validation.
+current_stage: 9
+current_chapter: Physical Raspberry Pi live-delivery acceptance
+state: in_progress
+next_action: Run the documented matrix in the authorized Raspberry Pi kiosk `.venv`, including a post-baseline live event and shutdown/retention decision.
 last_verified: 2026-09-02
 
 ## Stage index
@@ -19,41 +19,50 @@ last_verified: 2026-09-02
 | 6 — reconciliation | complete | bounded recent/month selective repair accepted |
 | 7 — attachment transfer | complete | bounded resumable digest-verified transfer accepted |
 | 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
-| 9 — live relay | not started | requires separate live-delivery authorization |
+| 9 — live relay | in progress | authorized; checklist written; Pi acceptance pending |
 | 10 — runtime/UI integration | not started | blocked by stable backend contracts |
 
 ## Current chapter
 
 ### Objective
 
-Validate bounded discovery and attachment resolution against the authorized
-live Messages source while proving the validator does not mutate Apple-owned
-database, WAL/SHM, attachment, message, or metadata state.
+Validate authenticated at-least-once delivery of real phone data into durable
+Raspberry Pi kiosk receiver state without weakening Apple-source safety or
+enabling automatic startup.
 
 ### Completed
 
-- Added and tested a privacy-safe validator that fingerprints and copies the
-  live DB/WAL/SHM trio into disposable local storage, opens SQLite only on the
-  copy, exercises bounded parser/attachment reads, and emits aggregate
-  diagnostics without content or identifiers.
-- Accepted the authorized live environment, schema 89/WAL/query plan,
-  filtering, clean repeat/restart, real attachment containment and unchanged
-  bytes/metadata, content-free permission failure, graceful SIGINT, source
-  fingerprint stability, and cleanup.
-- A user-created non-sensitive incoming message changed the bounded live
-  observation from 36 to 37 source rows and from 24 to 25 normalized message
-  events with no parser issue or relay transmission.
-- Cleanly unmounted SSHFS, closed the temporary authenticated control
-  connection, and removed every Stage 8 temporary directory. Detailed
-  content-free evidence is archived in `history/stage_8.md`.
+- Received explicit Stage 9 authorization and wrote the required live
+  acceptance matrix in `components/live_delivery_validation.md` before live
+  delivery work.
+- Chose a manual kiosk-side pull topology: SSHFS `ro` plus disposable source
+  copies on the Pi, private Pi-owned queue/receiver state, and authenticated
+  literal-loopback HTTP. No code or secret is deployed to the phone.
+- Confirmed the phone's Python 3.9.9 cannot host the repository's Python
+  3.13-oriented relay package; changing or upgrading phone Python is not in
+  scope. The pull topology avoids that unsupported deployment constraint.
+- Implemented stable disposable source snapshots and a bounded manual
+  acceptance runner with no import-time resources, tracked private data, or
+  persistent secret.
+- Passed the macOS live rehearsal for supported backlog, real attachments,
+  authentication failure, lost ACK, receiver outage, duplicate prevention,
+  relay/receiver restart, stable source evidence, and missing-source failure.
+- A second macOS pass discovered and durably acknowledged exactly one new
+  post-baseline text event with no issue or pending entry. The read-only mount
+  and authenticated control session then closed cleanly; private acceptance
+  state remains retained pending the operator's explicit cleanup decision.
+- Passed the complete isolated plugin suite: 99 tests and 17 subtests.
 
 ### Remaining and boundary
 
-No Stage 8 acceptance work remains. SQLite never opened the live source, no
-write-capability probe was attempted, no remote file or setting was changed,
-and no kiosk endpoint, sender delivery, deployment, daemon, or BMO runtime
-integration was attempted. Stage 9 remains unauthorized until a separate
-explicit request.
+The current host is macOS, so its successful live rehearsal cannot complete
+Stage 9. Physical Raspberry Pi 5/aarch64/Python 3.13.5 evidence remains
+required, including the mount-loss/recovery window, a post-baseline user-made
+non-sensitive event, synchronized-clock evidence, deliberate shutdown, and an
+explicit operator decision about private acceptance-state retention. The Mac
+rehearsal covered its equivalents but cannot substitute for Pi evidence. No
+deployment, daemon, automatic startup, BMO registration, or Stage 10 work is
+authorized.
 
 Known later-stage risks remain: production endpoint trust, TLS/key provisioning,
 iPhone clock skew, scheduling, retention/pruning, and unverified edits,

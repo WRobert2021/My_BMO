@@ -3,11 +3,11 @@
 ## Status and boundary
 
 Stages 5 and 7 are complete. `iphone_relay.sender` connects Stage 3 queue claims
-to event delivery and bounded attachment transfer for local simulation. It uses
-only the Python standard library and has no CLI, deployment, daemon, automatic
-startup, or BMO registration. Stage 6 reconciliation remains a separate module
-that reuses its bounded transport. Live-iPhone access remains prohibited until
-Stage 8.
+to event delivery and bounded attachment transfer. It uses only the Python
+standard library and has no deployment, daemon, automatic startup, or BMO
+registration. Stage 6 reconciliation remains a separate module that reuses its
+bounded transport. Stage 9 may compose the sender only through the explicit
+manual acceptance runner and the authorized read-only source topology.
 
 The sender module is imported explicitly as `iphone_relay.sender`; it is not
 re-exported by `iphone_relay.__init__` because the kiosk protocol already
@@ -71,6 +71,12 @@ store, or loop. Stage 5 deliberately has no sender configuration file or
 standalone process entrypoint; production endpoint trust and private secret
 provisioning remain later live-stage decisions.
 
+Stage 9 adds `scripts/run_imessage_live_delivery.py` as a bounded manual
+acceptance entrypoint. It constructs an ephemeral in-memory HMAC secret and a
+literal-loopback receiver, retains durable state only in an operator-supplied
+private directory outside the repository, and injects expected retry cases.
+It does not change the sender's lifecycle or authorize unattended execution.
+
 ## Stage 5 verification
 
 `tests/test_imessage_relay_e2e.py` uses invented temporary data and covers the
@@ -91,3 +97,10 @@ transfer, source hash preservation, hard size/chunk bounds, partial restart
 resume, lost chunk responses, digest failure, unavailable sources,
 metadata-only ACK rejection, transport-neutral application calls, real
 loopback HTTP, and sender/receiver cleanup.
+
+## Stage 9 verification
+
+`tests/test_imessage_live_delivery.py` covers stable disposable snapshots,
+private-state enforcement, authentication/receiver/lost-ACK fault injection,
+sender and receiver restart, real attachment completion, exactly-once receiver
+receipt, subsequent discovery, content-free output, and direct CLI startup.

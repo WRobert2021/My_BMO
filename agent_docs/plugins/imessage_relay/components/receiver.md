@@ -65,3 +65,6 @@ and bounds, kiosk-only preservation, and timeout.
 `tests/test_imessage_attachments.py` owns receiver migration, partial files,
 digest/offset enforcement, restart resume, completion promotion, Live Photo
 components, and bounded binary HTTP coverage.
+`tests/test_imessage_live_delivery.py` owns the Stage 9 manual orchestration
+contract, including real loopback delivery, deliberate receiver restart,
+duplicate prevention after a lost ACK, and private durable-state modes.

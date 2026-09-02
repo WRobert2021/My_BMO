@@ -61,6 +61,18 @@ source fingerprints. Natural concurrent Messages changes make a run
 inconclusive. Do not change permissions, stop Messages, write to the phone,
 contact the kiosk, install a daemon, or begin Stage 9 delivery.
 
+## Stage 9 acceptance shape
+
+Only after explicit authorization and a written checklist, run the standalone
+relay and receiver manually in the Raspberry Pi kiosk's existing `.venv`.
+Mount only the authorized phone SMS root read-only, open SQLite only on stable
+disposable DB/WAL/SHM copies, keep relay/receiver state private and separate,
+and send over authenticated literal kiosk loopback. Validate bounded supported
+backlog, real attachments, offline recovery, authentication failure, lost ACK,
+duplicate prevention, receiver/relay restart, one new live event, source
+immutability, and complete cleanup. A macOS rehearsal cannot satisfy the Pi
+gate. Stop before BMO registration, deployment, daemon, or automatic startup.
+
 ## Later safety gates
 
 Stage 6 must keep memory bounded and reuse idempotent receipt. Stage 7 requires
