@@ -17,6 +17,7 @@ completion never authorizes the next stage.
 | 8 | manually validate read-only discovery on authorized live iPhone | no live delivery or daemon |
 | 9 | manually validate real iPhone-to-kiosk at-least-once delivery | no automatic startup |
 | 10 | add optional failure-isolated runtime service/UI status and reconciliation controls | sending/daemon proposals remain separate scope |
+| 11 | consolidate plugin implementation under `bmo.features.imessage_relay` | layout/import changes only; full tests required before completion |
 
 ## Stage 5 acceptance shape
 
@@ -98,3 +99,15 @@ once on registry shutdown. Validate with invented local data and offscreen Qt,
 then stop before default enablement, private provisioning, deployment, daemon
 installation, phone contact, or outbound Messages actions. Physical kiosk
 touch/VNC, binding, restart, and stability evidence remains a final gate.
+
+## Stage 11 acceptance shape
+
+After explicit authorization, move the root relay and receiver packages, the
+BMO feature adapter, and plugin-specific manual tools into one
+`bmo.features.imessage_relay` package. Preserve the established Qt, test,
+example-config, and documentation locations. Update every active import and CLI
+reference without leaving compatibility shims or duplicate package identities.
+Do not change behavior, schemas, dependencies, private configuration, runtime
+enablement, or deployment. Structural/static checks must pass immediately; the
+complete relay, shared extension/Qt, setup, and repository test suites must pass
+before Stage 11 can be accepted.

@@ -11,8 +11,8 @@ import time
 from typing import Callable
 from uuid import uuid4
 
-from kiosk_receiver.auth import sign_request
-from kiosk_receiver.protocol import (
+from ..receiver.auth import sign_request
+from ..receiver.protocol import (
     MAX_RECONCILIATION_CANDIDATES,
     RECONCILIATION_PATH,
     ProtocolError,

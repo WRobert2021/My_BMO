@@ -1,6 +1,7 @@
 # iMessage Relay Receiver Protocol
 
-owner: `kiosk_receiver.protocol`, `kiosk_receiver.auth`, and the HTTP contract
+owner: `bmo.features.imessage_relay.receiver.protocol`,
+  `bmo.features.imessage_relay.receiver.auth`, and the HTTP contract
 
 Current stage/status is intentionally omitted; see `../progress.md`.
 
@@ -271,7 +272,7 @@ After provisioning a private configuration, secret, trusted certificate, and
 key, the standalone process is:
 
 ```text
-python -m kiosk_receiver.server --config config/imessage_receiver.json
+python -m bmo.features.imessage_relay.receiver.server --config config/imessage_receiver.json
 ```
 
 It runs until interrupted and performs graceful local cleanup. Stage 4 does not

@@ -10,29 +10,25 @@ from pathlib import Path
 import platform
 import secrets
 import stat
-import sys
 import threading
 from typing import Any
 
-if __package__ in {None, ""}:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from iphone_relay import (
+from ..relay import (
     MessageEvent,
     MessagesReader,
     RelayStateError,
     RelayStateStore,
     RetryPolicy,
 )
-from iphone_relay.live_source import LiveSourceError, disposable_messages_snapshot
-from iphone_relay.sender import (
+from ..relay.live_source import LiveSourceError, disposable_messages_snapshot
+from ..relay.sender import (
     DeliveryDisposition,
     EventTransport,
     HTTPEventTransport,
     RelaySender,
     TransportResponse,
 )
-from kiosk_receiver import (
+from ..receiver import (
     EVENT_PATH,
     ReceiverApplication,
     ReceiverServer,
@@ -126,7 +122,7 @@ def _private_work_directory(path: Path) -> Path:
     if unresolved.is_symlink():
         raise LiveDeliveryError("work_directory_not_private")
     resolved = unresolved.resolve(strict=False)
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[4]
     if resolved == project_root or resolved.is_relative_to(project_root):
         raise LiveDeliveryError("work_directory_inside_repository")
     if not resolved.is_dir():

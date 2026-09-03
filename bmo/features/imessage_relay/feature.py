@@ -18,22 +18,22 @@ from bmo.features.contracts import (
     ToolResult,
 )
 from bmo.view_factory import NOT_HOSTED, create_hosted_view
-from iphone_relay import (
+from .relay import (
     MessagesReader,
     RelayStateError,
     RelayStateStore,
     StateConfigError,
     load_state_config,
 )
-from iphone_relay.live_source import LiveSourceError, disposable_messages_snapshot
-from iphone_relay.reconciliation import (
+from .relay.live_source import LiveSourceError, disposable_messages_snapshot
+from .relay.reconciliation import (
     ReconciliationError,
     ReconciliationReport,
     ReconciliationWindow,
     RelayReconciler,
 )
-from iphone_relay.sender import TransportResponse
-from kiosk_receiver import (
+from .relay.sender import TransportResponse
+from .receiver import (
     ReceiverConfigError,
     ReceiverStateStore,
     ReceiverStoreError,
@@ -42,7 +42,7 @@ from kiosk_receiver import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 IMESSAGE_RELAY_MENU_ITEM = FeatureMenuItem(
     name="imessage_relay",
     label="iMessage Relay",

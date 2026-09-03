@@ -11,8 +11,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from iphone_relay.live_source import LiveSourceError, disposable_messages_snapshot
-from scripts import run_imessage_live_delivery as live_delivery
+from bmo.features.imessage_relay.relay.live_source import (
+    LiveSourceError,
+    disposable_messages_snapshot,
+)
+from bmo.features.imessage_relay.tools import run_live_delivery as live_delivery
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -191,7 +194,7 @@ class IMessageLiveDeliveryTests(unittest.TestCase):
         self.assertEqual(_trio_hashes(self.fixture.messages_root), trio_before)
 
     def test_source_change_during_copy_fails_closed(self) -> None:
-        from iphone_relay import live_source
+        from bmo.features.imessage_relay.relay import live_source
 
         original_copy = live_source._copy_trio
 
@@ -229,7 +232,8 @@ class IMessageLiveDeliveryTests(unittest.TestCase):
         completed = subprocess.run(
             [
                 sys.executable,
-                str(PROJECT_ROOT / "scripts" / "run_imessage_live_delivery.py"),
+                "-m",
+                "bmo.features.imessage_relay.tools.run_live_delivery",
                 "--help",
             ],
             cwd=PROJECT_ROOT,

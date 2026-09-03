@@ -58,7 +58,7 @@ deploying, contacting the phone, or proposing outbound Messages actions.
 
 ## Implemented surface and tests
 
-- `bmo/features/imessage_relay.py` owns resource-free settings, opt-in
+- `bmo/features/imessage_relay/feature.py` owns resource-free settings, opt-in
   registration, degraded status, listener/store/thread lifecycle, aggregate
   status, and one on-demand recent/month reconciliation worker.
 - `bmo/qt/views/imessage_relay.py` and

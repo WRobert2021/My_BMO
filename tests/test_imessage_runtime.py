@@ -27,10 +27,14 @@ from bmo.features.imessage_relay import (
 from bmo.features.loader import DEFAULT_FEATURE_MODULES, load_feature_registry
 from bmo.menu_loader import load_menu_catalog
 from bmo.qt.views.imessage_relay import QtIMessageRelayView
-from iphone_relay import MessagesReader, RelayStateStore
-from iphone_relay.sender import HTTPEventTransport
-from iphone_relay.timestamps import APPLE_EPOCH
-from kiosk_receiver import EVENT_PATH, encode_event_envelope, sign_request
+from bmo.features.imessage_relay.relay import MessagesReader, RelayStateStore
+from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
+from bmo.features.imessage_relay.relay.timestamps import APPLE_EPOCH
+from bmo.features.imessage_relay.receiver import (
+    EVENT_PATH,
+    encode_event_envelope,
+    sign_request,
+)
 
 
 SECRET_ENV = "TEST_IMESSAGE_RUNTIME_SECRET"
@@ -166,9 +170,9 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
     def test_metadata_and_menu_discovery_are_resource_free(self) -> None:
         registry = ToolRegistry()
         with (
-            patch("bmo.features.imessage_relay.load_receiver_config") as receiver,
-            patch("bmo.features.imessage_relay.load_state_config") as relay,
-            patch("bmo.features.imessage_relay.build_server") as server,
+            patch("bmo.features.imessage_relay.feature.load_receiver_config") as receiver,
+            patch("bmo.features.imessage_relay.feature.load_state_config") as relay,
+            patch("bmo.features.imessage_relay.feature.build_server") as server,
         ):
             register_metadata(registry, {"invalid": object()})
             menu = load_menu_catalog(
@@ -296,7 +300,7 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
             missing_relay_config = root / "missing-relay.json"
             with (
                 patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}),
-                patch("bmo.features.imessage_relay.load_state_config") as loader,
+                patch("bmo.features.imessage_relay.feature.load_state_config") as loader,
             ):
                 service = RelayRuntimeService(
                     RelayFeatureConfig(

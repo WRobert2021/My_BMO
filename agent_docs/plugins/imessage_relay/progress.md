@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 10
-current_chapter: Physical kiosk runtime/UI acceptance
+current_stage: 11
+current_chapter: Consolidated BMO package layout
 state: in_progress
-next_action: When the kiosk returns online, run the documented Stage 9 Pi matrix, then Stage 10 touch/VNC, listener binding, shutdown/restart, and stability acceptance without default enablement or deployment.
+next_action: When the kiosk is online, run all deferred suites plus the Stage 9 and Stage 10 physical gates; accept Stage 11 only after the test gate passes.
 last_verified: 2026-09-02
 
 ## Stage index
@@ -21,14 +21,15 @@ last_verified: 2026-09-02
 | 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
 | 9 — live relay | in progress | authorized; checklist written; Pi acceptance pending |
 | 10 — runtime/UI integration | in progress | offline implementation/tests complete; physical kiosk acceptance pending |
+| 11 — package cleanup | in progress | relocation/static gate complete; test execution deferred by operator |
 
 ## Current chapter
 
 ### Objective
 
-Integrate the stable backend contracts into BMO's opt-in feature lifecycle with
-content-free status and explicit reconciliation controls. The kiosk is offline,
-so implementation and tests use invented local data only.
+Consolidate root-level relay/receiver code and plugin-specific tools into the
+approved `bmo.features.imessage_relay` package without changing behavior,
+schemas, configuration, dependencies, or runtime enablement.
 
 ### Completed
 
@@ -70,8 +71,26 @@ so implementation and tests use invented local data only.
   extension/runtime-menu/Qt result: 114 passed and 51 subtests passed.
 - Passed the complete iMessage Relay suite: 111 tests and 17 subtests. Passed
   the complete repository suite: 820 tests and 10,002 subtests.
+- Received explicit Stage 11 cleanup authorization and recorded the approved
+  nested package layout in `components/package_cleanup.md`. The operator asked
+  to defer all pytest execution until the kiosk is online.
+- Consolidated the feature adapter, relay, receiver, and plugin-owned manual
+  tools under `bmo.features.imessage_relay`; rewrote source/test imports and
+  module-mode CLI references; and removed the three legacy root directories
+  without compatibility shims.
+- Updated active ownership, architecture, API, component, evidence, roadmap,
+  and index documentation for the nested package. Historical archives remain
+  unchanged.
+- Passed offline static acceptance: Python compilation for the nested package
+  and iMessage Relay tests, resource-free imports for the package and all tool
+  modules, active-reference and legacy-directory inspection, example feature
+  JSON validation, and `git diff --check`.
 
 ### Remaining and boundary
+
+Stage 11 relocation, import/documentation rewrites, legacy-root cleanup, and
+the static acceptance gate are complete. Pytest execution is deliberately
+deferred, so Stage 11 cannot be marked complete during this offline pass.
 
 Offline Stage 10 implementation acceptance is complete. Stage 10 remains absent
 from defaults and reads private config or starts resources only when explicitly

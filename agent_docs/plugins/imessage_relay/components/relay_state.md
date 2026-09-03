@@ -19,9 +19,10 @@ be created privately by the operator, for example with mode `0700`.
 
 ## Ownership and persisted data
 
-`iphone_relay.state` solely owns the SQLite schema and state transitions.
-`iphone_relay.state_codec` solely owns the canonical version-one JSON payload
-stored inside the database. `iphone_relay.state_config` parses only the
+`bmo.features.imessage_relay.relay.state` solely owns the SQLite schema and
+state transitions. `bmo.features.imessage_relay.relay.state_codec` solely owns
+the canonical version-one JSON payload stored inside the database.
+`bmo.features.imessage_relay.relay.state_config` parses only the
 relay-owned state/retry configuration and acquires no runtime resources.
 
 The store persists each normalized event payload at discovery time. This is

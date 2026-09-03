@@ -19,8 +19,8 @@ from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from kiosk_receiver.auth import sign_request
-from kiosk_receiver.protocol import (
+from ..receiver.auth import sign_request
+from ..receiver.protocol import (
     ATTACHMENT_CHUNK_PATH_PREFIX,
     ATTACHMENT_SESSION_PATH,
     EVENT_PATH,

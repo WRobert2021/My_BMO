@@ -2,8 +2,9 @@
 
 ## Ownership and boundary
 
-Stage 4 is implemented by the standalone standard-library `kiosk_receiver`
-package. `config.py` owns exact private config validation and TLS/loopback
+Stage 4 is implemented by the standard-library
+`bmo.features.imessage_relay.receiver` package. `config.py` owns exact private
+config validation and TLS/loopback
 policy; `auth.py` owns HMAC signing/verification; `protocol.py` owns strict
 wire serialization; `store.py` owns receipt/nonce SQLite; `server.py` owns the
 transport-neutral application and HTTP(S) listener. Wire details live only in
@@ -44,9 +45,8 @@ kiosk IDs and has no delete or overwrite path.
 `ReceiverServer` is threaded, size/time bounded, rejects chunked/unsupported
 bodies, caps binary chunks independently at 64 KiB, suppresses content logging,
 and closes incomplete connections. The
-standalone main loop runs until Ctrl-C, then closes socket and store. A future
-runtime adapter must wrap the same ownership with plugin failure isolation; it
-does not exist yet.
+standalone main loop runs until Ctrl-C, then closes socket and store. The Stage
+10 feature adapter wraps the same ownership with plugin failure isolation.
 
 ## Configuration and tests
 
@@ -54,7 +54,7 @@ Tracked schema: `config/example.imessage_receiver.json`; real config, state,
 certificates, keys, and secret are private/ignored. Run:
 
 ```text
-python -m kiosk_receiver.server --config config/imessage_receiver.json
+python -m bmo.features.imessage_relay.receiver.server --config config/imessage_receiver.json
 ```
 
 only after deliberate local provisioning. Primary

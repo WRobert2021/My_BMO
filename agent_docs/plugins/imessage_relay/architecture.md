@@ -2,10 +2,11 @@
 
 ## Ownership model
 
-iMessage Relay is a first-class feature/service plugin. Its Stage 2–9 backend
-remains in standalone `iphone_relay/` and `kiosk_receiver/` packages; Stage 10
-adds the opt-in adapter at `bmo.features.imessage_relay` without moving either
-backend. The reusable separation is not an exemption from plugin contracts.
+iMessage Relay is a first-class feature/service plugin. Stage 11 consolidates
+its backend under `bmo.features.imessage_relay.relay` and
+`bmo.features.imessage_relay.receiver`; the opt-in feature entrypoint remains
+`bmo.features.imessage_relay`. Relay/receiver subpackages preserve distinct
+state and protocol ownership without root-level package identities.
 
 Current boundaries are: Apple read-only parsing; relay-owned discovery/delivery
 state and reconciliation; a simulated sender and bounded HTTP(S) event/chunk
@@ -56,7 +57,8 @@ When an explicit feature entry enables the Stage 10 adapter:
    store and long-lived receiver store, closes the socket, and releases the
    port exactly once.
 
-`python -m kiosk_receiver.server` remains an explicit standalone alternative.
+`python -m bmo.features.imessage_relay.receiver.server` remains an explicit
+standalone alternative.
 The Stage 5 sender still has no unattended process entrypoint, and Stage 10
 does not add a discovery/delivery loop, launch daemon, default feature entry,
 private provisioning, or outbound Messages action.

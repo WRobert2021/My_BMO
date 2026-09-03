@@ -12,7 +12,7 @@ import threading
 import time
 import unittest
 
-from iphone_relay import (
+from bmo.features.imessage_relay.relay import (
     Attachment,
     AttachmentAvailability,
     AttachmentComponent,
@@ -25,7 +25,7 @@ from iphone_relay import (
     SenderKind,
     apple_nanoseconds_to_datetime,
 )
-from kiosk_receiver import (
+from bmo.features.imessage_relay.receiver import (
     AuthenticationError,
     IngestResult,
     MAX_RECONCILIATION_CANDIDATES,
@@ -50,7 +50,7 @@ from kiosk_receiver import (
     load_receiver_config,
     sign_request,
 )
-from kiosk_receiver.store import (
+from bmo.features.imessage_relay.receiver.store import (
     EventConflictError,
     ReceiverStoreError,
     ReceiverStoreSecurityError,

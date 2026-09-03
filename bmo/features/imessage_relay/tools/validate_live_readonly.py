@@ -19,20 +19,16 @@ from pathlib import Path
 import shutil
 import sqlite3
 import stat
-import sys
 import tempfile
 from typing import Any, Iterable
 
-if __package__ in {None, ""}:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from iphone_relay import (
+from ..relay import (
     AttachmentAvailability,
     IMessageParserError,
     MessageEvent,
     MessagesReader,
 )
-from iphone_relay.reader import open_read_only_database
+from ..relay.reader import open_read_only_database
 
 
 TRIO_NAMES = ("sms.db", "sms.db-wal", "sms.db-shm")

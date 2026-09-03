@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from iphone_relay.errors import AttributedBodyError
+from .errors import AttributedBodyError
 
 
 MAX_ATTRIBUTED_BODY_BYTES = 1_048_576
@@ -83,4 +83,3 @@ def _decode_typedstream_integer(value: bytes, offset: int) -> tuple[int, int]:
         raise AttributedBodyError("attributedBody has an invalid string length")
     decoded = int.from_bytes(value[offset : offset + width], "little", signed=True)
     return decoded, offset + width
-

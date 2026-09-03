@@ -9,7 +9,7 @@ import threading
 import time
 import unittest
 
-from iphone_relay import (
+from bmo.features.imessage_relay.relay import (
     Direction,
     EventKind,
     MessageEvent,
@@ -22,7 +22,7 @@ from iphone_relay import (
     SenderKind,
     apple_nanoseconds_to_datetime,
 )
-from iphone_relay.sender import (
+from bmo.features.imessage_relay.relay.sender import (
     DeliveryDisposition,
     EVENT_PATH,
     HTTPEventTransport,
@@ -30,13 +30,16 @@ from iphone_relay.sender import (
     SenderClosedError,
     TransportResponse,
 )
-from kiosk_receiver import (
+from bmo.features.imessage_relay.receiver import (
     ReceiverApplication,
     ReceiverServer,
     ReceiverStateStore,
     RequestAuthenticator,
 )
-from kiosk_receiver.protocol import decode_event_envelope, response_body
+from bmo.features.imessage_relay.receiver.protocol import (
+    decode_event_envelope,
+    response_body,
+)
 
 
 SECRET = b"invented-stage-five-secret-at-least-32-bytes"

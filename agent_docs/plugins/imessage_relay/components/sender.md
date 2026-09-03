@@ -2,18 +2,18 @@
 
 ## Status and boundary
 
-Stages 5 and 7 are complete. `iphone_relay.sender` connects Stage 3 queue claims
+Stages 5 and 7 are complete.
+`bmo.features.imessage_relay.relay.sender` connects Stage 3 queue claims
 to event delivery and bounded attachment transfer. It uses only the Python
 standard library and has no deployment, daemon, automatic startup, or BMO
 registration. Stage 6 reconciliation remains a separate module that reuses its
 bounded transport. Stage 9 may compose the sender only through the explicit
 manual acceptance runner and the authorized read-only source topology.
 
-The sender module is imported explicitly as `iphone_relay.sender`; it is not
-re-exported by `iphone_relay.__init__` because the kiosk protocol already
-depends on the normalized `iphone_relay` contracts. Keeping the import explicit
-avoids a package initialization cycle while both standalone packages remain
-owned by this plugin.
+The sender module is imported explicitly from the nested `relay` package; it is
+not re-exported by that package because the sibling receiver protocol depends
+on normalized relay contracts. Keeping the import explicit avoids a package
+initialization cycle.
 
 ## Delivery contract
 
@@ -71,7 +71,8 @@ store, or loop. Stage 5 deliberately has no sender configuration file or
 standalone process entrypoint; production endpoint trust and private secret
 provisioning remain later live-stage decisions.
 
-Stage 9 adds `scripts/run_imessage_live_delivery.py` as a bounded manual
+Stage 9 adds
+`bmo.features.imessage_relay.tools.run_live_delivery` as a bounded manual
 acceptance entrypoint. It constructs an ephemeral in-memory HMAC secret and a
 literal-loopback receiver, retains durable state only in an operator-supplied
 private directory outside the repository, and injects expected retry cases.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from iphone_relay.errors import SourceRecordError
+from .errors import SourceRecordError
 
 
 APPLE_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)

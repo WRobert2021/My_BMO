@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
-from iphone_relay.contracts import (
+from .contracts import (
     Attachment,
     AttachmentAvailability,
     AttachmentComponent,
     AttachmentComponentRole,
     MediaCategory,
 )
-from iphone_relay.errors import SourceRecordError, UnsafeAttachmentPathError
+from .errors import SourceRecordError, UnsafeAttachmentPathError
 
 
 APPLE_ATTACHMENT_PREFIX = "~/Library/SMS/Attachments/"

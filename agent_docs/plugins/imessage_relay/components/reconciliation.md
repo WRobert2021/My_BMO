@@ -2,7 +2,8 @@
 
 ## Status and boundary
 
-Stage 6 is complete. `iphone_relay.reconciliation` owns explicit recent and UTC
+Stage 6 is complete. `bmo.features.imessage_relay.relay.reconciliation` owns
+explicit recent and UTC
 calendar-month lookback windows, bounded source re-scan, authenticated receipt
 membership requests, and selective resend decisions. It remains local
 simulation code with no CLI, daemon, automatic schedule, BMO registration,

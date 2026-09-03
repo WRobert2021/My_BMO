@@ -9,9 +9,9 @@ import json
 import re
 from typing import Any
 
-from iphone_relay.contracts import MessageEvent, NormalizedEvent, ReactionEvent
-from iphone_relay.errors import SourceRecordError
-from iphone_relay.timestamps import apple_nanoseconds_to_datetime
+from ..relay.contracts import MessageEvent, NormalizedEvent, ReactionEvent
+from ..relay.errors import SourceRecordError
+from ..relay.timestamps import apple_nanoseconds_to_datetime
 
 
 PROTOCOL_VERSION = 1

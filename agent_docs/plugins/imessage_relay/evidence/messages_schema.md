@@ -38,7 +38,7 @@ inspection.
 The repeatable evidence probe is:
 
 ```bash
-.venv/bin/python scripts/inspect_imessage_schema.py \
+.venv/bin/python -m bmo.features.imessage_relay.tools.inspect_schema \
   iphone_snapshot_stage0 iphone_snapshot \
   --assert-controlled-corpus
 ```

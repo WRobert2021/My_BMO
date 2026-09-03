@@ -2,7 +2,7 @@
 id: plugin.imessage_relay
 type: plugin
 plugin_type: feature/service
-entrypoint: bmo.features.imessage_relay (opt-in); backend packages iphone_relay and kiosk_receiver
+entrypoint: bmo.features.imessage_relay (opt-in)
 status: experimental
 progress: progress.md
 tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py]
@@ -22,24 +22,21 @@ through Messages are out of scope.
 
 | Area | Current owner/path |
 | --- | --- |
-| normalized contracts/read-only parser | `iphone_relay/contracts.py`, `reader.py`, `attachments.py`, `attributed_body.py`, `timestamps.py` |
-| sender-side discovery/queue state | `iphone_relay/state.py`, `state_codec.py`, `state_config.py` |
-| simulated sender/delivery loop | `iphone_relay/sender.py` |
-| bounded reconciliation/selective resend | `iphone_relay/reconciliation.py`, `reader.py`, `state.py` |
-| bounded attachment streaming | `iphone_relay/sender.py`, `kiosk_receiver/protocol.py`, `store.py`, `server.py` |
-| privacy-safe live read-only validation | `scripts/validate_imessage_live_readonly.py` |
-| stable live source snapshots | `iphone_relay/live_source.py` |
-| manual live-delivery acceptance | `scripts/run_imessage_live_delivery.py` |
-| kiosk authentication/wire schema | `kiosk_receiver/auth.py`, `protocol.py`, `config.py` |
-| kiosk receipt store/listener | `kiosk_receiver/store.py`, `server.py` |
+| normalized contracts/read-only parser | `bmo/features/imessage_relay/relay/{contracts,reader,attachments,attributed_body,timestamps}.py` |
+| sender-side discovery/queue state | `bmo/features/imessage_relay/relay/{state,state_codec,state_config}.py` |
+| sender and reconciliation | `bmo/features/imessage_relay/relay/{sender,reconciliation}.py` |
+| stable live source snapshots | `bmo/features/imessage_relay/relay/live_source.py` |
+| kiosk authentication/wire schema | `bmo/features/imessage_relay/receiver/{auth,protocol,config}.py` |
+| kiosk receipt store/listener | `bmo/features/imessage_relay/receiver/{store,server}.py` |
+| manual schema/live acceptance tools | `bmo/features/imessage_relay/tools/` |
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json`, disabled entry in `config/example.features.json` |
-| BMO lifecycle/status/reconciliation adapter | `bmo/features/imessage_relay.py` |
+| BMO lifecycle/status/reconciliation adapter | `bmo/features/imessage_relay/feature.py` |
 | Qt status view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
 
-The backend packages remain standalone and reusable. The Stage 10 adapter is
-absent from feature defaults and starts only when an explicit enabled feature
-entry names it. This preserves the development boundary without exempting the
-listener, worker, stores, UI, or cleanup from normal plugin contracts.
+Stage 11 consolidates the reusable backend and manual tools under the BMO
+plugin package. The adapter remains absent from feature defaults and starts
+only when an explicit enabled feature entry names it. No root compatibility
+package preserves the retired import identities.
 
 ## Implemented flow
 

@@ -8,7 +8,7 @@ import stat
 import tempfile
 import unittest
 
-from iphone_relay import (
+from bmo.features.imessage_relay.relay import (
     Attachment,
     AttachmentAvailability,
     AttachmentComponent,

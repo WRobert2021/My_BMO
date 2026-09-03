@@ -4,7 +4,7 @@
 
 Stage 2 is complete, and Stage 8 live compatibility validation was accepted on
 2026-09-02. The
-`iphone_relay` package is a stateless, local parser
+`bmo.features.imessage_relay.relay` package is a stateless, local parser
 for the conclusively supported Stage 1 schema. It is not a relay daemon, does
 not contain a queue or networking code, and has not been deployed to or run
 against the live iPhone.
@@ -17,7 +17,7 @@ failure-isolated under `../../../core/extensions.md`.
 ## Public contract
 
 ```python
-from iphone_relay import MessagesReader
+from bmo.features.imessage_relay.relay import MessagesReader
 
 reader = MessagesReader(
     "iphone_snapshot/SMS/sms.db",

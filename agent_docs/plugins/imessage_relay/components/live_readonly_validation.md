@@ -7,7 +7,7 @@ iPhone. It does not send an event, contact a kiosk endpoint, create relay
 state, install files on the phone, install a daemon, or register with the BMO
 runtime. Stage 9 remains a separate authorization gate.
 
-`scripts/validate_imessage_live_readonly.py` accepts a read-only mount of the
+`bmo.features.imessage_relay.tools.validate_live_readonly` accepts a read-only mount of the
 phone's `/var/mobile/Library/SMS` directory. It hashes and copies `sms.db`,
 `sms.db-wal`, and `sms.db-shm` into a local `0700` temporary directory, confirms
 the live trio did not change during that copy, and opens only the disposable
@@ -45,7 +45,7 @@ stage8_root="$(mktemp -d /private/tmp/imessage-stage8.XXXXXX)"
 mkdir "$stage8_root/SMS"
 sshfs -o ro,BatchMode=yes,StrictHostKeyChecking=yes,ConnectTimeout=5 \
   <authorized-target>:/var/mobile/Library/SMS "$stage8_root/SMS"
-.venv/bin/python scripts/validate_imessage_live_readonly.py \
+.venv/bin/python -m bmo.features.imessage_relay.tools.validate_live_readonly \
   "$stage8_root/SMS" --scan-limit 100
 umount "$stage8_root/SMS"
 rmdir "$stage8_root/SMS" "$stage8_root"

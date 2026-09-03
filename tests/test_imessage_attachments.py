@@ -11,7 +11,7 @@ import tempfile
 import threading
 import unittest
 
-from iphone_relay import (
+from bmo.features.imessage_relay.relay import (
     Attachment,
     AttachmentAvailability,
     AttachmentComponent,
@@ -28,13 +28,13 @@ from iphone_relay import (
     SenderKind,
     apple_nanoseconds_to_datetime,
 )
-from iphone_relay.sender import (
+from bmo.features.imessage_relay.relay.sender import (
     DeliveryDisposition,
     HTTPEventTransport,
     RelaySender,
     TransportResponse,
 )
-from kiosk_receiver import (
+from bmo.features.imessage_relay.receiver import (
     ATTACHMENT_SESSION_PATH,
     EVENT_PATH,
     MAX_ATTACHMENT_CHUNK_BYTES,
@@ -52,12 +52,12 @@ from kiosk_receiver import (
     encode_event_envelope,
     upload_session_response_body,
 )
-from kiosk_receiver.protocol import (
+from bmo.features.imessage_relay.receiver.protocol import (
     ProtocolError,
     attachment_chunk_response_body,
     encode_upload_session_request,
 )
-from kiosk_receiver.store import AttachmentDigestError
+from bmo.features.imessage_relay.receiver.store import AttachmentDigestError
 
 
 SECRET = b"invented-stage-seven-secret-at-least-32-bytes"

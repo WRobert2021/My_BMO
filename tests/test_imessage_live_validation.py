@@ -12,7 +12,9 @@ import unittest
 from unittest import mock
 from contextlib import redirect_stdout
 
-from scripts import validate_imessage_live_readonly as live_validation
+from bmo.features.imessage_relay.tools import (
+    validate_live_readonly as live_validation,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -182,7 +184,8 @@ class IMessageLiveValidationTests(unittest.TestCase):
         completed = subprocess.run(
             [
                 sys.executable,
-                str(PROJECT_ROOT / "scripts" / "validate_imessage_live_readonly.py"),
+                "-m",
+                "bmo.features.imessage_relay.tools.validate_live_readonly",
                 "--help",
             ],
             cwd=PROJECT_ROOT,

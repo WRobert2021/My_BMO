@@ -10,21 +10,25 @@ import sqlite3
 import tempfile
 import unittest
 
-from iphone_relay import (
+from bmo.features.imessage_relay.relay import (
     MessagesReader,
     QueueStatus,
     RelayStateStore,
     RetryPolicy,
     ScanBatch,
 )
-from iphone_relay.reconciliation import (
+from bmo.features.imessage_relay.relay.reconciliation import (
     ReconciliationError,
     ReconciliationWindow,
     ReconciliationWindowKind,
     RelayReconciler,
 )
-from iphone_relay.sender import EVENT_PATH, RelaySender, TransportResponse
-from kiosk_receiver import (
+from bmo.features.imessage_relay.relay.sender import (
+    EVENT_PATH,
+    RelaySender,
+    TransportResponse,
+)
+from bmo.features.imessage_relay.receiver import (
     RECONCILIATION_PATH,
     ReceiverApplication,
     ReceiverStateStore,

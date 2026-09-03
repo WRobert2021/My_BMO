@@ -88,9 +88,9 @@ remain required.
 
 Implemented ownership:
 
-- `iphone_relay/live_source.py` fingerprints and copies the DB/WAL/SHM trio
+- `bmo/features/imessage_relay/relay/live_source.py` fingerprints and copies the DB/WAL/SHM trio
   into a disposable directory and rejects source changes around each use.
-- `scripts/run_imessage_live_delivery.py` owns the bounded manual matrix,
+- `bmo.features.imessage_relay.tools.run_live_delivery` owns the bounded manual matrix,
   private-directory enforcement, ephemeral authentication, and aggregate-only
   result.
 - `tests/test_imessage_live_delivery.py` owns invented WAL-backed orchestration,

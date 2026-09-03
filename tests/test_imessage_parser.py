@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from iphone_relay import (
+from bmo.features.imessage_relay.relay import (
     AttachmentAvailability,
     AttributedBodyError,
     Direction,
@@ -25,7 +25,7 @@ from iphone_relay import (
     apple_seconds_to_datetime,
     open_read_only_database,
 )
-from iphone_relay.attributed_body import (
+from bmo.features.imessage_relay.relay.attributed_body import (
     MAX_ATTRIBUTED_BODY_BYTES,
     OBSERVED_ATTRIBUTED_STRING_PREFIX,
     extract_attributed_body_text,

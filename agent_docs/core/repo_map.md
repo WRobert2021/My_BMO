@@ -58,18 +58,16 @@ map. Plugin overviews contain only their local subset.
 | GalaxyRVR | feature | `bmo.features.galaxy_rvr` | `galaxy_rvr_config.py` | GalaxyRVR Qt/Tk | snapshots only | joystick/network/photo workers while open | `test_galaxy_rvr.py` |
 | Pup Pairs | mode | `bmo.modes.matching_game` | mode settings | Matching Qt/Tk | score history | mode/UI lifecycle | `test_matching_game.py`, `test_modes.py` |
 | Twenty Questions | mode | `bmo.modes.twenty_questions` | mode settings | Twenty Questions Qt/legacy | learned JSONL/history JSON | model calls during mode | `test_twenty_questions.py`, `test_modes.py` |
-| iMessage Relay | feature/service, experimental | opt-in `bmo.features.imessage_relay`; backends `iphone_relay`, `kiosk_receiver` | two domain examples plus disabled feature entry | Relay Qt status/reconciliation view | receiver SQLite plus per-job relay SQLite | enabled receiver listener; one on-demand reconciliation worker | `test_imessage_*.py` |
+| iMessage Relay | feature/service, experimental | opt-in `bmo.features.imessage_relay`; nested `relay`, `receiver`, and `tools` packages | two domain examples plus disabled feature entry | Relay Qt status/reconciliation view | receiver SQLite plus per-job relay SQLite | enabled receiver listener; one on-demand reconciliation worker | `test_imessage_*.py` |
 
 ## Relay and tooling
 
 | Path | Responsibility | Owner |
 | --- | --- | --- |
-| `iphone_relay/contracts.py`, `reader.py`, `attachments.py`, `attributed_body.py`, `timestamps.py` | immutable events and read-only Apple parsing | iMessage Relay parser |
-| `iphone_relay/state.py`, `state_codec.py`, `state_config.py` | discovery cursor, durable queue/retry/ACK, strict payload/config | iMessage Relay state |
-| `kiosk_receiver/auth.py`, `protocol.py`, `config.py` | HMAC, wire schema, private config | iMessage Relay receiver |
-| `kiosk_receiver/store.py`, `server.py` | idempotent receipt store and standalone HTTP(S) listener | iMessage Relay receiver |
-| `bmo/features/imessage_relay.py`, `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` | opt-in BMO lifecycle, status, reconciliation controls, and Qt view | iMessage Relay runtime integration |
-| `scripts/inspect_imessage_schema.py` | redacted disposable-snapshot evidence probe | relay development tooling |
+| `bmo/features/imessage_relay/relay/` | parsing, discovery queue, sender, reconciliation, and stable live snapshots | iMessage Relay backend |
+| `bmo/features/imessage_relay/receiver/` | HMAC/wire config, idempotent receipt store, and HTTP(S) listener | iMessage Relay receiver |
+| `bmo/features/imessage_relay/tools/` | redacted schema and manual live acceptance CLIs | iMessage Relay operator tooling |
+| `bmo/features/imessage_relay/feature.py`, `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` | opt-in BMO lifecycle, status, reconciliation controls, and Qt view | iMessage Relay runtime integration |
 | `config/example.*.json` | tracked schemas without private values | core or named plugin |
 | `tests/extension_modules/` | importable registration proof fixtures | extension framework tests |
 | `tests/test_*` | focused core/plugin/platform/integration coverage | corresponding row above |
