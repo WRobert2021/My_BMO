@@ -11,7 +11,8 @@ callers opt into directory fsync where required.
 
 `bmo.archive` separately owns contained interaction artifact allocation,
 allowed categories/filenames/suffixes, strict JSONL event output, and manifests.
-`bmo.memory` owns bounded conversation-history validation and atomic saving.
+`bmo.memory` owns bounded conversation-history validation and atomic saving to
+the ignored `bmo/data/memory.json` file.
 
 ## Domain ownership
 

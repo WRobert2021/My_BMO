@@ -58,7 +58,7 @@ without corrupting QML state.
 the view host, and controller. The runtime marks exit, interrupts and wakes
 waiters, closes the extension coordinator (feature registry then mode registry),
 stops audio/speech activity, joins owned threads, saves bounded conversation
-memory atomically, and unloads model state. One plugin cleanup failure is
+memory atomically to `bmo/data/memory.json`, and unloads model state. One plugin cleanup failure is
 reported without preventing remaining cleanup.
 
 Primary tests: `tests/test_runtime_loop.py`, `tests/test_runtime_voice.py`,
