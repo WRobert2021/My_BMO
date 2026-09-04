@@ -60,7 +60,7 @@ class CompactFaceConfigTests(unittest.TestCase):
     def test_config_adds_state_and_discovers_frames_deterministically(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            frames = root / "faces" / "celebrating"
+            frames = root / "graphics" / "faces" / "celebrating"
             frames.mkdir(parents=True)
             for name in ("frame 10.png", "frame 02.PNG", "frame 01.png"):
                 (frames / name).write_bytes(b"png")
@@ -70,7 +70,7 @@ class CompactFaceConfigTests(unittest.TestCase):
                     {
                         "states": {
                             "celebrating": {
-                                "directory": "faces/celebrating",
+                                "directory": "graphics/faces/celebrating",
                                 "frame_duration_ms": 90,
                             }
                         }
@@ -89,6 +89,34 @@ class CompactFaceConfigTests(unittest.TestCase):
             "frame 10.png",
         ])
         self.assertEqual(config.state_duration("celebrating"), 90)
+
+    def test_legacy_face_root_is_normalized_to_graphics(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frames = root / "graphics" / "faces" / "idle"
+            frames.mkdir(parents=True)
+            (frames / "idle.png").write_bytes(b"png")
+            path = root / "compact.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "states": {
+                            "idle": {
+                                "directory": "faces/idle",
+                                "frame_duration_ms": 500,
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_compact_face_config(path, project_root=root)
+
+        self.assertEqual(
+            config.states["idle"].directory,
+            Path("graphics/faces/idle"),
+        )
 
     def test_outside_face_path_rejects_entire_private_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -121,7 +149,7 @@ class CompactFaceConfigTests(unittest.TestCase):
     def test_empty_or_missing_state_directory_returns_no_frames(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "faces" / "idle").mkdir(parents=True)
+            (root / "graphics" / "faces" / "idle").mkdir(parents=True)
             config = CompactFaceConfig()
 
             self.assertEqual(config.frame_paths("idle", project_root=root), ())

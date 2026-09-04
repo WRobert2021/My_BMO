@@ -12,6 +12,9 @@ from unittest.mock import patch
 
 from bmo.twenty_questions import (
     ANSWER_PROMPT,
+    BASE_DATA_PATH,
+    HISTORY_PATH,
+    LEARNED_DATA_PATH,
     OBJECT_NAME_KEY,
     CandidateIndex,
     TwentyQuestionsHistory,
@@ -30,6 +33,16 @@ QUESTIONS = (
     "Is it useful?",
     "Is it found indoors?",
 )
+
+
+class TwentyQuestionsPathTests(unittest.TestCase):
+    def test_default_files_use_plugin_data_directory(self) -> None:
+        expected_root = (
+            Path(__file__).resolve().parents[1] / "bmo" / "data" / "20_questions"
+        )
+        self.assertEqual(BASE_DATA_PATH, expected_root / "data.jsonl")
+        self.assertEqual(LEARNED_DATA_PATH, expected_root / "learned.jsonl")
+        self.assertEqual(HISTORY_PATH, expected_root / "history.json")
 
 
 def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:

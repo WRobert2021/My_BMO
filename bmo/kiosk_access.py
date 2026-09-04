@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from bmo.jsonio import load_json
+from bmo.repository_paths import relocated_repository_path
 
 
 DEFAULT_QUIET_HOURS_CONFIG_PATH = Path("config/quiet_hours.json")
-DEFAULT_SLEEPING_FACE_DIRECTORY = Path("faces/sleeping")
+DEFAULT_SLEEPING_FACE_DIRECTORY = Path("graphics/faces/sleeping")
 
 
 @dataclass(frozen=True)
@@ -79,7 +80,7 @@ def _parse_config(values: Mapping[str, Any]) -> QuietHoursConfig:
         end=_parse_time(values.get("end"), "end", time(7)),
         weekdays=tuple(raw_weekdays),
         passcode=str(values.get("passcode", "0000")),
-        sleeping_face_directory=Path(raw_path).expanduser(),
+        sleeping_face_directory=relocated_repository_path(raw_path),
     )
 
 

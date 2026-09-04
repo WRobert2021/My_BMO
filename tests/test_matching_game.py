@@ -12,11 +12,24 @@ from bmo.matching_game import (
     CHARACTER_FILES,
     MatchingGameHistory,
     MatchingGameModel,
+    SCORE_HISTORY_PATH,
     is_matching_game_start_request,
 )
+from bmo.matching_game_core import SCORE_HISTORY_PATH as CORE_SCORE_HISTORY_PATH
 
 
 class MatchingGameModelTests(unittest.TestCase):
+    def test_score_history_uses_plugin_data_directory(self) -> None:
+        expected = (
+            Path(__file__).resolve().parents[1]
+            / "bmo"
+            / "data"
+            / "matching_game"
+            / "matching_game_scores.json"
+        )
+        self.assertEqual(SCORE_HISTORY_PATH, expected)
+        self.assertEqual(CORE_SCORE_HISTORY_PATH, expected)
+
     def make_game(self) -> MatchingGameModel:
         return MatchingGameModel(
             characters=("Chase", "Skye"),
@@ -145,7 +158,7 @@ class MatchingGameModelTests(unittest.TestCase):
 
     def test_history_remembers_scores_without_changing_difficulty(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "scores.json"
+            path = Path(directory) / "nested" / "scores.json"
             history = MatchingGameHistory(path=path)
             next_pairs = history.record_game(
                 pairs=6,

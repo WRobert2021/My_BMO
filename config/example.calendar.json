@@ -1,6 +1,6 @@
 {
-  "data_directory": "data/calendar",
-  "overlay_directory": "faces/calendar",
+  "data_directory": "bmo/data/calendar",
+  "overlay_directory": "graphics/faces/calendar",
   "show_in_menu": true,
   "built_in_us_holidays": true,
   "speak_notes": false,

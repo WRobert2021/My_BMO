@@ -16,7 +16,7 @@ FEATURE_CONFIG_KEYS = frozenset({"features", "modes"})
 # Retain the old public constant name for callers that import it. It now points
 # at the user-settings file in the split configuration layout.
 CONFIG_FILE = SETTINGS_CONFIG_FILE
-MEMORY_FILE = Path("memory.json")
+MEMORY_FILE = Path("bmo/data/memory.json")
 BMO_IMAGE_FILE = Path("current_image.jpg")
 WAKE_WORD_MODEL = Path("wakeword.onnx")
 WAKE_WORD_THRESHOLD = 0.5
@@ -52,10 +52,10 @@ OLLAMA_OPTIONS: dict[str, Any] = {
 }
 
 SOUND_DIRECTORIES = {
-    "greeting": Path("sounds/greeting_sounds"),
-    "ack": Path("sounds/ack_sounds"),
-    "thinking": Path("sounds/thinking_sounds"),
-    "error": Path("sounds/error_sounds"),
+    "greeting": Path("audio/sounds/greeting_sounds"),
+    "ack": Path("audio/sounds/ack_sounds"),
+    "thinking": Path("audio/sounds/thinking_sounds"),
+    "error": Path("audio/sounds/error_sounds"),
 }
 
 

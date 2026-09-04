@@ -6,13 +6,16 @@ from pathlib import Path
 from bmo.config import (
     DEFAULT_CONFIG,
     FEATURES_CONFIG_FILE,
+    MEMORY_FILE,
     QUIET_HOURS_CONFIG_FILE,
     SETTINGS_CONFIG_FILE,
+    SOUND_DIRECTORIES,
     WEATHER_CONFIG_FILE,
     load_config,
 )
 from bmo.memory import load_chat_history, save_chat_history
 from bmo.prompts import BASE_SYSTEM_PROMPT, build_system_prompt
+from bmo.repository_paths import relocated_repository_path
 
 
 class ConfigTests(unittest.TestCase):
@@ -20,10 +23,42 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(SETTINGS_CONFIG_FILE, Path("config/settings.json"))
         self.assertEqual(FEATURES_CONFIG_FILE, Path("config/features.json"))
         self.assertEqual(WEATHER_CONFIG_FILE, Path("config/weather.json"))
+        self.assertEqual(MEMORY_FILE, Path("bmo/data/memory.json"))
         self.assertEqual(
             QUIET_HOURS_CONFIG_FILE,
             Path("config/quiet_hours.json"),
         )
+
+    def test_default_sound_paths_use_audio_directory(self):
+        self.assertEqual(
+            SOUND_DIRECTORIES,
+            {
+                "greeting": Path("audio/sounds/greeting_sounds"),
+                "ack": Path("audio/sounds/ack_sounds"),
+                "thinking": Path("audio/sounds/thinking_sounds"),
+                "error": Path("audio/sounds/error_sounds"),
+            },
+        )
+
+    def test_legacy_roots_are_normalized_without_rewriting_absolutes(self):
+        self.assertEqual(
+            relocated_repository_path("faces/idle"),
+            Path("graphics/faces/idle"),
+        )
+        self.assertEqual(
+            relocated_repository_path("sounds/ack_sounds"),
+            Path("audio/sounds/ack_sounds"),
+        )
+        self.assertEqual(
+            relocated_repository_path("data/calendar"),
+            Path("bmo/data/calendar"),
+        )
+        self.assertEqual(
+            relocated_repository_path("private/calendar"),
+            Path("private/calendar"),
+        )
+        absolute = Path("/opt/bmo/data/calendar")
+        self.assertEqual(relocated_repository_path(absolute), absolute)
 
     def test_missing_config_uses_defaults(self):
         with tempfile.TemporaryDirectory() as temp_dir:

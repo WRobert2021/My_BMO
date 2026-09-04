@@ -22,6 +22,7 @@ map. Plugin overviews contain only their local subset.
 | `bmo/conversation.py`, `intent.py`, `prompts.py`, `tools.py` | generic model/tool routing and presentation | core conversation |
 | `bmo/audio.py`, `speech.py` | device audio, wake word, transcription, Piper | core speech/audio |
 | `bmo/archive.py`, `memory.py`, `jsonio.py` | archives, conversation memory, strict JSON/atomic writes | shared persistence |
+| `bmo/repository_paths.py` | compatibility normalization for moved project-relative roots | shared configuration |
 | `bmo/text.py`, `network.py`, `state.py` | narrow shared normalization/timeout/state values | shared core |
 | `bmo/kiosk_access.py` | Quiet Hours schedule and unlock state | core kiosk policy |
 
@@ -72,6 +73,8 @@ map. Plugin overviews contain only their local subset.
 | `tests/extension_modules/` | importable registration proof fixtures | extension framework tests |
 | `tests/test_*` | focused core/plugin/platform/integration coverage | corresponding row above |
 
-Root `README.md` is human/operator-facing. `faces/`, `sounds/`, and referenced
-`graphics/` are runtime assets; `graphics/` is locally copyrighted and
-read-only under repository policy.
+Root `README.md` is human/operator-facing. `graphics/faces/`, `audio/sounds/`,
+and referenced `graphics/` are runtime assets; `bmo/data/` holds conversation
+memory plus plugin-owned local state and datasets. `graphics/` is locally copyrighted and read-only
+under repository policy except when an explicit user request authorizes an
+asset-layout change.

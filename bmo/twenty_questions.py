@@ -42,9 +42,9 @@ from bmo.twenty_questions_text import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OBJECT_NAME_KEY = "What object is it?"
-BASE_DATA_PATH = PROJECT_ROOT / "data" / "20_questions" / "data.jsonl"
-LEARNED_DATA_PATH = PROJECT_ROOT / "data" / "20_questions" / "learned.jsonl"
-HISTORY_PATH = PROJECT_ROOT / "data" / "20_questions" / "history.json"
+BASE_DATA_PATH = PROJECT_ROOT / "bmo" / "data" / "20_questions" / "data.jsonl"
+LEARNED_DATA_PATH = PROJECT_ROOT / "bmo" / "data" / "20_questions" / "learned.jsonl"
+HISTORY_PATH = PROJECT_ROOT / "bmo" / "data" / "20_questions" / "history.json"
 # These aliases make the paths easy to discover for callers and tests.
 DATA_PATH = BASE_DATA_PATH
 LEARNED_PATH = LEARNED_DATA_PATH

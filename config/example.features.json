@@ -14,9 +14,9 @@
         "show_in_menu": true,
         "answer_wait_seconds": 12,
         "debug": false,
-        "data_path": "data/20_questions/data.jsonl",
-        "learned_path": "data/20_questions/learned.jsonl",
-        "history_path": "data/20_questions/history.json",
+        "data_path": "bmo/data/20_questions/data.jsonl",
+        "learned_path": "bmo/data/20_questions/learned.jsonl",
+        "history_path": "bmo/data/20_questions/history.json",
         "informative_question_limit": 20,
         "total_prompt_limit": 30
       }
@@ -81,7 +81,7 @@
       "settings": {
         "photo_root": "/home/pi-bmo/Pictures",
         "wastebasket_root": "/home/pi-bmo/.local/share/Trash",
-        "bmo_button_image": "/home/pi-bmo/My_BMO/faces/capturing/capturing 01.png",
+        "bmo_button_image": "/home/pi-bmo/My_BMO/graphics/faces/capturing/capturing 01.png",
         "photos_per_page": 6
       }
     },

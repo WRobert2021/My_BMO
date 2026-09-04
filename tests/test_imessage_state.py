@@ -555,7 +555,9 @@ class RelayStateConfigTests(unittest.TestCase):
         self.assertIsInstance(config, RelayStateConfig)
         self.assertEqual(
             config.state_path,
-            (self.root / "data" / "imessage_relay" / "relay_state.db").resolve(),
+            (
+                self.root / "bmo" / "data" / "imessage_relay" / "relay_state.db"
+            ).resolve(),
         )
         self.assertEqual(config.retry_policy, RetryPolicy())
         self.assertFalse(path.exists())
@@ -568,7 +570,9 @@ class RelayStateConfigTests(unittest.TestCase):
 
         self.assertEqual(
             config.state_path,
-            (self.root / "data" / "imessage_relay" / "relay_state.db").resolve(),
+            (
+                self.root / "bmo" / "data" / "imessage_relay" / "relay_state.db"
+            ).resolve(),
         )
         self.assertEqual(config.retry_policy.initial_delay_ms, 30_000)
         self.assertEqual(config.retry_policy.max_delay_ms, 900_000)

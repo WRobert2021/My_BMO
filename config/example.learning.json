@@ -1,5 +1,5 @@
 {
-  "data_directory": "data/learning",
+  "data_directory": "bmo/data/learning",
   "graphics_directory": "graphics/learning",
   "show_in_menu": true,
   "teacher_pin": "2468",

@@ -118,7 +118,7 @@ class QtFaceController(QObject):
             )
             for state in self._config.states or ()
         }
-        blank = self._project_root / "faces" / "blank.png"
+        blank = self._project_root / "graphics" / "faces" / "blank.png"
         fallback = (blank,) if blank.is_file() else ()
         idle = frames.get(BotStates.IDLE) or fallback
         return {

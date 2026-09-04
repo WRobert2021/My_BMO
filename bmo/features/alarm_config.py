@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from bmo.jsonio import load_json
+from bmo.repository_paths import relocated_repository_path
 
 
 DEFAULT_ALARM_CONFIG_PATH = Path("config/alarm_clock.json")
-DEFAULT_ALARM_STATE_PATH = Path("data/alarms/alarms.json")
+DEFAULT_ALARM_STATE_PATH = Path("bmo/data/alarms/alarms.json")
 MAX_CONFIG_BYTES = 64 * 1024
 _OWNED_KEYS = frozenset(
     {"show_in_menu", "state_path", "snooze_minutes", "use_24_hour"}
@@ -50,7 +51,7 @@ def _parse(values: Mapping[str, Any]) -> AlarmClockConfig:
         raise ValueError("alarm-clock snooze_minutes must be from 1 to 60")
     return AlarmClockConfig(
         show_in_menu=show_in_menu,
-        state_path=Path(raw_path).expanduser(),
+        state_path=relocated_repository_path(raw_path),
         snooze_minutes=raw_snooze,
         use_24_hour=use_24_hour,
     )

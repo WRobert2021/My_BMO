@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from bmo.repository_paths import relocated_repository_path
+
 
 WINDOW_WIDTH = 800
 FACE_WIDTH = 108
@@ -22,15 +24,15 @@ DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "compact_face.json"
 
 _STATE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _DEFAULT_STATE_VALUES = {
-    "idle": (Path("faces/idle"), 500),
-    "listening": (Path("faces/listening"), 500),
-    "thinking": (Path("faces/thinking"), 500),
-    "speaking": (Path("faces/speaking"), 50),
-    "error": (Path("faces/error"), 500),
-    "capturing": (Path("faces/capturing"), 500),
-    "warmup": (Path("faces/warmup"), 500),
-    "alarm": (Path("faces/alarm"), 180),
-    "alarm_clock_ringing": (Path("faces/alarm_clock"), 180),
+    "idle": (Path("graphics/faces/idle"), 500),
+    "listening": (Path("graphics/faces/listening"), 500),
+    "thinking": (Path("graphics/faces/thinking"), 500),
+    "speaking": (Path("graphics/faces/speaking"), 50),
+    "error": (Path("graphics/faces/error"), 500),
+    "capturing": (Path("graphics/faces/capturing"), 500),
+    "warmup": (Path("graphics/faces/warmup"), 500),
+    "alarm": (Path("graphics/faces/alarm"), 180),
+    "alarm_clock_ringing": (Path("graphics/faces/alarm_clock"), 180),
 }
 
 
@@ -105,7 +107,11 @@ class CompactFaceConfig:
         directory = configured.directory
         if faces_root is not None and not directory.is_absolute():
             parts = directory.parts
-            relative = Path(*parts[1:]) if parts and parts[0] == "faces" else directory
+            relative = (
+                Path(*parts[2:])
+                if parts[:2] == ("graphics", "faces")
+                else directory
+            )
             resolved = Path(faces_root) / relative
         else:
             resolved = (
@@ -160,11 +166,13 @@ def _nonnegative_int(value: object, label: str, default: int) -> int:
 def _contained_directory(value: object, *, project_root: Path) -> Path:
     if not isinstance(value, (str, Path)) or not str(value).strip():
         raise ValueError("compact face state directory must be a non-empty path")
-    raw = Path(value)
+    raw = relocated_repository_path(value)
     resolved = (raw if raw.is_absolute() else project_root / raw).resolve()
-    faces_root = (project_root / "faces").resolve()
+    faces_root = (project_root / "graphics" / "faces").resolve()
     if not resolved.is_relative_to(faces_root):
-        raise ValueError("compact face state directories must stay inside faces/")
+        raise ValueError(
+            "compact face state directories must stay inside graphics/faces/"
+        )
     try:
         return resolved.relative_to(project_root.resolve())
     except ValueError:
@@ -196,7 +204,9 @@ def _parse_config(values: Mapping[str, Any], *, project_root: Path) -> CompactFa
                 + ", ".join(sorted(unknown_state))
             )
         previous = states.get(name)
-        default_directory = previous.directory if previous else Path("faces") / name
+        default_directory = (
+            previous.directory if previous else Path("graphics/faces") / name
+        )
         default_duration = previous.frame_duration_ms if previous else DEFAULT_REFRESH_MS
         states[name] = CompactFaceState(
             _contained_directory(

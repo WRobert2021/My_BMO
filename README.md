@@ -83,21 +83,24 @@ be-more-agent/
 │   ├── compact_face.json      # Local shared face layout/animation settings
 │   ├── imessage_relay.json    # Local relay-state/retry settings (ignored)
 │   └── imessage_receiver.json # Local receiver/TLS settings (ignored)
-├── data/calendar/             # Local events and acknowledgments (ignored)
-├── data/learning/             # Local learners, plans, and progress (ignored)
-├── data/imessage_relay/       # Private relay queue/checkpoint state (ignored)
-├── data/imessage_receiver/    # Private kiosk receipt/nonce state (ignored)
-├── memory.json                # Conversation history
+├── bmo/data/                  # Plugin-owned local data
+│   ├── 20_questions/          # Base, learned, and recent-target data (ignored)
+│   ├── calendar/              # Local events and acknowledgments (ignored)
+│   ├── learning/              # Local learners, plans, and progress (ignored)
+│   ├── matching_game/         # Local Pup Pairs score history (ignored)
+│   ├── imessage_relay/        # Private relay queue/checkpoint state (ignored)
+│   ├── imessage_receiver/     # Private kiosk receipt/nonce state (ignored)
+│   └── memory.json            # Conversation history (ignored)
 ├── interaction_logs/          # Private, durable per-turn archives
 ├── requirements.txt           # Python dependencies
 ├── whisper.cpp/               # Speech-to-Text engine
 ├── piper/                     # Piper TTS engine & voice models
-├── sounds/                    # Sound effects folder
+├── audio/sounds/              # Sound effects folder
 │   ├── greeting_sounds/       # Startup .wav files
 │   ├── thinking_sounds/       # Looping .wav files
 │   ├── ack_sounds/            # "I heard you" .wav files
 │   └── error_sounds/          # Error/Confusion .wav files
-└── faces/                     # Face images folder
+└── graphics/faces/            # Face images folder
     ├── idle/                  # .png sequence for idle state
     ├── listening/             # .png sequence for listening
     ├── thinking/              # .png sequence for thinking
@@ -105,6 +108,10 @@ be-more-agent/
     ├── error/                 # .png sequence for errors
     └── warmup/                # .png sequence for startup
 ```
+
+Existing relative configuration values rooted at `faces/`, `sounds/`, or
+`data/` are normalized in memory to the new locations. Tracked examples use
+the current paths.
 
 ---
 
@@ -214,7 +221,7 @@ Configuration is split by audience:
   `song`, `player_command` defaults to `ffplay`, and `state_path` chooses where
   recent plays, counts, favorites, and playlists are saved.
 - `config/compact_face.json` is owned by the neutral UI layer. It maps runtime
-  states to contained PNG directories under `faces/` and controls the one
+  states to contained PNG directories under `graphics/faces/` and controls the one
   shared refresh/layout specification used by Menu, features, modes, and
   Weather. Its outer viewport is always 108×65; invalid files safely use
   defaults.
@@ -302,7 +309,7 @@ shown in `config/example.features.json`:
 - Unacknowledged events occurring today publish a badge at startup and each
   local midnight. The badge is visible only on BMO's full-screen idle face,
   never on the upper-right PIP face. Tapping it acknowledges that occurrence
-  persistently and BMO speaks the event. Optional PNGs under `faces/calendar`
+  persistently and BMO speaks the event. Optional PNGs under `graphics/faces/calendar`
   decorate the normal idle face; missing art cannot prevent startup.
 - The weather feature contributes `graphics/icons/weather.png` by reference
   and keeps the existing spoken “what is the weather” action. Its full-screen
@@ -335,7 +342,7 @@ shown in `config/example.features.json`:
 - Global quiet hours use the system's local clock and are disabled by default.
   Configure the schedule, active weekdays, and four-digit parent PIN in
   `config/quiet_hours.json` (`0` is Monday and `6` is Sunday); optional sleeping art can live under
-  `faces/sleeping`. During an active period, the sleeping cover blocks the
+  `graphics/faces/sleeping`. During an active period, the sleeping cover blocks the
   menu, push-to-talk, voice turns, announcements, and notification badges.
   Entering the PIN unlocks only the current period. The PIN is a convenience
   control stored as plain text, not a security boundary.
@@ -371,7 +378,7 @@ shown in `config/example.features.json`:
   curriculum covers literacy, vocabulary, early math, and general readiness.
   Learner profiles,
   teacher-authored prerequisite-aware plans, bounded attempt history, mastery,
-  and reports stay under `data/learning`. Instructions and feedback use BMO's
+  and reports stay under `bmo/data/learning`. Instructions and feedback use BMO's
   existing view-scoped Piper voice; no model, microphone, direct phrase, or
   separate TTS path is exposed. See [the Learning guide](agent_docs/plugins/learning/overview.md) for
   configuration, scoring, storage recovery, and lesson-extension details.
@@ -410,7 +417,7 @@ configuration-driven loading rules as features:
   are isolated per module. Later valid modes still load, and a failed hook leaves
   none of its partial registrations behind.
 - Twenty Questions reads its immutable base catalog from
-  `data/20_questions/data.jsonl`. The downloaded catalog is intentionally
+  `bmo/data/20_questions/data.jsonl`. The downloaded catalog is intentionally
   untracked; BMO validates and loads it lazily when the game starts and reports
   a short mode-local error if it is missing or corrupt. It uses adaptive
   attribute partitioning over the catalog, not alphabetical object-name search.
@@ -431,7 +438,7 @@ configuration-driven loading rules as features:
   asks four bonus questions before a model guess at question 25. The board
   offers PLAY AGAIN after a completed game.
 - Confirmed guesses and revealed objects update the optional learned overlay at
-  `data/20_questions/learned.jsonl`. It is also untracked, written atomically,
+  `bmo/data/20_questions/learned.jsonl`. It is also untracked, written atomically,
   and stores one stable wide row per object. Learned definite answers can
   refine base Often values; learned Unknown values remain wildcards until a
   later confirmed observation. A malformed learned file disables learning for
@@ -499,7 +506,7 @@ This software is a generic framework. You can give it a new personality by repla
     without editing individual feature screens. Every compact view uses the
     same fixed top-right 108×65 component, and 5:3 artwork is letterboxed
     without stretching.
-2.  **Sounds:** Put multiple `.wav` files in the `sounds/[category]/` folders. The robot will pick one at random each time (e.g., different "thinking" hums or "error" buzzes).
+2.  **Sounds:** Put multiple `.wav` files in the `audio/sounds/[category]/` folders. The robot will pick one at random each time (e.g., different "thinking" hums or "error" buzzes).
 
 ---
 ## 🗣️ The Custom BMO Voice

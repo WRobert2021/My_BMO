@@ -34,7 +34,8 @@ visibility without opening stores or starting the worker.
 
 ## Configuration, persistence, and lifecycle
 
-`config/example.calendar.json` documents the private data/overlay roots,
+`config/example.calendar.json` documents the private `bmo/data/calendar` and
+`graphics/faces/calendar` roots,
 visibility, holiday choice, note narration, and categories. Versioned event and
 acknowledgement JSON is atomically replaced. Recurrence is lazily expanded with
 bounded arithmetic. Malformed/future data becomes read-only rather than being

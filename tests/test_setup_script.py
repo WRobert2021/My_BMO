@@ -112,6 +112,27 @@ class SetupScriptTests(unittest.TestCase):
         for package in ("ca-certificates", "curl", "python3-venv"):
             self.assertRegex(script, rf"(?m)^\s*{re.escape(package)}$", package)
 
+    def test_setup_creates_refactored_runtime_directories(self) -> None:
+        script = SETUP_SCRIPT.read_text(encoding="utf-8")
+
+        for relative_path in (
+            "audio/sounds/greeting_sounds",
+            "audio/sounds/thinking_sounds",
+            "audio/sounds/ack_sounds",
+            "audio/sounds/error_sounds",
+            "graphics/faces/idle",
+            "graphics/faces/listening",
+            "graphics/faces/thinking",
+            "graphics/faces/speaking",
+            "graphics/faces/error",
+            "graphics/faces/warmup",
+            "bmo/data/matching_game",
+        ):
+            self.assertIn(f'"$BASE_DIR/{relative_path}"', script)
+
+        self.assertNotIn('"$BASE_DIR/sounds/', script)
+        self.assertNotIn('"$BASE_DIR/faces/', script)
+
     def test_setup_uses_supported_model_sources(self) -> None:
         script = SETUP_SCRIPT.read_text(encoding="utf-8")
 

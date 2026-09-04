@@ -154,7 +154,7 @@ The tracked `config/example.imessage_relay.json` documents:
 paths. A missing private config returns defaults in memory and creates nothing.
 Unknown, duplicate, non-finite, incorrectly typed, excessive, or inconsistent
 values fail closed. Copy the example only when local customization is needed;
-`config/imessage_relay.json` and `data/imessage_relay/` are ignored.
+`config/imessage_relay.json` and `bmo/data/imessage_relay/` are ignored.
 
 ## Security and privacy
 

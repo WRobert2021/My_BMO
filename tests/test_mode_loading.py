@@ -189,9 +189,9 @@ class ModeLoadingTests(unittest.TestCase):
                     {
                         "module": "bmo.modes.twenty_questions",
                         "settings": {
-                            "data_path": "data/20_questions/data.jsonl",
-                            "learned_path": "data/20_questions/learned.jsonl",
-                            "history_path": "data/20_questions/data.jsonl",
+                            "data_path": "bmo/data/20_questions/data.jsonl",
+                            "learned_path": "bmo/data/20_questions/learned.jsonl",
+                            "history_path": "bmo/data/20_questions/data.jsonl",
                         },
                     }
                 ]

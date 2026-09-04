@@ -139,16 +139,17 @@ create_directories() {
     mkdir -p \
         "$PIPER_DIR" \
         "$BASE_DIR/voices" \
-        "$BASE_DIR/sounds/greeting_sounds" \
-        "$BASE_DIR/sounds/thinking_sounds" \
-        "$BASE_DIR/sounds/ack_sounds" \
-        "$BASE_DIR/sounds/error_sounds" \
-        "$BASE_DIR/faces/idle" \
-        "$BASE_DIR/faces/listening" \
-        "$BASE_DIR/faces/thinking" \
-        "$BASE_DIR/faces/speaking" \
-        "$BASE_DIR/faces/error" \
-        "$BASE_DIR/faces/warmup"
+        "$BASE_DIR/bmo/data/matching_game" \
+        "$BASE_DIR/audio/sounds/greeting_sounds" \
+        "$BASE_DIR/audio/sounds/thinking_sounds" \
+        "$BASE_DIR/audio/sounds/ack_sounds" \
+        "$BASE_DIR/audio/sounds/error_sounds" \
+        "$BASE_DIR/graphics/faces/idle" \
+        "$BASE_DIR/graphics/faces/listening" \
+        "$BASE_DIR/graphics/faces/thinking" \
+        "$BASE_DIR/graphics/faces/speaking" \
+        "$BASE_DIR/graphics/faces/error" \
+        "$BASE_DIR/graphics/faces/warmup"
 }
 
 setup_whisper_cpp() {

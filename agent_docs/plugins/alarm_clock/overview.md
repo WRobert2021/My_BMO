@@ -36,7 +36,7 @@ remain enabled; snooze deadlines are persisted atomically.
 
 ## Persistence and failure
 
-Private state defaults under `data/alarms`; configuration controls visibility,
+Private state defaults under `bmo/data/alarms`; configuration controls visibility,
 state path, 12/24-hour display, and snooze minutes. Strict schema or malformed
 state becomes visibly read-only rather than overwritten or blocking startup.
 Ringing uses a plugin-owned persistent attention and optional animation state.

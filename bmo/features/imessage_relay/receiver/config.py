@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 from typing import Any, Mapping
 
+from bmo.repository_paths import relocated_repository_path
+
 
 MAX_CONFIG_BYTES = 65_536
 _SAFE_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
@@ -112,7 +114,16 @@ def load_receiver_config(
     )
     bind_host = _string(value["bind_host"], "bind host")
     port = _nonnegative_int(value["port"], "port")
-    state_path = _path(value["state_path"], "state path", base, optional=False)
+    state_path = _path(
+        str(
+            relocated_repository_path(
+                _string(value["state_path"], "state path")
+            )
+        ),
+        "state path",
+        base,
+        optional=False,
+    )
     cert_path = _path(value["tls_cert_path"], "TLS certificate path", base, optional=True)
     key_path = _path(value["tls_key_path"], "TLS key path", base, optional=True)
     allow_insecure = value["allow_insecure_loopback"]

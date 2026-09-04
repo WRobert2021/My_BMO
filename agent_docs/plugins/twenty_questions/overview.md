@@ -23,7 +23,7 @@ fallback guesses, learned answer overlay, and recent-target history.
 | text/errors | `bmo/twenty_questions_text.py`, `twenty_questions_contracts.py` |
 | production adapter | `bmo/qt/views/twenty_questions.py`, hosted QML surface |
 | legacy touch UI | `bmo/twenty_questions_ui.py` |
-| persistence | immutable base JSONL, learned JSONL, bounded history JSON |
+| persistence | immutable base JSONL, learned JSONL, bounded history JSON under `bmo/data/20_questions` |
 
 The mode lazily loads the base catalog at game start, builds an integer-bitset
 partition index, and treats dataset Often/learned Unknown as wildcards.

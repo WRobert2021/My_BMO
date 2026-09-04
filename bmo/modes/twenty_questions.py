@@ -15,6 +15,7 @@ from bmo.modes.contracts import (
     ModeRuntimeContext,
     SpeakResponse,
 )
+from bmo.repository_paths import relocated_repository_path
 from bmo.state import BotStates
 from bmo.twenty_questions import (
     BASE_DATA_PATH,
@@ -410,7 +411,7 @@ def _path_setting(
     value = settings.get(key, default)
     if not isinstance(value, (str, Path)):
         raise TypeError(f"Twenty Questions {key} must be a path string")
-    path = Path(value)
+    path = relocated_repository_path(value)
     if not str(path):
         raise ValueError(f"Twenty Questions {key} cannot be empty")
     return path

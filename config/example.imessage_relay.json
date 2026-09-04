@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "state_path": "data/imessage_relay/relay_state.db",
+  "state_path": "bmo/data/imessage_relay/relay_state.db",
   "retry_policy": {
     "initial_delay_seconds": 30,
     "multiplier": 2,

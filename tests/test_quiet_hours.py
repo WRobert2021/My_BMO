@@ -43,7 +43,7 @@ class QuietHoursConfigTests(unittest.TestCase):
                         "end": "06:45",
                         "weekdays": [0, 1, 2, 3, 4],
                         "passcode": "2468",
-                        "sleeping_face_directory": "faces/sleeping",
+                        "sleeping_face_directory": "graphics/faces/sleeping",
                     }
                 ),
                 encoding="utf-8",

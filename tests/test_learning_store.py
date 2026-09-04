@@ -121,7 +121,7 @@ class LearningConfigTests(unittest.TestCase):
             self.assertTrue(config.verify_teacher_pin("0000"))
             self.assertFalse(config.verify_teacher_pin(0))
             self.assertNotIn("0000", repr(config))
-            self.assertFalse((root / "data").exists())
+            self.assertFalse((root / "bmo" / "data").exists())
             self.assertFalse((root / "graphics").exists())
 
     def test_private_file_and_only_learning_owned_overrides_are_applied(self) -> None:
@@ -156,7 +156,7 @@ class LearningConfigTests(unittest.TestCase):
                 project_root=root,
             )
 
-            self.assertEqual(config.data_directory, Path("data/classroom"))
+            self.assertEqual(config.data_directory, Path("bmo/data/classroom"))
             self.assertFalse(config.show_in_menu)
             self.assertTrue(config.verify_teacher_pin("2468"))
             self.assertEqual(config.default_session_questions, 7)
@@ -187,7 +187,7 @@ class LearningConfigTests(unittest.TestCase):
 
             self.assertTrue(config.verify_teacher_pin("8642"))
             self.assertEqual(config.default_session_questions, 6)
-            self.assertEqual(config.data_directory, Path("data/learning"))
+            self.assertEqual(config.data_directory, Path("bmo/data/learning"))
 
     def test_mastery_history_must_cover_minimum_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -277,12 +277,14 @@ class LearningConfigTests(unittest.TestCase):
     def test_config_rejects_a_learning_directory_symlink_escape(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
             root = Path(directory)
-            (root / "data").mkdir()
-            (root / "data" / "jump").symlink_to(Path(outside), target_is_directory=True)
+            (root / "bmo" / "data").mkdir(parents=True)
+            (root / "bmo" / "data" / "jump").symlink_to(
+                Path(outside), target_is_directory=True
+            )
             messages: list[str] = []
 
             config = load_learning_config(
-                {"data_directory": "data/jump/learning"},
+                {"data_directory": "bmo/data/jump/learning"},
                 reporter=messages.append,
                 project_root=root,
             )
@@ -294,7 +296,10 @@ class LearningConfigTests(unittest.TestCase):
     def test_unsafe_default_data_root_disables_menu_instead_of_writing_outside(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
             root = Path(directory)
-            (root / "data").symlink_to(Path(outside), target_is_directory=True)
+            (root / "bmo").mkdir()
+            (root / "bmo" / "data").symlink_to(
+                Path(outside), target_is_directory=True
+            )
             messages: list[str] = []
 
             config = load_learning_config(
@@ -335,7 +340,7 @@ class LearningStoreTests(unittest.TestCase):
 
     def test_constructor_and_empty_reads_do_not_create_the_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "data" / "learning"
+            root = Path(directory) / "bmo" / "data" / "learning"
             store = self.make_store(root)
 
             self.assertFalse(root.exists())
@@ -721,7 +726,7 @@ class LearningStoreTests(unittest.TestCase):
 
     def test_failed_first_write_does_not_leave_a_learning_data_folder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "data" / "learning"
+            root = Path(directory) / "bmo" / "data" / "learning"
             store = self.make_store(root)
 
             with patch(

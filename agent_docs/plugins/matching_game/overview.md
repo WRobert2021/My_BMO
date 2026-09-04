@@ -23,7 +23,7 @@ score history, voice start matching, and menu lifecycle.
 | start text normalization | `bmo/matching_game_text.py` |
 | production adapter/QML surface | `bmo/qt/views/matching_game.py`, shared hosted QML |
 | legacy presentation | `bmo/matching_game.py` |
-| persistence/assets | score history and referenced card assets |
+| persistence/assets | `bmo/data/matching_game/matching_game_scores.json` and referenced card assets |
 
 `register(registry, context, settings)` creates `MatchingGameMode` from the
 constrained mode context; `register_menu_metadata` adds Pup Pairs without

@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from bmo.jsonio import load_json
+from bmo.repository_paths import relocated_repository_path
 
 
 DEFAULT_LEARNING_CONFIG_PATH = Path("config/learning.json")
-DEFAULT_DATA_DIRECTORY = Path("data/learning")
+DEFAULT_DATA_DIRECTORY = Path("bmo/data/learning")
 DEFAULT_GRAPHICS_DIRECTORY = Path("graphics/learning")
 DEFAULT_FONT_FAMILIES = (
     "DejaVu Sans",
@@ -86,7 +87,7 @@ def _path(value: object, label: str, default: Path) -> Path:
         return default
     if not isinstance(value, (str, Path)) or not str(value).strip():
         raise ValueError(f"learning {label} must be a non-empty path")
-    return Path(value).expanduser()
+    return relocated_repository_path(value)
 
 
 def _owned_directory(
@@ -99,13 +100,21 @@ def _owned_directory(
 ) -> Path:
     supplied = _path(value, label, default)
     project = project_root.expanduser().absolute()
-    owned_root = (project / root_name).absolute()
-    candidate = supplied.absolute() if supplied.is_absolute() else (project / supplied).absolute()
+    root_path = Path(root_name)
+    owned_root = (project / root_path).absolute()
+    candidate = (
+        supplied.absolute()
+        if supplied.is_absolute()
+        else (project / supplied).absolute()
+    )
 
-    if owned_root.is_symlink():
-        raise ValueError(
-            f"learning {label} cannot use a symlinked {root_name}/ root"
-        )
+    current_root = project
+    for part in root_path.parts:
+        current_root /= part
+        if current_root.is_symlink():
+            raise ValueError(
+                f"learning {label} cannot use a symlinked {root_name}/ root"
+            )
 
     try:
         relative = candidate.relative_to(owned_root)
@@ -130,7 +139,7 @@ def _owned_directory(
 
     # Preserve conventional project-relative paths in the public config while
     # retaining absolute paths explicitly supplied by tests or deployments.
-    return candidate if supplied.is_absolute() else Path(root_name) / relative
+    return candidate if supplied.is_absolute() else root_path / relative
 
 
 def _boolean(value: object, label: str, default: bool) -> bool:
@@ -231,7 +240,7 @@ def _parse(values: Mapping[str, Any], *, project_root: Path) -> LearningConfig:
             values.get("data_directory"),
             label="data_directory",
             default=DEFAULT_DATA_DIRECTORY,
-            root_name="data",
+            root_name="bmo/data",
             project_root=project_root,
         ),
         graphics_directory=_owned_directory(

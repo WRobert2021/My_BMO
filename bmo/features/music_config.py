@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from bmo.jsonio import load_json
+from bmo.repository_paths import relocated_repository_path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MUSIC_CONFIG_PATH = Path("config/music.json")
 DEFAULT_MUSIC_ROOT = PROJECT_ROOT / "completed"
-DEFAULT_STATE_PATH = PROJECT_ROOT / "data" / "music" / "library.json"
+DEFAULT_STATE_PATH = PROJECT_ROOT / "bmo" / "data" / "music" / "library.json"
 MAX_CONFIG_BYTES = 64 * 1024
 _OWNED_KEYS = frozenset(
     {
@@ -40,7 +41,7 @@ class MusicConfig:
 def _path(value: object, label: str) -> Path:
     if not isinstance(value, (str, Path)) or not str(value).strip():
         raise ValueError(f"music {label} must be a non-empty path")
-    return Path(value).expanduser()
+    return relocated_repository_path(value)
 
 
 def _genres(value: object) -> tuple[str, ...]:

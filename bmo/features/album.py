@@ -17,6 +17,7 @@ from bmo.features.contracts import (
     ToolRequest,
     ToolResult,
 )
+from bmo.repository_paths import relocated_repository_path
 from bmo.view_factory import NOT_HOSTED, create_hosted_view
 
 
@@ -24,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PHOTO_ROOT = Path.home() / "Pictures"
 DEFAULT_WASTEBASKET_ROOT = Path.home() / ".local" / "share" / "Trash"
 DEFAULT_BMO_BUTTON = (
-    PROJECT_ROOT / "faces" / "capturing" / "capturing 01.png"
+    PROJECT_ROOT / "graphics" / "faces" / "capturing" / "capturing 01.png"
 )
 ALBUM_MENU_ITEM = FeatureMenuItem(
     name="album",
@@ -253,7 +254,7 @@ def _path_setting(
         raise TypeError(f"album {key} must be a path string")
     if isinstance(value, str) and not value.strip():
         raise ValueError(f"album {key} must not be empty")
-    return Path(value).expanduser()
+    return relocated_repository_path(value)
 
 
 def _photos_per_page_setting(settings: Mapping[str, Any]) -> int:

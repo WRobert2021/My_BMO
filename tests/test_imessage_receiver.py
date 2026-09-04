@@ -571,7 +571,7 @@ class ReceiverConfigTests(unittest.TestCase):
         self.assertEqual(config.port, 8443)
         self.assertEqual(
             config.state_path,
-            (self.root / "data/imessage_receiver/receiver.db").resolve(),
+            (self.root / "bmo/data/imessage_receiver/receiver.db").resolve(),
         )
         self.assertNotIn(SECRET.decode(), repr(config))
 

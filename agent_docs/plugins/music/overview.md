@@ -35,7 +35,7 @@ the root.
 ## Configuration, persistence, and lifecycle
 
 `config/example.music.json` owns root, allowed genres, visibility, player
-command, and state path. Atomic state stores recent/most-played counts,
+command, and the default `bmo/data/music/library.json` state path. Atomic state stores recent/most-played counts,
 favorites, and named playlists. Invalid state becomes visible read-only rather
 than overwritten. Production QML owns grouped collections, stable scrolling,
 artwork/marquees, seeking, repeat, and whole-library shuffle.

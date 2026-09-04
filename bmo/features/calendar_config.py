@@ -8,11 +8,12 @@ from typing import Any, Mapping
 
 from bmo.features.calendar_store import DEFAULT_CATEGORIES
 from bmo.jsonio import load_json
+from bmo.repository_paths import relocated_repository_path
 
 
 DEFAULT_CALENDAR_CONFIG_PATH = Path("config/calendar.json")
-DEFAULT_DATA_DIRECTORY = Path("data/calendar")
-DEFAULT_OVERLAY_DIRECTORY = Path("faces/calendar")
+DEFAULT_DATA_DIRECTORY = Path("bmo/data/calendar")
+DEFAULT_OVERLAY_DIRECTORY = Path("graphics/faces/calendar")
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ def _path(value: object, label: str, default: Path) -> Path:
         return default
     if not isinstance(value, (str, Path)) or not str(value).strip():
         raise ValueError(f"calendar {label} must be a non-empty path")
-    return Path(value).expanduser()
+    return relocated_repository_path(value)
 
 
 def _boolean(value: object, label: str, default: bool) -> bool:

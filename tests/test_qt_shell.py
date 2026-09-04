@@ -84,15 +84,15 @@ class QtFaceControllerTests(unittest.TestCase):
 
     def make_controller(self, root: Path) -> QtFaceController:
         for state, count in (("idle", 2), ("speaking", 3)):
-            directory = root / "faces" / state
+            directory = root / "graphics" / "faces" / state
             directory.mkdir(parents=True)
             for index in range(count):
                 (directory / f"{index:02}.png").write_bytes(b"frame")
         return QtFaceController(
             config=CompactFaceConfig(
                 states={
-                    "idle": CompactFaceState(Path("faces/idle"), 500),
-                    "speaking": CompactFaceState(Path("faces/speaking"), 50),
+                    "idle": CompactFaceState(Path("graphics/faces/idle"), 500),
+                    "speaking": CompactFaceState(Path("graphics/faces/speaking"), 50),
                 }
             ),
             project_root=root,

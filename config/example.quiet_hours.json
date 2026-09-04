@@ -4,5 +4,5 @@
   "end": "07:00",
   "weekdays": [0, 1, 2, 3, 4, 5, 6],
   "passcode": "0000",
-  "sleeping_face_directory": "faces/sleeping"
+  "sleeping_face_directory": "graphics/faces/sleeping"
 }

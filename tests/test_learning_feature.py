@@ -162,7 +162,7 @@ class LearningLifecycleTests(unittest.TestCase):
 
         self.assertEqual(
             tool.store.data_directory,
-            Path(__file__).resolve().parents[1] / "data" / "learning",
+            Path(__file__).resolve().parents[1] / "bmo" / "data" / "learning",
         )
 
     def test_speech_setting_visibly_disables_announcements(self) -> None:

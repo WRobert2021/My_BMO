@@ -279,7 +279,7 @@ class AlarmRegistrationTests(unittest.TestCase):
         self.assertIn("alarm_clock_ringing", face.states)
         self.assertEqual(
             face.states["alarm_clock_ringing"].directory,
-            Path("faces/alarm_clock"),
+            Path("graphics/faces/alarm_clock"),
         )
 
 

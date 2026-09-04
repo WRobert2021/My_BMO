@@ -6,39 +6,39 @@
   "refresh_ms": 150,
   "states": {
     "idle": {
-      "directory": "faces/idle",
+      "directory": "graphics/faces/idle",
       "frame_duration_ms": 500
     },
     "listening": {
-      "directory": "faces/listening",
+      "directory": "graphics/faces/listening",
       "frame_duration_ms": 500
     },
     "thinking": {
-      "directory": "faces/thinking",
+      "directory": "graphics/faces/thinking",
       "frame_duration_ms": 500
     },
     "speaking": {
-      "directory": "faces/speaking",
+      "directory": "graphics/faces/speaking",
       "frame_duration_ms": 50
     },
     "error": {
-      "directory": "faces/error",
+      "directory": "graphics/faces/error",
       "frame_duration_ms": 500
     },
     "capturing": {
-      "directory": "faces/capturing",
+      "directory": "graphics/faces/capturing",
       "frame_duration_ms": 500
     },
     "warmup": {
-      "directory": "faces/warmup",
+      "directory": "graphics/faces/warmup",
       "frame_duration_ms": 500
     },
     "alarm": {
-      "directory": "faces/alarm",
+      "directory": "graphics/faces/alarm",
       "frame_duration_ms": 180
     },
     "alarm_clock_ringing": {
-      "directory": "faces/alarm_clock",
+      "directory": "graphics/faces/alarm_clock",
       "frame_duration_ms": 180
     }
   }

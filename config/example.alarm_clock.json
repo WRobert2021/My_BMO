@@ -1,6 +1,6 @@
 {
   "show_in_menu": true,
-  "state_path": "data/alarms/alarms.json",
+  "state_path": "bmo/data/alarms/alarms.json",
   "snooze_minutes": 9,
   "use_24_hour": false
 }

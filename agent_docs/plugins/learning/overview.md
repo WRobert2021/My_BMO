@@ -43,7 +43,7 @@ elapsed time, timestamp, and generation metadata. Grade is 60% first-try plus
 thresholds. Completion is separate from accuracy.
 
 Profiles, plans, attempts, and resumable sessions use strict version-one JSON
-and atomic replacement under the contained data root. Malformed/future data is
+and atomic replacement under the contained `bmo/data/learning` root. Malformed/future data is
 preserved and the feature enters safe read-only mode. Missing/malformed config
 uses in-memory defaults. Learner data never enters conversation memory,
 archives, logs, or network. If scoped speech is unavailable, replay is disabled

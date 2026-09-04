@@ -42,7 +42,8 @@ whisper.cpp/
 # !wakeword.onnx
 
 # --- Private user state ---
-memory.json
+/memory.json
+/bmo/data/memory.json
 chat_memory.json
 interaction_logs/
 iphone_snapshot/
@@ -80,16 +81,16 @@ ehthumbs.db
 # --- Local copyrighted fan-project assets — do not upload ---
 graphics/Paw Patrol
 /PLANNED_FEATURES.md
-/matching_game_scores.json
-/data/20_questions/data.jsonl
-/data/20_questions/learned.jsonl
-/data/20_questions/history.json
-/data/calendar/
-/data/learning/
-/data/music/
-/data/alarms/
-/data/imessage_relay/
-/data/imessage_receiver/
+/bmo/data/matching_game/matching_game_scores.json
+/bmo/data/20_questions/data.jsonl
+/bmo/data/20_questions/learned.jsonl
+/bmo/data/20_questions/history.json
+/bmo/data/calendar/
+/bmo/data/learning/
+/bmo/data/music/
+/bmo/data/alarms/
+/bmo/data/imessage_relay/
+/bmo/data/imessage_receiver/
 /LEARNING FEATURE.md
 /docs/learning-module-implementation-prompt.md
 /ISSUES.md

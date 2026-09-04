@@ -2,7 +2,7 @@
   "schema_version": 1,
   "bind_host": "0.0.0.0",
   "port": 8443,
-  "state_path": "data/imessage_receiver/receiver.db",
+  "state_path": "bmo/data/imessage_receiver/receiver.db",
   "tls_cert_path": "config/private/imessage_receiver.crt",
   "tls_key_path": "config/private/imessage_receiver.key",
   "allow_insecure_loopback": false,

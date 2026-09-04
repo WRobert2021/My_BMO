@@ -7,12 +7,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from bmo.repository_paths import relocated_repository_path
+
 from .errors import StateConfigError
 from .state import MAX_SQLITE_INTEGER, RetryPolicy
 
 
 STATE_CONFIG_SCHEMA_VERSION = 1
-DEFAULT_RELATIVE_STATE_PATH = Path("data/imessage_relay/relay_state.db")
+DEFAULT_RELATIVE_STATE_PATH = Path("bmo/data/imessage_relay/relay_state.db")
 MAX_CONFIG_BYTES = 65_536
 
 
@@ -67,7 +69,7 @@ def load_state_config(
     state_path_raw = value["state_path"]
     if not isinstance(state_path_raw, str) or not state_path_raw or "\x00" in state_path_raw:
         raise StateConfigError("relay state path must be a non-empty string")
-    configured_path = Path(state_path_raw).expanduser()
+    configured_path = relocated_repository_path(state_path_raw)
     state_path = (
         configured_path.resolve(strict=False)
         if configured_path.is_absolute()

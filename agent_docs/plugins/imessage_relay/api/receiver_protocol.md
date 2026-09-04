@@ -259,7 +259,7 @@ interpreted as a later request.
 
 Tracked settings are documented in `config/example.imessage_receiver.json`.
 Real settings belong in ignored `config/imessage_receiver.json`; runtime state
-belongs in ignored `data/imessage_receiver/`. The secret itself is supplied
+belongs in ignored `bmo/data/imessage_receiver/`. The secret itself is supplied
 only through the configured environment variable.
 
 The receiver fails before binding when configuration is invalid, the secret is
