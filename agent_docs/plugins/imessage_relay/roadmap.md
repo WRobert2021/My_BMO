@@ -18,6 +18,7 @@ completion never authorizes the next stage.
 | 9 | manually validate real iPhone-to-kiosk at-least-once delivery | no automatic startup |
 | 10 | add optional failure-isolated runtime service/UI status and reconciliation controls | sending/daemon proposals remain separate scope |
 | 11 | consolidate plugin implementation under `bmo.features.imessage_relay` | layout/import changes only; full tests required before completion |
+| 12 | plan and implement authenticated outbound text, photo/video, and reaction commands | begins only after incoming Stages 9/10; separate phone deployment/daemon authorization; never write Messages DB |
 
 ## Stage 5 acceptance shape
 
@@ -111,3 +112,16 @@ Do not change behavior, schemas, dependencies, private configuration, runtime
 enablement, or deployment. Structural/static checks must pass immediately; the
 complete relay, shared extension/Qt, setup, and repository test suites must pass
 before Stage 11 can be accepted.
+
+## Stage 12 planning gate
+
+Stage 12 is planned but not authorized to begin. After incoming Stages 9 and 10
+are accepted, document the verified phone-side sending interface and evaluate
+whether the separate iPhone Python 3.9.9 environment is sufficient or a narrow
+native bridge is required. Define authenticated and replay-protected command
+contracts, stable outgoing request IDs, duplicate prevention, text replies,
+photo/video staging, reactions bound to source-message identities, delivery
+states, UI confirmation, failure isolation, cleanup, and phone resource use
+before implementation. Direct database writes, implicit recipient selection,
+silent duplicate sends, credential embedding, and automatic daemon deployment
+remain prohibited.

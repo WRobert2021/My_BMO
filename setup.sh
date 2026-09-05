@@ -117,7 +117,15 @@ install_system_dependencies() {
         python3-dev
         python3-tk
         python3-venv
+        sshfs
     )
+
+    if command -v sshfs >/dev/null 2>&1 \
+        && command -v fusermount3 >/dev/null 2>&1; then
+        echo -e "${GREEN}SSHFS and FUSE 3 are already installed; verifying the distro package.${NC}"
+    else
+        echo -e "${YELLOW}SSHFS or FUSE 3 is missing; installing the distro package.${NC}"
+    fi
 
     require_command apt-get
     if [ "$EUID" -eq 0 ]; then
@@ -130,7 +138,7 @@ install_system_dependencies() {
     fi
 
     local command_name
-    for command_name in chromium cmake curl ffplay git nproc python3 tar; do
+    for command_name in chromium cmake curl ffplay fusermount3 git nproc python3 sshfs tar; do
         require_command "$command_name"
     done
 }

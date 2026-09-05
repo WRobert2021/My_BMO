@@ -18,6 +18,12 @@ delivery, explicit durable kiosk ACKs, and stable-ID idempotency. Content flows
 iPhone-to-kiosk only; control traffic may be bidirectional. SMS/MMS and sending
 through Messages are out of scope.
 
+That exclusion describes the current incoming implementation, not the final
+product intent. After incoming Stage 9 and Stage 10 acceptance, a separately
+authorized future stage will plan outbound text replies, photo/video sends,
+and reactions through a narrow phone-side bridge. Direct Messages database
+writes remain prohibited.
+
 ## Current versus intended ownership
 
 | Area | Current owner/path |

@@ -30,6 +30,10 @@ the final physical Raspberry Pi 5/Python 3.13.5 run for acceptance.
 
 - Explicit authorization for the live phone and Pi.
 - User-authenticated SSH/SFTP access capable of reading the canonical SMS root.
+- System-wide `sshfs` and `fusermount3` commands on the Pi. The repository's
+  `setup.sh` detects existing commands, idempotently verifies/installs the
+  Raspberry Pi OS `sshfs` package, and checks both commands after installation;
+  neither command belongs in `.venv` or `venv/`.
 - An existing private `0700` acceptance work directory outside the repository.
 - No tracked or ignored private config, secret, state, snapshot, certificate,
   attachment, or log file.
@@ -105,3 +109,9 @@ closed cleanly. The operator explicitly chose cleanup, and the private macOS
 receiver/relay state directory was deleted and verified absent. This is
 evidence for runner readiness only and does not satisfy the physical-Pi
 acceptance gate.
+
+On 2026-09-05 the physical Pi preflight confirmed SSHFS 3.7.3, FUSE 3.17.2,
+and `fusermount3` 3.17.2. The first read-only mount attempt ended with
+`Connection reset by peer` before a mount appeared; `sms.db`, `sms.db-wal`, and
+`sms.db-shm` were therefore unreadable and no phone file was opened or changed.
+This is a failed-closed transport/SFTP-session result, not Stage 9 acceptance.

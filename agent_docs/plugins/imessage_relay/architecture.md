@@ -85,3 +85,13 @@ the kiosk owns restart-safe offsets and promotes a pending event only after all
 required blobs pass exact size and digest checks. Missing/unsafe/changed source
 files and legacy metadata-only ACKs fail closed. Neither side loads a whole
 attachment into memory, and no Stage 7 code contacts a live device.
+
+## Deferred outbound direction
+
+The product intent includes kiosk-originated text replies, photo/video sends,
+and reactions after incoming relay acceptance. That work is not implemented or
+authorized yet. Its stage must first evaluate a separate iPhone Python 3.9.9
+environment versus a narrower native bridge, then define authenticated,
+replay-safe, idempotent commands and delivery-state reporting. Outbound actions
+must use an evidence-backed Messages sending interface; they must never write
+Apple's Messages database or attachment tree directly.

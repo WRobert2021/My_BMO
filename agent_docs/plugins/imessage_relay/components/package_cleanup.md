@@ -75,4 +75,11 @@ treated as source mutation. The validator now excludes access time while still
 checking mode, owner, size, modification/change time, and SHA-256 content. A
 focused regression covers that distinction. Local verification passed with 7
 tests and 3 subtests in the focused module, then 112 tests and 17 subtests in
-the complete relay suite. Pi rerun evidence remains pending.
+the complete relay suite. The physical Pi rerun then passed with 110 tests, 2
+expected missing-snapshot skips, and 17 subtests. Shared contract/setup and
+full-repository suites remain before Stage 11 acceptance. The physical Pi
+shared extension/runtime-menu/Qt/setup suite subsequently passed with 71 tests
+and 40 subtests in 11.64 seconds. The complete physical Pi repository suite
+then passed with 825 tests, 2 expected missing-snapshot skips, and 10,002
+subtests in 23.86 seconds with exit status zero. Stage 11 was accepted on
+2026-09-05.

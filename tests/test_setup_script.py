@@ -109,8 +109,23 @@ class SetupScriptTests(unittest.TestCase):
     def test_setup_installs_commands_it_uses(self) -> None:
         script = SETUP_SCRIPT.read_text(encoding="utf-8")
 
-        for package in ("ca-certificates", "curl", "python3-venv"):
+        for package in ("ca-certificates", "curl", "python3-venv", "sshfs"):
             self.assertRegex(script, rf"(?m)^\s*{re.escape(package)}$", package)
+
+    def test_setup_detects_and_verifies_sshfs(self) -> None:
+        script = SETUP_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn("if command -v sshfs", script)
+        self.assertIn("&& command -v fusermount3", script)
+        self.assertIn("SSHFS and FUSE 3 are already installed", script)
+        self.assertIn("SSHFS or FUSE 3 is missing", script)
+        command_loop = re.search(
+            r"for command_name in ([^;]+); do\n\s*require_command",
+            script,
+        )
+        self.assertIsNotNone(command_loop)
+        self.assertIn("sshfs", command_loop.group(1).split())
+        self.assertIn("fusermount3", command_loop.group(1).split())
 
     def test_setup_creates_refactored_runtime_directories(self) -> None:
         script = SETUP_SCRIPT.read_text(encoding="utf-8")

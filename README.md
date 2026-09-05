@@ -143,12 +143,14 @@ chmod +x setup.sh
 ./setup.sh
 ```
 *The setup script supports 64-bit Raspberry Pi OS. It installs the required
-system libraries and Chromium, creates local folders, builds Whisper.cpp,
+system libraries, Chromium, and the SSHFS/FUSE 3 client used by the optional
+iMessage Relay, creates local folders, builds Whisper.cpp,
 downloads the
 `base.en` speech model and Piper voices, creates the Python environment, pulls
 the Ollama models, installs the default wake-word model, and installs the
 PySide6 Essentials Qt Quick/QML production runtime. It is safe to run again and
-reuses valid existing downloads.*
+reuses valid existing downloads; existing SSHFS/FUSE commands are detected and
+the distro package is verified idempotently.*
 
 ### 4. Configure the Wake Word
 The setup script downloads a default wake word ("Hey Jarvis"). To use your own:

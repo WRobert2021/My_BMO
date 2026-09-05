@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 11
-current_chapter: Consolidated BMO package layout
+current_stage: 9
+current_chapter: Physical Raspberry Pi live relay acceptance
 state: in_progress
-next_action: Transfer the access-time portability fix to the kiosk, rerun the focused failure and complete relay suite, then continue the shared/full suites and Stage 9/10 physical gates.
+next_action: Diagnose the failed-closed read-only SSHFS/SFTP session on the physical Pi, then run the Stage 9 live relay matrix and complete the Stage 10 physical UI/lifecycle gate.
 last_verified: 2026-09-05
 
 ## Stage index
@@ -21,15 +21,16 @@ last_verified: 2026-09-05
 | 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
 | 9 — live relay | in progress | authorized; checklist written; Pi acceptance pending |
 | 10 — runtime/UI integration | in progress | offline implementation/tests complete; physical kiosk acceptance pending |
-| 11 — package cleanup | in progress | relocation/static gate complete; test execution deferred by operator |
+| 11 — package cleanup | complete | nested layout accepted after Pi relay/shared/full suites passed |
+| 12 — outbound Messages bridge | planned | deferred until incoming Stages 9/10 are accepted; not authorized |
 
 ## Current chapter
 
 ### Objective
 
-Consolidate root-level relay/receiver code and plugin-specific tools into the
-approved `bmo.features.imessage_relay` package without changing behavior,
-schemas, configuration, dependencies, or runtime enablement.
+Complete the physical Raspberry Pi incoming-relay matrix using a read-only
+iPhone Messages mount, private Pi-owned state, and authenticated kiosk
+loopback, without deployment or writes to the phone.
 
 ### Completed
 
@@ -93,13 +94,38 @@ schemas, configuration, dependencies, or runtime enablement.
   mode, owner, size, modification/change time, and SHA-256 checks. Added an
   access-time-only regression. Local verification passed: the focused module
   reported 7 tests and 3 subtests passed, and the complete relay suite reported
-  112 tests and 17 subtests passed. Physical Pi rerun remains required.
+  112 tests and 17 subtests passed.
+- The physical Raspberry Pi rerun passed with 110 tests, 2 expected
+  missing-snapshot skips, and 17 subtests in 7.32 seconds. This clears the
+  Stage 11 plugin-specific suite gate.
+- The physical Raspberry Pi shared extension/runtime-menu/Qt/setup suite passed
+  with 71 tests and 40 subtests in 11.64 seconds.
+- The complete physical Raspberry Pi repository suite passed with 825 tests,
+  2 expected missing-snapshot skips, and 10,002 subtests in 23.86 seconds with
+  exit status zero. Stage 11 is accepted.
+- Physical Stage 9 preflight passed on Raspberry Pi 5 Model B Rev 1.1,
+  `aarch64`, Python 3.13.5, SQLite 3.46.1, and an NTP-synchronized clock.
+- Physical setup also confirmed SSHFS 3.7.3, FUSE 3.17.2, and `fusermount3`
+  3.17.2. `setup.sh` now detects the existing system commands, idempotently
+  verifies/installs the Raspberry Pi OS `sshfs` package, and requires both
+  commands after installation; setup tests and platform/operator docs own this
+  contract.
+- The first Pi `ro` SSHFS attempt as the read-only phone account failed with
+  `Connection reset by peer` before a mount was established. The mount/work
+  directories retained mode `0700`, and the DB/WAL/SHM trio remained
+  unreadable, so the attempt failed closed without reading or changing phone
+  data. Stage 9 is still pending transport/SFTP-session diagnosis.
+- The operator confirmed outbound text replies, photo/video sends, and
+  reactions remain final product requirements. A separately authorized Stage
+  12 will plan a phone-side bridge and Python 3.9.9 environment only after the
+  incoming Stage 9/10 gates; no phone environment or outbound behavior is
+  authorized now.
 
 ### Remaining and boundary
 
-Stage 11 relocation, import/documentation rewrites, legacy-root cleanup, and
-the static acceptance gate are complete. Pytest execution is deliberately
-deferred, so Stage 11 cannot be marked complete during this offline pass.
+Stage 11 is complete. Its relocation/static checks, physical-Pi relay suite,
+shared extension/runtime-menu/Qt/setup suite, and complete repository suite all
+pass after the access-time portability correction.
 
 Offline Stage 10 implementation acceptance is complete. Stage 10 remains absent
 from defaults and reads private config or starts resources only when explicitly
@@ -110,7 +136,12 @@ action was performed.
 
 Stage 9 still requires its physical Raspberry Pi 5/aarch64/Python 3.13.5 matrix.
 Stage 10 additionally requires physical kiosk touch/VNC, listener binding,
-shutdown/restart, and stability evidence after the kiosk returns online.
+shutdown/restart, and stability evidence on the now-online kiosk.
+
+Stage 12 outbound planning remains queued behind incoming Stage 9 and Stage 10.
+The proposed iPhone Python 3.9.9 environment and any additional phone-side
+dependency, service, credential, or daemon must be evaluated and explicitly
+authorized in that stage; no direct Apple database write is permitted.
 
 Known later-stage risks remain: production endpoint trust, TLS/key provisioning,
 iPhone clock skew, scheduling, retention/pruning, and unverified edits,
