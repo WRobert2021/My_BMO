@@ -19,8 +19,8 @@ observed, the production parser validates all required fields, and the
 incremental query plan must use the ROWID range. A bounded newest-iMessage scan
 exercises filtering, normalization, and attachment containment against the
 live read-only attachment tree. Up to four small available attachment files
-are read twice to confirm stable content and metadata; no bytes or digests are
-printed.
+are read twice to confirm stable content and write-relevant metadata; access
+time is excluded because a read may update it. No bytes or digests are printed.
 
 Output is limited to versions, booleans, counts, event/direction/media enum
 values, and parser issue codes. It excludes text, attributed bodies, handles,
@@ -93,4 +93,5 @@ new-row, interruption, immutability, and cleanup record is archived in
 It verifies disposable-copy parsing, ROWID-plan and aggregate diagnostics,
 source/attachment hash preservation, output redaction, trio failure, bounded
 scan input, direct CLI loading, content-free interruption, and fail-closed
-handling of a source change during copying.
+handling of a source change during copying. It also verifies that an
+access-time-only difference is not misclassified as source mutation.

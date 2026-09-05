@@ -68,3 +68,11 @@ legacy-root removal are complete. Static acceptance passed on 2026-09-02:
 
 No pytest suite, phone/kiosk connection, deployment, enablement, daemon, or
 private-configuration operation was performed during this offline pass.
+
+The first physical-Pi relay-suite run found one portability failure: hashing a
+fixture updated its access time, which the Stage 8 validator incorrectly
+treated as source mutation. The validator now excludes access time while still
+checking mode, owner, size, modification/change time, and SHA-256 content. A
+focused regression covers that distinction. Local verification passed with 7
+tests and 3 subtests in the focused module, then 112 tests and 17 subtests in
+the complete relay suite. Pi rerun evidence remains pending.

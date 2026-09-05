@@ -3,8 +3,8 @@
 current_stage: 11
 current_chapter: Consolidated BMO package layout
 state: in_progress
-next_action: When the kiosk is online, run all deferred suites plus the Stage 9 and Stage 10 physical gates; accept Stage 11 only after the test gate passes.
-last_verified: 2026-09-02
+next_action: Transfer the access-time portability fix to the kiosk, rerun the focused failure and complete relay suite, then continue the shared/full suites and Stage 9/10 physical gates.
+last_verified: 2026-09-05
 
 ## Stage index
 
@@ -85,6 +85,15 @@ schemas, configuration, dependencies, or runtime enablement.
   and iMessage Relay tests, resource-free imports for the package and all tool
   modules, active-reference and legacy-directory inspection, example feature
   JSON validation, and `git diff --check`.
+- The first physical Raspberry Pi relay-suite run reached 108 passed, 2
+  skipped, and 17 subtests passed, with one failure. The failure exposed a
+  platform-specific false source-change result because validation fingerprints
+  included access time even though hashing may update it on the Pi.
+- Removed access time from source and attachment stability metadata, retaining
+  mode, owner, size, modification/change time, and SHA-256 checks. Added an
+  access-time-only regression. Local verification passed: the focused module
+  reported 7 tests and 3 subtests passed, and the complete relay suite reported
+  112 tests and 17 subtests passed. Physical Pi rerun remains required.
 
 ### Remaining and boundary
 

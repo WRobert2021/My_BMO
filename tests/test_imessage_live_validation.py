@@ -168,6 +168,34 @@ class IMessageLiveValidationTests(unittest.TestCase):
         self.assertFalse(report["source"]["trio_stable_during_copy"])
         self.assertNotIn("database", report)
 
+    def test_access_time_change_is_not_treated_as_source_mutation(self) -> None:
+        path = self.fixture.database_path
+        info = path.stat()
+
+        def observed_stat(atime_ns: int) -> mock.Mock:
+            return mock.Mock(
+                st_mode=info.st_mode,
+                st_uid=info.st_uid,
+                st_gid=info.st_gid,
+                st_size=info.st_size,
+                st_atime_ns=atime_ns,
+                st_mtime_ns=info.st_mtime_ns,
+                st_ctime_ns=info.st_ctime_ns,
+            )
+
+        before_stat = observed_stat(info.st_atime_ns)
+        after_stat = observed_stat(info.st_atime_ns + 1)
+        with mock.patch.object(Path, "stat", return_value=before_stat):
+            before = live_validation._fingerprint((path,))
+        with mock.patch.object(Path, "stat", return_value=after_stat):
+            after = live_validation._fingerprint((path,))
+
+        self.assertEqual(before, after)
+        self.assertEqual(
+            live_validation._file_metadata(before_stat),
+            live_validation._file_metadata(after_stat),
+        )
+
     def test_scan_limit_is_bounded(self) -> None:
         for invalid in (0, live_validation.MAX_SCAN_LIMIT + 1, True):
             with self.subTest(invalid=invalid):

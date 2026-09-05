@@ -63,23 +63,14 @@ def _trio_paths(messages_root: Path) -> tuple[Path, ...]:
 
 def _fingerprint(
     paths: Iterable[Path],
-) -> tuple[tuple[int, int, int, int, int, int, int, str], ...]:
+) -> tuple[tuple[int, int, int, int, int, int, str], ...]:
     observations = []
     for path in paths:
         info = path.stat()
         if not stat.S_ISREG(info.st_mode):
             raise LiveValidationError("messages_trio_unreadable")
         observations.append(
-            (
-                info.st_mode,
-                info.st_uid,
-                info.st_gid,
-                info.st_size,
-                info.st_atime_ns,
-                info.st_mtime_ns,
-                info.st_ctime_ns,
-                _sha256(path),
-            )
+            (*_file_metadata(info), _sha256(path))
         )
     return tuple(observations)
 
@@ -224,7 +215,6 @@ def _file_metadata(info: os.stat_result) -> tuple[int, ...]:
         info.st_uid,
         info.st_gid,
         info.st_size,
-        info.st_atime_ns,
         info.st_mtime_ns,
         info.st_ctime_ns,
     )
