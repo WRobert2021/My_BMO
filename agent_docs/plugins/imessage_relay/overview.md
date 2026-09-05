@@ -78,9 +78,11 @@ package preserves the retired import identities.
    use a disposable source snapshot, and reuse Stage 6 reconciliation against
    the in-process authenticated receiver application. It has no sender loop.
 
-Stage 8 live read-only acceptance completed on 2026-09-02. Stage 9 has passed
-its macOS rehearsal but remains incomplete until the same matrix passes on the
-physical Raspberry Pi kiosk.
+Stage 8 live read-only acceptance completed on 2026-09-02. Stage 9 completed
+on 2026-09-05 after the full physical Raspberry Pi matrix, one post-baseline
+incoming event, SIGINT cleanup, and explicit private-state cleanup passed.
+Stage 10's offline implementation is complete; physical kiosk UI and lifecycle
+acceptance remains in progress.
 
 ## Safety and failure boundaries
 

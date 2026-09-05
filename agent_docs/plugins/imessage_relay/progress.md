@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 9
-current_chapter: Physical Raspberry Pi live relay acceptance
+current_stage: 10
+current_chapter: Physical kiosk runtime and UI acceptance
 state: in_progress
-next_action: Diagnose the failed-closed read-only SSHFS/SFTP session on the physical Pi, then run the Stage 9 live relay matrix and complete the Stage 10 physical UI/lifecycle gate.
+next_action: Run the Stage 10 physical kiosk UI, listener lifecycle, restart, and stability gate without deployment or automatic startup.
 last_verified: 2026-09-05
 
 ## Stage index
@@ -19,18 +19,18 @@ last_verified: 2026-09-05
 | 6 — reconciliation | complete | bounded recent/month selective repair accepted |
 | 7 — attachment transfer | complete | bounded resumable digest-verified transfer accepted |
 | 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
-| 9 — live relay | in progress | authorized; checklist written; Pi acceptance pending |
+| 9 — live relay | complete | physical Pi matrix, live event, SIGINT, and cleanup accepted |
 | 10 — runtime/UI integration | in progress | offline implementation/tests complete; physical kiosk acceptance pending |
 | 11 — package cleanup | complete | nested layout accepted after Pi relay/shared/full suites passed |
-| 12 — outbound Messages bridge | planned | deferred until incoming Stages 9/10 are accepted; not authorized |
+| 12 — outbound Messages bridge | planned | deferred until Stage 10 is accepted; not authorized |
 
 ## Current chapter
 
 ### Objective
 
-Complete the physical Raspberry Pi incoming-relay matrix using a read-only
-iPhone Messages mount, private Pi-owned state, and authenticated kiosk
-loopback, without deployment or writes to the phone.
+Complete the Stage 10 physical kiosk UI and runtime-lifecycle gate using the
+retained restricted phone export and explicit private Pi configuration,
+without default enablement, deployment, automatic startup, or outbound work.
 
 ### Completed
 
@@ -106,15 +106,176 @@ loopback, without deployment or writes to the phone.
 - Physical Stage 9 preflight passed on Raspberry Pi 5 Model B Rev 1.1,
   `aarch64`, Python 3.13.5, SQLite 3.46.1, and an NTP-synchronized clock.
 - Physical setup also confirmed SSHFS 3.7.3, FUSE 3.17.2, and `fusermount3`
-  3.17.2. `setup.sh` now detects the existing system commands, idempotently
-  verifies/installs the Raspberry Pi OS `sshfs` package, and requires both
-  commands after installation; setup tests and platform/operator docs own this
-  contract.
+  3.17.2. The installed Debian package is the patched
+  `3.7.3-1.2~deb13u1` revision, and the physical target setup-contract suite
+  passed with 12 tests in 0.07 seconds. `setup.sh` now detects the existing
+  system commands, idempotently verifies/installs the Raspberry Pi OS `sshfs`
+  package, and requires both commands after installation; setup tests and
+  platform/operator docs own this contract.
 - The first Pi `ro` SSHFS attempt as the read-only phone account failed with
   `Connection reset by peer` before a mount was established. The mount/work
   directories retained mode `0700`, and the DB/WAL/SHM trio remained
   unreadable, so the attempt failed closed without reading or changing phone
-  data. Stage 9 is still pending transport/SFTP-session diagnosis.
+  data. A subsequent `sftp -vvv -b /dev/null` probe proved that TCP and SSH key
+  exchange succeed, but strict verification rejects the phone because the Pi
+  has no trusted host-key entry. Authentication and SFTP were never reached.
+  At that point Stage 9 was pending independent ED25519 fingerprint
+  verification and local Pi `known_hosts` provisioning; automatic host-key
+  acceptance remained forbidden.
+- The operator independently compared the Pi-observed ED25519 fingerprint with
+  the Mac's existing trusted `known_hosts` entry and confirmed an exact match.
+  Endpoint identity verification was complete. At that point Stage 9 required
+  adding only that verified public key to the Pi's local `known_hosts`, followed
+  by the no-operation SFTP probe; automatic acceptance remained forbidden.
+- The verified ED25519 key was added to the Pi, and the repeated empty-batch
+  probe passed strict verification, passwordless `agent` authentication, SFTP
+  v3 subsystem startup, root resolution to `/`, clean shutdown, and exit status
+  zero without opening an Apple data path. OpenSSH's signed host-key update also
+  learned the server's RSA and ECDSA keys; both matched the independently
+  trusted Mac fingerprints already supplied by the operator. The next gate is
+  metadata/read-permission inspection of only the known SMS root and DB trio,
+  followed by a read-only SSHFS retry.
+- The metadata-only SFTP probe entered `/var/mobile/Library/SMS` and resolved
+  its canonical path as `/private/var/mobile/Library/SMS`, but an exact lookup
+  of `sms.db` returned not found. The batch stopped before WAL/SHM checks and no
+  database bytes were read. The `agent` namespace therefore permits traversal
+  but has not proved live-database visibility. Next compare only fixed-path
+  existence and metadata through the authorized `mobile` shell; do not change
+  phone permissions or SFTP configuration during diagnosis.
+- The read-only `mobile` shell comparison confirmed the SMS directory is mode
+  `0700`, owned by `mobile:mobile`, and that the DB/WAL/SHM files exist with
+  mode `0644`. The parent directory prevents the separate `agent` UID from
+  traversing to those files, explaining the SFTP not-found result. No phone
+  permission or configuration change was made. Stage 9 now needs an explicit
+  operator choice: use `mobile` with client-enforced SSHFS `ro`, or separately
+  authorize and review a server-enforced read-only access design for `agent`.
+- The operator chose the server-enforced redesign and authorized exactly the
+  DB/WAL/SHM trio plus `Attachments`, preserving the Stage 9 photo/video scope.
+  The target account must use a password, forced read-only SFTP, a root-owned
+  path boundary, and no shell or forwarding. No Apple permission weakening,
+  other phone visibility, daemon, or automatic startup is authorized. The next
+  step is a read-only audit of the phone's OpenSSH and filesystem confinement
+  capabilities before any configuration edit.
+- The capability audit confirmed OpenSSH 9.7p1, authorized root execution via
+  `sudo`, APFS with about 107 GiB free, and an existing `agent` block that
+  forces `internal-sftp -R`, disables forwarding/TTY, permits password
+  authentication and empty passwords, and has no chroot. No `mount_nullfs`,
+  `bindfs`, `rsync`, or `ditto` is installed; only `cp` is available for the
+  export. Therefore direct live-tree chroot projection is unavailable with the
+  installed tools. The bounded design is a root-owned chroot with a manually
+  refreshed private snapshot of only the trio plus `Attachments`, a real
+  password, and empty-password login disabled. Copy/launch tooling and source
+  aggregate size remain to be audited before configuration changes.
+- The operator changed the dedicated phone account name to `pi-bmo` and
+  explicitly requested deletion of `agent`. The migration will first resolve
+  exact account-management tooling and confirm the new name is unused, then
+  create/configure/test `pi-bmo` before deleting exact UID 1002 `agent` and its
+  SSH match block. The accepted source scope and all read-only/chroot/no-shell/
+  no-forwarding boundaries are unchanged.
+- The migration audit confirmed `pi-bmo` is unused, `agent` is UID/GID 1002,
+  Procursus supplies `adduser`, `pw`, and `passwd`, and standalone user-delete
+  tools are absent. GNU coreutils `cp` 9.5 supports reflink copies with fallback;
+  the attachment source is only five files and 13,596 KiB. `/private` and
+  `/private/var` are root-owned mode `0755`, suitable chroot parents. The
+  OpenSSH launch job is socket-activated and not persistently running between
+  connections. Exact account-tool syntax and launch arguments remain the final
+  read-only audit before creating the replacement or deleting UID 1002.
+- Dedicated group `pi-bmo` was created as GID 1003 after `pw user next`
+  confirmed UID/GID 1003 were free. The root-owned mode-`0755` chroot was
+  created under `/private/var`; a root-only staging pass privately hashed,
+  copied, source-stability-checked, and copy-verified the DB trio and five
+  attachment files before removing its manifests. The published `/SMS` tree
+  contains eight regular files, with all directories `0550`, files `0440`, and
+  entries `root:pi-bmo`; aggregate checks found zero mode/owner errors. No
+  Apple path or live SSH configuration was modified, `pi-bmo` is not yet a
+  login, and `agent` remains available for rollback.
+- The offline SSH candidate passed full syntax and effective-policy checks.
+  Its `pi-bmo` policy is password-only with empty passwords rejected, a
+  `/private/var/imessage-relay-chroot` boundary, forced read-only SFTP rooted at
+  `/SMS`, and explicit forwarding/shell/TTY/tunnel/user-RC denial. This OpenSSH
+  build does not allow `PermitUserEnvironment` in a match block; the candidate
+  omits it while the effective global setting remains `no`. The active config
+  remains untouched pending a protected backup; the current `mobile` session
+  must remain open through replacement-account validation and rollback.
+- The active SSH configuration was backed up to a root-only rollback file,
+  replaced with the validated policy, and passed a second syntax check. The
+  `pi-bmo` login now exists as isolated UID/GID 1003 with no supplementary
+  groups or created home, and the operator assigned its unique password
+  locally without disclosing it. The platform's login-keychain warning is
+  irrelevant to the forced SFTP account and no keychain action is authorized.
+  The `mobile` recovery session remains open; kiosk-side password,
+  confinement/read, and rejected-write probes must pass before deleting
+  `agent`.
+- A separate Mac SFTP probe passed password authentication, `/SMS` start,
+  metadata access to the trio, `Attachments` traversal, chroot concealment of
+  `/private`, and denied `mkdir`. No source content or phone path was changed.
+  The restricted phone account policy is accepted. Because this was a Mac
+  probe, retain the recovery session and temporary `agent` account until the
+  kiosk proves an SSHFS mount with both client `ro` and server `-R`; then delete
+  UID/GID 1002 and its SSH block as requested.
+- The physical kiosk mounted the replacement export through SSHFS with client
+  `ro`, strict verified host identity, and host-key updates disabled. The mount
+  reported read-only FUSE options; all three database files were readable,
+  `Attachments` was accessible, the write probe was denied, and its target
+  remained absent. This accepts the double-read-only replacement path from the
+  actual Stage 9 client. The mount remains active; exact UID/GID 1002 `agent`
+  and its SSH block can now be removed as explicitly requested.
+- Exact UID 1002 `agent` was removed without deleting a home or Apple data. An
+  initial group deletion targeted the wrong account database, so the retained
+  Procursus entry was detected before acceptance, backed up, removed explicitly
+  from `/var/jb/etc`, and verified absent. The obsolete `Match User agent`
+  block was removed through an offline candidate; syntax and effective
+  `pi-bmo` policy passed before installation. A group-name lookup failure made
+  the first install attempt fail before copying, leaving the active file valid;
+  the validated candidate was then installed with numeric root UID/GID.
+- A new physical-kiosk SFTP connection after cleanup started at `/SMS`, exposed
+  `/` only as the chroot root, concealed `/private`, showed the DB/WAL/SHM trio
+  as mode `0440`, traversed `Attachments`, denied `mkdir`, and left its target
+  absent. A separate strict, non-interactive kiosk probe rejected the deleted
+  `agent` login. The phone-access account migration and confinement gate are
+  accepted; the active SSHFS mount remains read-only for the relay matrix.
+- The first physical Stage 9 relay pass completed on Linux/aarch64/Python
+  3.13.5 with status `pass` and exit zero. It scanned a bounded 38-row source,
+  durably acknowledged 37 supported events, completed four real attachments
+  (three photos and one video; 13,457,154 aggregate bytes), and left zero
+  pending events or partial attachments. Invalid authentication, lost ACK, and
+  receiver outage each produced the expected bounded retry code; relay and
+  receiver reopen checks passed, receipt counts matched, no parse issues were
+  reported, SQLite opened only a disposable local copy, and the source trio
+  remained stable.
+- The deliberate source-offline case unmounted only the kiosk's SSHFS source,
+  leaving kiosk networking and phone services untouched. The runner failed
+  closed with `messages_trio_unreadable` and exit status one; private before/
+  after digest comparisons proved both durable state databases were unchanged.
+  The same restricted export then remounted successfully with read-only FUSE
+  options. Recovery delivery will be completed by the post-baseline event run.
+- After one non-sensitive incoming text arrived, a second root-only staging
+  snapshot privately baselined, copied, source-stability-checked, and
+  copy-verified the same authorized trio plus attachment tree. Its manifests
+  were removed, all directories/files were restricted to `0550`/`0440` under
+  numeric root UID and `pi-bmo` GID 1003, and aggregate verification again
+  found eight files with zero mode or owner errors. The new snapshot was
+  published by rename while retaining the previous snapshot for rollback.
+- Reusing the original Pi relay/receiver state after remount discovered exactly
+  one post-baseline message row, acknowledged it in one attempt, and raised
+  matching relay/receiver durable totals from 37 to 38. There were no issues,
+  pending events, or partial attachments; both stores reopened consistently,
+  SQLite again used only a disposable copy, and the source trio remained
+  stable. This completes both the new-live-event and source-recovery cases.
+- A controlled physical SIGINT used a separate mode-`0700` Pi work directory
+  and was sent only after receiver state appeared. The runner emitted the
+  content-free `interrupted` status, exited 130, left no relay process, and
+  restored the pre-run count of disposable source directories. This accepts
+  the physical interrupt and owned-resource cleanup behavior. The isolated
+  interrupt directory remains pending the operator's explicit cleanup choice.
+- The operator explicitly chose deletion. The kiosk SSHFS source was unmounted;
+  both private Stage 9 state directories and the empty local mount tree were
+  deleted and verified absent. On the phone, the retained previous snapshot
+  and five temporary SSH/group candidate or rollback files were deleted. The
+  active SSH policy passed a final syntax check, while the current restricted
+  mode-`0550` `/SMS` snapshot and `pi-bmo` account were intentionally retained
+  for Stage 10. Stage 9 is accepted; no daemon, deployment, automatic startup,
+  outbound action, or Apple-data write occurred.
 - The operator confirmed outbound text replies, photo/video sends, and
   reactions remain final product requirements. A separately authorized Stage
   12 will plan a phone-side bridge and Python 3.9.9 environment only after the
@@ -130,15 +291,20 @@ pass after the access-time portability correction.
 Offline Stage 10 implementation acceptance is complete. Stage 10 remains absent
 from defaults and reads private config or starts resources only when explicitly
 enabled. Physical touch/VNC, listener binding, shutdown/restart, and long-run
-stability remain unverified while the kiosk is offline. No phone/kiosk contact,
-private provisioning, deployment, daemon, sender loop, or outbound Messages
-action was performed.
+stability remain unverified on the now-online kiosk. Live phone/kiosk contact
+so far was limited to the completed standalone Stage 9 matrix; no Stage 10
+private provisioning or runtime start, deployment, daemon, automatic startup,
+or outbound Messages action has occurred.
 
-Stage 9 still requires its physical Raspberry Pi 5/aarch64/Python 3.13.5 matrix.
-Stage 10 additionally requires physical kiosk touch/VNC, listener binding,
-shutdown/restart, and stability evidence on the now-online kiosk.
+Stage 9 is complete. Its physical supported-backlog, real-attachment,
+authentication, lost-ACK, receiver-outage, duplicate/durable receipt,
+relay/receiver restart, stable-source, source-offline/recovery, post-baseline
+live-event, SIGINT, and explicit cleanup cases all passed on the Raspberry Pi.
 
-Stage 12 outbound planning remains queued behind incoming Stage 9 and Stage 10.
+Stage 10 requires physical kiosk touch/VNC, listener binding, shutdown/restart,
+and stability evidence on the now-online kiosk.
+
+Stage 12 outbound planning remains queued behind incoming Stage 10.
 The proposed iPhone Python 3.9.9 environment and any additional phone-side
 dependency, service, credential, or daemon must be evaluated and explicitly
 authorized in that stage; no direct Apple database write is permitted.

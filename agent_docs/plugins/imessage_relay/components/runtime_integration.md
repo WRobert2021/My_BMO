@@ -5,10 +5,12 @@
 Stage 10 integrates iMessage Relay as an explicitly configured BMO
 feature/service. It is not a default feature, launch daemon, independent
 service installation, phone deployment, or authorization to send through
-Messages. Stage 9's physical-Pi live-delivery gate remains separately pending.
+Messages. Stage 9's physical-Pi live-delivery gate completed on 2026-09-05.
 
-Development while the kiosk is offline uses only invented local data and the
-repository virtual environment. It must not contact the phone or kiosk.
+Offline development used only invented local data and the repository virtual
+environment. The authorized physical gate may use temporary private kiosk
+configuration and the retained restricted phone snapshot, but it must remain a
+manual run with no default enablement, deployment, or automatic startup.
 
 ## Ownership and lifecycle
 
@@ -53,8 +55,10 @@ and port release. Qt/QML loading and action routing must pass offscreen.
 
 The physical kiosk remains required for final touch/VNC, listener binding,
 shutdown/restart, and long-running stability evidence. Stop before adding the
-feature to defaults, editing private configuration, installing a daemon,
-deploying, contacting the phone, or proposing outbound Messages actions.
+feature to defaults, installing a daemon, deploying, changing the phone access
+policy, or proposing outbound Messages actions. Physical validation may create
+only temporary mode-`0700` private configuration/state outside the repository,
+mount the already authorized `/SMS` export read-only, and start BMO manually.
 
 ## Implemented surface and tests
 

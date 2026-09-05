@@ -28,6 +28,13 @@ provide idempotency; source ROWIDs are local scan cursors only.
   opens SQLite solely against a disposable local copy of the DB/WAL/SHM trio.
   A source change makes the observation inconclusive; it never authorizes a
   checkpoint, Messages shutdown, permission change, or writable remount.
+- The authorized Stage 9 phone-access redesign requires a password-protected,
+  SFTP-only `pi-bmo` account with server-enforced read-only operations, no
+  shell or forwarding, and filesystem confinement to the DB/WAL/SHM trio plus
+  the `Attachments` tree. It must not expose the remainder of the SMS directory
+  or phone. The replacement passed Mac and physical-kiosk access/confinement
+  checks before the temporary `agent` user, group, and SSH policy were removed.
+  Apple-owned permissions were not weakened to make either account work.
 - Relay cursors, payloads, attempts, retries, ACKs, errors, dead letters,
   nonces, kiosk receipts, partial offsets, and received attachment bytes live
   only in separate relay/kiosk-owned stores and private files.

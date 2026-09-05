@@ -42,9 +42,9 @@ state, and current receiver are intentionally standard-library-only.
 The SSHFS client is OS-managed and deliberately unpinned so Raspberry Pi OS
 can supply its patched repository revision. Debian publishes the 3.7.3 package
 and FUSE 3 dependencies for `arm64`; upstream SSHFS is GPL-2.0. The physical
-target validated SSHFS 3.7.3 with FUSE 3.17.2. This dependency keeps live Apple
-data read-only and avoids phone-side project deployment; it adds no Python
-package or import surface.
+target validated Debian package `3.7.3-1.2~deb13u1`, SSHFS 3.7.3, and FUSE
+3.17.2. This dependency keeps live Apple data read-only and avoids phone-side
+project deployment; it adds no Python package or import surface.
 
 ## Platform-owned resources
 
