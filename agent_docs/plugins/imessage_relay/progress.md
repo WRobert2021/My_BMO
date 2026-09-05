@@ -3,7 +3,7 @@
 current_stage: 10
 current_chapter: Physical kiosk runtime and UI acceptance
 state: in_progress
-next_action: Run the Stage 10 physical kiosk UI, listener lifecycle, restart, and stability gate without deployment or automatic startup.
+next_action: Sync and physically retest the reconciliation-control completion fix, then finish Stage 10 UI restart, shutdown, and stability checks without deployment or automatic startup.
 last_verified: 2026-09-05
 
 ## Stage index
@@ -276,6 +276,45 @@ without default enablement, deployment, automatic startup, or outbound work.
   mode-`0550` `/SMS` snapshot and `pi-bmo` account were intentionally retained
   for Stage 10. Stage 9 is accepted; no daemon, deployment, automatic startup,
   outbound action, or Apple-data write occurred.
+- Stage 10 physical work began with fresh mode-`0700` kiosk configuration,
+  state, and mount directories outside the repository. The retained phone
+  export mounted with read-only FUSE options. A 64-byte ephemeral secret stayed
+  only in the operator shell; temporary mode-`0600` receiver/relay configs
+  named only its environment variable and bound the receiver to an ephemeral
+  literal-loopback port.
+- The first real `RelayRuntimeService` lifecycle pass reported available,
+  listening, and reconciliation-capable with zero initial aggregate counts.
+  Idempotent close stopped the listener, and an immediate bind probe proved its
+  assigned port was released; the command exited zero.
+- A physical recent-reconciliation worker pass exited zero after asserting
+  start, completion, and `complete` state. Hidden before/after hashes proved the
+  mounted DB/WAL/SHM trio unchanged, and receiver/relay state files were mode
+  `0600`. The detailed content-free report line was not retained in the
+  operator paste, so its counts remain pending the visible UI check rather
+  than being inferred.
+- The isolated real `typed_agent.py` Qt path loaded on the physical display
+  with one configured relay menu item and no metadata failures. The hosted view
+  rendered correctly, reported the receiver available/listening, showed only
+  aggregate zero receipt counts, preserved the compact face, and exposed the
+  expected refresh/recent/month controls without private data.
+- The physical Recent action completed with `Checked 3; requeued 0`, but both
+  reconciliation controls remained disabled until a manual Refresh. Inspection
+  found a completion-callback race: `status()` derived availability from the
+  worker thread's liveness while the callback necessarily ran just before that
+  thread returned. Availability now derives from the locked reconciliation
+  state (`running` versus complete/failed); duplicate job exclusion remains
+  enforced independently by `_start_reconciliation()`.
+- Added a regression requiring the completion callback itself to observe
+  `complete` and reconciliation available. Local verification passed for the
+  focused regression (1 test), complete runtime module (13 tests), and complete
+  relay suite (113 tests and 17 subtests). The first sandboxed focused attempt
+  could not bind loopback and failed before the new assertion; the normal
+  loopback-enabled rerun passed. Physical kiosk sync/retest remains required.
+- Updated the relay menu metadata to reference the operator-selected existing
+  `graphics/icons/message.png` asset and added a resource-free metadata
+  assertion. The protected graphic remains untouched and untracked. The
+  focused metadata test passed, followed by all 13 runtime tests and all 113
+  relay tests plus 17 subtests.
 - The operator confirmed outbound text replies, photo/video sends, and
   reactions remain final product requirements. A separately authorized Stage
   12 will plan a phone-side bridge and Python 3.9.9 environment only after the

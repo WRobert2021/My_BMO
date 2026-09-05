@@ -192,6 +192,10 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
         relay.assert_not_called()
         server.assert_not_called()
         self.assertEqual(registry.menu_items, (IMESSAGE_RELAY_MENU_ITEM,))
+        self.assertEqual(
+            IMESSAGE_RELAY_MENU_ITEM.icon_path.parts[-3:],
+            ("graphics", "icons", "message.png"),
+        )
         self.assertEqual(menu.catalog.items[0].name, "feature:imessage_relay")
         registry.close()
 
@@ -396,6 +400,30 @@ class IMessageRuntimeReconciliationTests(unittest.TestCase):
             SECRET_TEXT,
         ):
             self.assertNotIn(private, rendered)
+
+    def test_completion_callback_observes_reconciliation_available(self) -> None:
+        callback_statuses: list[RelayRuntimeStatus] = []
+        complete = threading.Event()
+
+        with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
+            service = self.make_service(self.fixture.messages_root)
+
+            def finished() -> None:
+                callback_statuses.append(service.status())
+                complete.set()
+
+            try:
+                self.assertTrue(service.reconcile_recent(finished))
+                self.assertTrue(complete.wait(5))
+            finally:
+                service.close()
+
+        self.assertEqual(len(callback_statuses), 1)
+        self.assertEqual(
+            callback_statuses[0].reconciliation_state,
+            "complete",
+        )
+        self.assertTrue(callback_statuses[0].reconciliation_available)
 
     def test_listener_receipt_updates_content_free_runtime_status(self) -> None:
         event = MessagesReader(

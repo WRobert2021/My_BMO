@@ -67,9 +67,52 @@ mount the already authorized `/SMS` export read-only, and start BMO manually.
   status, and one on-demand recent/month reconciliation worker.
 - `bmo/qt/views/imessage_relay.py` and
   `bmo/qt/qml/IMessageRelayView.qml` own the content-free hosted view and its
-  refresh/reconciliation actions. The existing micro-SD menu icon is reused;
-  no protected graphics were changed.
+  refresh/reconciliation actions. The menu metadata references the existing
+  protected `graphics/icons/message.png` asset; the graphic itself is not
+  modified or copied.
 - `tests/test_imessage_runtime.py` uses only temporary invented data and covers
   disabled/import/metadata behavior, registration isolation, healthy/degraded
   status, real loopback receipt, port release, recent/month repair,
   source/config failure, job exclusion, redaction, view actions, and cleanup.
+
+## Physical acceptance record
+
+Physical validation began on 2026-09-05 with new mode-`0700` kiosk work and
+mount directories outside the repository. The retained restricted phone
+snapshot mounted through SSHFS with read-only FUSE options. A 64-byte ephemeral
+secret existed only in the operator shell; temporary mode-`0600` configuration
+used an ephemeral `127.0.0.1` listener and private state paths.
+
+A direct real-service lifecycle pass reported available, listening, and
+reconciliation-capable with zero initial aggregate counts. Calling close twice
+was safe, the receiver thread stopped, and rebinding the assigned port proved
+release; exit status was zero. A subsequent recent-reconciliation worker pass
+exited zero only after asserting that it started, completed within its bound,
+and reached `complete`. Hidden before/after hashes proved the mounted source
+trio unchanged, and both durable databases were mode `0600`. The operator paste
+did not retain the content-free report mapping, so detailed reconciliation
+counts remain unrecorded pending the visible UI check. Physical Qt rendering,
+touch/VNC actions, application shutdown/restart, and stability remain open.
+
+The isolated production `typed_agent.py` path subsequently loaded on the
+physical Qt display with exactly one relay menu item and no metadata failures.
+The hosted view rendered the expected compact face, available/listening state,
+aggregate counters, and reconciliation controls without private output. Its
+Recent action completed and visibly reported `Checked 3; requeued 0`.
+
+That run exposed one physical-only timing defect: Recent and Check Month stayed
+disabled after completion until Refresh was pressed. The completion callback
+runs before its worker thread returns, while `status()` had treated thread
+liveness as the availability signal. `status()` now uses the locked
+reconciliation state, so a completion callback sees controls available as soon
+as state becomes complete; `_start_reconciliation()` still uses actual thread
+liveness to reject overlapping jobs. A regression captures status inside the
+callback. Local results are 1 focused test passed, all 13 runtime tests passed,
+and all 113 relay tests plus 17 subtests passed. Physical retest of the updated
+code remains required before the control/UI gate can be accepted.
+
+The relay menu now references the existing protected
+`graphics/icons/message.png` asset selected by the operator. A resource-free
+metadata test fixes that path contract. Post-change verification passed the
+focused metadata test, all 13 runtime tests, and all 113 relay tests plus 17
+subtests; the image file itself was not modified.

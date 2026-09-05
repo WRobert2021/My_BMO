@@ -46,7 +46,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 IMESSAGE_RELAY_MENU_ITEM = FeatureMenuItem(
     name="imessage_relay",
     label="iMessage Relay",
-    icon_path=PROJECT_ROOT / "graphics" / "icons" / "micro_sd.png",
+    icon_path=PROJECT_ROOT / "graphics" / "icons" / "message.png",
 )
 DEFAULT_RECEIVER_CONFIG_PATH = Path("config/imessage_receiver.json")
 DEFAULT_RELAY_CONFIG_PATH = Path("config/imessage_relay.json")
@@ -240,15 +240,14 @@ class RelayRuntimeService:
             state = self._service_state
             error_code = self._service_error_code
             store = self._receiver_store
-            job_running = self._job_thread is not None and self._job_thread.is_alive()
+            reconciliation_state = self._reconciliation_state
             reconciliation_available = (
                 not self._closed
                 and state == "available"
                 and self._relay_config is not None
                 and self.config.messages_root is not None
-                and not job_running
+                and reconciliation_state != "running"
             )
-            reconciliation_state = self._reconciliation_state
             reconciliation_error = self._reconciliation_error_code
             last_report = (
                 None
