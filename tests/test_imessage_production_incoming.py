@@ -140,6 +140,7 @@ class ProductionIncomingTests(unittest.TestCase):
         self.assertEqual(sshfs_call[1], b"invented-password\n")
         self.assertNotIn("invented-password", flattened)
         self.assertIn("ro,password_stdin", flattened)
+        self.assertNotIn("ClearAllForwardings", flattened)
         self.assertFalse(commands.mounted)
 
     def test_verified_existing_mount_is_adopted_but_not_unmounted(self) -> None:

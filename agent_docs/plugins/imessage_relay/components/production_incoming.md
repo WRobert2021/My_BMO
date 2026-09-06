@@ -26,8 +26,10 @@ kiosk once.
 The existing `pi-bmo` account remains chrooted, SFTP-only, password-protected,
 server-read-only, and confined to `/SMS`. The kiosk additionally requests a
 read-only SSHFS mount, requires strict host-key verification, disables host-key
-updates and forwarding, and treats an unverified or writable mount as
-unavailable.
+updates, requests no forwarding, and treats an unverified or writable mount as
+unavailable. The validated phone-side account policy disables all forwarding.
+`ClearAllForwardings` is not passed as a mount option because SSHFS 3.7.3
+rejects it before starting SSH.
 
 The `/SMS` export is a snapshot rather than the live Apple directory. A
 root-owned phone publisher may periodically build `.SMS.next` from read-only

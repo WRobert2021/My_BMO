@@ -180,7 +180,7 @@ class ReadOnlySSHFS:
             "-o",
             "ro,password_stdin,BatchMode=no,StrictHostKeyChecking=yes,"
             "UpdateHostKeys=no,ConnectTimeout=5,ServerAliveInterval=15,"
-            "ServerAliveCountMax=2,ClearAllForwardings=yes,"
+            "ServerAliveCountMax=2,"
             f"UserKnownHostsFile={self.config.known_hosts_path}",
             f"{self.config.username}@{self.config.host}:{self.config.remote_path}",
             str(mount_path),

@@ -347,6 +347,10 @@ Messages work.
   supports `--reuse-existing-password` so this partial run can resume without
   another password entry. It now initializes a missing private feature file
   from the tracked template while refusing symlink or malformed replacements.
+- The first automatic mount failed before contacting the phone because SSHFS
+  3.7.3 rejected `ClearAllForwardings` as an unknown FUSE option. Removed that
+  incompatible client option; SSHFS requests no forwarding and the validated
+  phone-side account policy independently disables every forwarding class.
 - Added a bounded receiver feed and local relay-view message list with a
   two-second UI refresh. Private sender/message content is available only in
   that dedicated view; generic status remains aggregate/content-free.
