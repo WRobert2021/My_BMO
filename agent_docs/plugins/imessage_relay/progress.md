@@ -3,7 +3,7 @@
 current_stage: 12
 current_chapter: Dedicated-account provisioning and physical activation gate
 state: in_progress
-next_action: Recreate the non-login pi-bmo service account, validate a narrow inherited read-only Apple SMS ACL, provision private HMAC/TLS material for kiosk 192.168.0.36 and phone 192.168.0.42, install/validate the phone launchd job and mobile-administered maintenance command, then run the Stage 12 physical incoming matrix. Do not begin Stage 13.
+next_action: Validate a narrow inherited read-only Apple SMS ACL for the newly created non-login pi-bmo identity, provision private HMAC/TLS material for kiosk 192.168.0.36 and phone 192.168.0.42, install/validate the phone launchd job and mobile-administered maintenance command, then run the Stage 12 physical incoming matrix. Do not begin Stage 13.
 last_verified: 2026-09-06
 
 ## Stage index
@@ -53,7 +53,10 @@ last_verified: 2026-09-06
 - The phone project provides a fixed-path `mobile`-administered maintenance
   command whose stop removes the launchd job completely and whose confirmed
   uninstall revokes the relay ACL, deletes the service identity, and removes
-  relay-owned files. The `mobile` account and Apple Messages data are retained.
+  relay-owned files. Its account deletion temporarily repairs the missing
+  Procursus `wheel` entry from a private backup and rolls access back if
+  deletion does not complete. The `mobile` account and Apple Messages data are
+  retained.
 
 ## Cleanup status
 
@@ -100,6 +103,9 @@ last_verified: 2026-09-06
 - Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
   --check` passed. Physical kiosk and phone migration cleanup is complete. The
   phone preflight found CPython 3.9.9 and no Apple BSD `/bin/chmod`; user/group
-  next values were `1002:1001`. The new runtime has not been deployed: the dedicated account/ACL and production
-  certificates/secrets are not provisioned, the phone's actual `kqueue`
+  next values were `1002:1001`. The dedicated non-login `pi-bmo` identity is
+  now provisioned as UID 1002 and GID 1001; its pre-change group-database
+  backup remains private until activation succeeds. The new runtime has not
+  been deployed: the Apple SMS ACL and production certificates/secrets are not
+  provisioned, the phone's actual `kqueue`
   behavior has not been observed, and no launchd job is installed.

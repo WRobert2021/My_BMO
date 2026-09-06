@@ -194,7 +194,12 @@ then revokes the exact relay ACL, validates and deletes only the non-privileged
 `pi-bmo` identity, and removes `/var/jb/var/lib/bmo-phone-relay`, the exact
 launchd plist, and the command itself. It explicitly retains Apple Messages
 data and `mobile`. The command uses fixed path guards and never expands a
-wildcard or derives a recursive removal target from configuration.
+wildcard or derives a recursive removal target from configuration. Because
+this phone's Procursus group database lacks the `wheel` entry required by
+`pwd_mkdb`, identity deletion makes a private group backup, temporarily adds
+only `wheel:*:0:root`, and removes that entry immediately afterward. If
+account deletion fails while the identity remains, the command restores the
+group database and the relay's read-only ACL before stopping.
 
 ## Stage 12 acceptance
 
