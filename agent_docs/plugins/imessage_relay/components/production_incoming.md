@@ -20,12 +20,16 @@ Two separately deployable Python runtimes are required:
   owns the authenticated receiver, durable receipt database, attachment store,
   message view, phone-resume client, and infrequent reconciliation schedule.
 - The sibling `phone_relay` project is the Python 3.9 phone runtime. Its local
-  PyCharm virtual environment is CPython 3.9.6. It will contain no BMO imports
+  PyCharm virtual environment is CPython 3.9.6. It contains no BMO imports
   and will be tested against the exact phone interpreter before deployment.
 
 The phone's Messages database and attachment tree remain external read-only
 inputs. The phone runtime may create only its own private configuration,
 identifier backlog, cursor, and bounded operational state.
+
+The sibling project includes a rootless launchd example that runs continuously
+as `mobile` after one-time private provisioning. It is tracked for review but
+has not been copied to or loaded on the phone.
 
 ## Normal event flow
 
@@ -61,9 +65,9 @@ backlog without starting another delivery attempt. Only a valid authenticated
 kiosk resume request resets the circuit and permits backlog delivery again.
 
 The phone's resume listener accepts control only; Stage 12 does not expose any
-Messages write, send, reaction, or recipient-selection action. Request bounds,
-authentication, replay protection, and LAN/TLS policy must be specified before
-the listener is implemented.
+Messages write, send, reaction, or recipient-selection action. Exact request
+bounds, HMAC authentication, durable replay protection, and mandatory
+production TLS are implemented.
 
 ## Deletion and mutation handling
 
@@ -95,13 +99,14 @@ canonical digests through the existing bounded receipt-classification
 protocol, and resends only entries the kiosk reports missing. The kiosk never
 pulls the Apple database and never treats sender absence as deletion authority.
 
-## Kiosk interim state
+## Kiosk runtime state
 
-Until the phone control client is implemented, the BMO plugin starts only its
-existing receiver and local feed. The UI reports that the receiver is ready
-for the phone relay and keeps reconciliation disabled. Retired
-`source_config_path`, `relay_config_path`, and `messages_root` feature settings
-are ignored and acquire no mount, worker, source file, or relay-state resource.
+The BMO plugin starts its existing receiver/local feed and then independently
+starts the configured phone-control coordinator. It sends resume at startup,
+uses a content-free health request once per minute to detect recovery, and
+schedules a bounded recent reconciliation weekly. Retired `source_config_path`,
+`relay_config_path`, and `messages_root` feature settings are ignored and
+acquire no mount, worker, source file, or relay-state resource.
 
 ## Migration cleanup
 

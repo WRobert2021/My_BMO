@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "endpoint": "https://192.0.2.2:8443",
+  "key_id": "kiosk-control-1",
+  "shared_secret_file": "config/private/imessage_phone_control.secret",
+  "tls_ca_path": "config/private/imessage_phone_ca.pem",
+  "allow_insecure_loopback": false,
+  "request_timeout_seconds": 5,
+  "network_probe_seconds": 60,
+  "reconciliation_interval_hours": 168
+}

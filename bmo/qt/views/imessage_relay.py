@@ -55,6 +55,7 @@ class QtIMessageRelayView(QtHostedView):
             "pendingEvents": status.pending_events,
             "completeAttachments": status.complete_attachments,
             "partialAttachments": status.partial_attachments,
+            "phoneBacklogCount": status.phone_backlog_count,
             "reconciliationState": status.reconciliation_state,
             "reconciliationMessage": _reconciliation_message(
                 status.reconciliation_state,
@@ -136,11 +137,18 @@ def _reconciliation_message(
     if state == "running":
         return "Checking durable receipts…"
     if state == "complete":
+        if int(report.get("scheduled", 0)) == 1:
+            return "Phone accepted the bounded receipt check."
         observed = int(report.get("candidate_count", 0))
         repaired = int(report.get("requeued_count", 0))
         return f"Checked {observed}; requeued {repaired}."
     messages = {
         "phone_control_not_configured": "Phone reconciliation is pending Stage 12 implementation.",
+        "phone_control_config_invalid": "Phone control configuration is unavailable.",
+        "phone_control_start_failed": "Phone control could not start.",
+        "phone_control_rejected": "Phone rejected the receipt check.",
+        "phone_control_response_invalid": "Phone returned an invalid response.",
+        "phone_unreachable": "The phone could not be reached.",
         "reconciliation_timeout": "Receipt check timed out.",
         "reconciliation_unavailable": "Receipt check is unavailable.",
         "reconciliation_failed": "Receipt check failed safely.",
@@ -152,7 +160,22 @@ def _reconciliation_message(
 
 
 def _incoming_message(state: str, error_code: str | None) -> str:
+    if state == "connected":
+        return "Phone relay is connected and the kiosk is listening."
+    if state == "waiting":
+        messages = {
+            "phone_unreachable": "Kiosk is listening; waiting for the phone.",
+            "phone_control_response_invalid": "Phone control response was invalid.",
+        }
+        return messages.get(
+            error_code,
+            "Kiosk is listening; phone control is not yet available.",
+        )
     if state == "ready":
+        if error_code == "phone_control_config_invalid":
+            return "Kiosk is listening; phone control configuration is unavailable."
+        if error_code == "phone_control_start_failed":
+            return "Kiosk is listening; phone control could not start."
         return "Kiosk receiver is ready for the phone relay."
     if state == "closed":
         return "Incoming relay is stopped."

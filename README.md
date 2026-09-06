@@ -26,13 +26,14 @@ Dopamine/rootless jailbroken iPhone and this Raspberry Pi kiosk. Its initial
 scope is incoming iMessage text, photos, videos, and tapbacks, with explicit
 kiosk acknowledgements and duplicate-safe delivery.
 
-Stage 12 is being rebuilt around the original event-driven design. A narrow
-Python 3.9-compatible phone agent will observe Messages changes, retain only a
-cursor and undelivered event identifiers, and push new incoming events to the
-kiosk's authenticated durable receiver. The kiosk will build its own receipt
-database and will not mount, copy, or poll the phone's Messages database during
-normal operation. Outbound replies, media sends, and reactions remain gated
-for Stage 13.
+Stage 12 uses the original event-driven design. The standalone Python 3.9.6
+`phone_relay` runtime observes Messages changes, retains only a cursor and
+undelivered event identifiers, and pushes new incoming events to the kiosk's
+authenticated durable receiver. The kiosk builds its own receipt database and
+does not mount, copy, or poll the phone's Messages database during normal
+operation. Local implementation is complete; private TLS provisioning and the
+physical activation matrix remain. Outbound replies, media sends, and
+reactions remain gated for Stage 13.
 
 Safety boundaries:
 
@@ -75,6 +76,7 @@ be-more-agent/
 │   ├── example.compact_face.json # Tracked shared compact-face example
 │   ├── example.imessage_relay.json # Tracked relay-state example
 │   ├── example.imessage_receiver.json # Tracked receiver example
+│   ├── example.imessage_phone_control.json # Tracked kiosk-to-phone control example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)

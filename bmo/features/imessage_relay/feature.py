@@ -28,6 +28,11 @@ from .receiver import (
     build_server,
     load_receiver_config,
 )
+from .phone_control import (
+    PhoneControlConfigError,
+    PhoneControlCoordinator,
+    load_phone_control_config,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -37,6 +42,7 @@ IMESSAGE_RELAY_MENU_ITEM = FeatureMenuItem(
     icon_path=PROJECT_ROOT / "graphics" / "icons" / "message.png",
 )
 DEFAULT_RECEIVER_CONFIG_PATH = Path("config/imessage_receiver.json")
+DEFAULT_PHONE_CONTROL_CONFIG_PATH = Path("config/imessage_phone_control.json")
 DEFAULT_RECENT_DAYS = 7
 MAX_RECENT_DAYS = 31
 
@@ -49,6 +55,7 @@ class RelayFeatureConfig:
     """Resource-free receiver settings supplied by the feature entry."""
 
     receiver_config_path: Path
+    phone_control_config_path: Path = DEFAULT_PHONE_CONTROL_CONFIG_PATH
     reconciliation_recent_days: int = DEFAULT_RECENT_DAYS
 
 
@@ -69,6 +76,7 @@ class RelayRuntimeStatus:
     last_reconciliation: Mapping[str, int | str] | None
     incoming_state: str = "unavailable"
     incoming_error_code: str | None = None
+    phone_backlog_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +98,11 @@ def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
         "receiver_config_path",
         DEFAULT_RECEIVER_CONFIG_PATH,
     )
+    phone_control_path = _path_setting(
+        settings,
+        "phone_control_config_path",
+        DEFAULT_PHONE_CONTROL_CONFIG_PATH,
+    )
     recent_days = settings.get("reconciliation_recent_days", DEFAULT_RECENT_DAYS)
     if (
         isinstance(recent_days, bool)
@@ -101,12 +114,13 @@ def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
         )
     return RelayFeatureConfig(
         receiver_config_path=receiver_path,
+        phone_control_config_path=phone_control_path,
         reconciliation_recent_days=recent_days,
     )
 
 
 class RelayRuntimeService:
-    """Own the kiosk receiver while the Stage 12 phone client is rebuilt."""
+    """Own the kiosk receiver and failure-isolated Stage 12 phone control."""
 
     def __init__(self, config: RelayFeatureConfig) -> None:
         if not isinstance(config, RelayFeatureConfig):
@@ -117,9 +131,39 @@ class RelayRuntimeService:
         self._server: Any | None = None
         self._receiver_store: ReceiverStateStore | None = None
         self._server_thread: threading.Thread | None = None
+        self._phone_control: PhoneControlCoordinator | None = None
+        self._phone_control_error_code: str | None = None
         self._service_state = "unavailable"
         self._service_error_code: str | None = None
         self._start_receiver()
+        if self._service_state == "available":
+            self._start_phone_control()
+
+    def _start_phone_control(self) -> None:
+        coordinator: PhoneControlCoordinator | None = None
+        try:
+            control_config = load_phone_control_config(
+                self.config.phone_control_config_path
+            )
+            coordinator = PhoneControlCoordinator(
+                control_config,
+                recent_days=self.config.reconciliation_recent_days,
+            )
+            coordinator.start()
+        except PhoneControlConfigError:
+            self._phone_control_error_code = "phone_control_config_invalid"
+            return
+        except (OSError, ssl.SSLError):
+            self._phone_control_error_code = "phone_control_start_failed"
+            if coordinator is not None:
+                coordinator.close()
+            return
+        except Exception:
+            self._phone_control_error_code = "phone_control_start_failed"
+            if coordinator is not None:
+                coordinator.close()
+            return
+        self._phone_control = coordinator
 
     def _start_receiver(self) -> None:
         server: Any | None = None
@@ -169,6 +213,8 @@ class RelayRuntimeService:
             state = self._service_state
             error_code = self._service_error_code
             store = self._receiver_store
+            phone_control = self._phone_control
+            control_error = self._phone_control_error_code
             closed = self._closed
         received = pending = complete = partial = 0
         if store is not None and state == "available":
@@ -182,15 +228,40 @@ class RelayRuntimeService:
                 pending = summary.pending_event_count
                 complete = summary.complete_attachment_count
                 partial = summary.partial_attachment_count
+        reconciliation_state = "unavailable"
+        reconciliation_error = control_error or "phone_control_config_invalid"
+        reconciliation_available = False
+        last_reconciliation: Mapping[str, int | str] | None = None
+        phone_backlog_count: int | None = None
+        phone_state = None
+        phone_error = None
+        if phone_control is not None and not closed:
+            control_status = phone_control.status()
+            phone_state = control_status.phone_state
+            phone_error = control_status.error_code
+            phone_backlog_count = control_status.backlog_count
+            reconciliation_state = control_status.reconciliation_state
+            reconciliation_error = control_status.reconciliation_error_code
+            reconciliation_available = (
+                state == "available" and phone_state == "available"
+            )
+            last_reconciliation = control_status.last_reconciliation
+
         if closed:
             incoming_state = "closed"
             incoming_error = None
-        elif state == "available":
-            incoming_state = "ready"
-            incoming_error = None
-        else:
+        elif state != "available":
             incoming_state = "unavailable"
             incoming_error = error_code
+        elif phone_state == "available":
+            incoming_state = "connected"
+            incoming_error = None
+        elif phone_control is not None:
+            incoming_state = "waiting"
+            incoming_error = phone_error
+        else:
+            incoming_state = "ready"
+            incoming_error = control_error
         return RelayRuntimeStatus(
             service_state=state,
             service_error_code=error_code,
@@ -199,12 +270,13 @@ class RelayRuntimeService:
             pending_events=pending,
             complete_attachments=complete,
             partial_attachments=partial,
-            reconciliation_state="unavailable",
-            reconciliation_error_code="phone_control_not_configured",
-            reconciliation_available=False,
-            last_reconciliation=None,
+            reconciliation_state=reconciliation_state,
+            reconciliation_error_code=reconciliation_error,
+            reconciliation_available=reconciliation_available,
+            last_reconciliation=last_reconciliation,
             incoming_state=incoming_state,
             incoming_error_code=incoming_error,
+            phone_backlog_count=phone_backlog_count,
         )
 
     def recent_items(self, limit: int = 20) -> tuple[IncomingFeedItem, ...]:
@@ -288,7 +360,10 @@ class RelayRuntimeService:
     def reconcile_recent(self, on_complete: StatusCallback | None = None) -> bool:
         if on_complete is not None and not callable(on_complete):
             raise TypeError("reconciliation completion must be callable")
-        return False
+        with self._lock:
+            control = self._phone_control
+            closed = self._closed
+        return False if closed or control is None else control.reconcile_recent(on_complete)
 
     def reconcile_month(
         self,
@@ -299,7 +374,14 @@ class RelayRuntimeService:
         if on_complete is not None and not callable(on_complete):
             raise TypeError("reconciliation completion must be callable")
         datetime(year, month, 1)
-        return False
+        with self._lock:
+            control = self._phone_control
+            closed = self._closed
+        return (
+            False
+            if closed or control is None
+            else control.reconcile_month(year, month, on_complete)
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -309,7 +391,10 @@ class RelayRuntimeService:
             server_thread = self._server_thread
             server = self._server
             store = self._receiver_store
+            phone_control = self._phone_control
             self._service_state = "closed"
+        if phone_control is not None:
+            phone_control.close()
         if server is not None:
             if server_thread is not None and server_thread.is_alive():
                 server.shutdown()
@@ -454,6 +539,7 @@ def _close_partial_receiver(
 
 
 __all__ = [
+    "DEFAULT_PHONE_CONTROL_CONFIG_PATH",
     "DEFAULT_RECEIVER_CONFIG_PATH",
     "IMESSAGE_RELAY_MENU_ITEM",
     "IMessageRelayTool",

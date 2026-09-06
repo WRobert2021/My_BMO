@@ -27,6 +27,7 @@ from bmo.features.imessage_relay.receiver import (
     encode_event_envelope,
     sign_request,
 )
+from bmo.features.imessage_relay.phone_control import PhoneControlRuntimeStatus
 from bmo.features.imessage_relay.relay import MessagesReader
 from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
 from bmo.features.imessage_relay.relay.timestamps import APPLE_EPOCH
@@ -263,7 +264,7 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
                 self.assertEqual(status.incoming_state, "ready")
                 self.assertEqual(
                     status.reconciliation_error_code,
-                    "phone_control_not_configured",
+                    "phone_control_config_invalid",
                 )
                 result.registry.close()
                 result.registry.close()
@@ -345,8 +346,55 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
         self.assertFalse(status.reconciliation_available)
         self.assertEqual(
             status.reconciliation_error_code,
-            "phone_control_not_configured",
+            "phone_control_config_invalid",
         )
+
+    def test_phone_control_starts_resumes_and_owns_reconciliation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receiver_config = write_receiver_config(root)
+            coordinator = Mock()
+            coordinator.status.return_value = PhoneControlRuntimeStatus(
+                phone_state="available",
+                error_code=None,
+                backlog_count=5,
+                reconciliation_state="idle",
+                reconciliation_error_code=None,
+                last_reconciliation=None,
+            )
+            coordinator.reconcile_recent.return_value = True
+            coordinator.reconcile_month.return_value = True
+            with (
+                patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}),
+                patch(
+                    "bmo.features.imessage_relay.feature.load_phone_control_config",
+                    return_value=Mock(),
+                ),
+                patch(
+                    "bmo.features.imessage_relay.feature.PhoneControlCoordinator",
+                    return_value=coordinator,
+                ),
+            ):
+                service = RelayRuntimeService(
+                    RelayFeatureConfig(
+                        receiver_config_path=receiver_config,
+                        phone_control_config_path=root / "control.json",
+                    )
+                )
+                try:
+                    status = service.status()
+                    self.assertTrue(service.reconcile_recent())
+                    self.assertTrue(service.reconcile_month(2026, 9))
+                finally:
+                    service.close()
+
+        coordinator.start.assert_called_once_with()
+        self.assertEqual(status.incoming_state, "connected")
+        self.assertTrue(status.reconciliation_available)
+        self.assertEqual(status.phone_backlog_count, 5)
+        coordinator.reconcile_recent.assert_called_once_with(None)
+        coordinator.reconcile_month.assert_called_once_with(2026, 9, None)
+        coordinator.close.assert_called_once_with()
 
 
 class IMessageRuntimeViewTests(unittest.TestCase):
@@ -376,6 +424,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
             "last_reconciliation": None,
             "incoming_state": "ready",
             "incoming_error_code": None,
+            "phone_backlog_count": None,
         }
         values.update(changes)
         return RelayRuntimeStatus(**values)
@@ -410,6 +459,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         view.close()
 
         self.assertEqual(payload["receivedEvents"], 4)
+        self.assertIsNone(payload["phoneBacklogCount"])
         self.assertEqual(payload["serviceMessage"], "Receiver is listening.")
         self.assertEqual(payload["messages"][0]["text"], "invented message")
         self.assertEqual(unavailable_payload["error"], "Reconciliation is unavailable.")

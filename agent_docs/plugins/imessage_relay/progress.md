@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
 current_stage: 12
-current_chapter: Event-driven phone push architecture reset
+current_chapter: Physical provisioning and activation gate
 state: in_progress
-next_action: Define the Python 3.9.6 phone backlog/observer and authenticated kiosk-resume contracts, then implement them without beginning Stage 13 outbound work.
+next_action: Provision separate private HMAC/TLS material and production addresses, validate Darwin kqueue and live schema read-only on the phone, validate and install the tracked phone launchd example, then run the Stage 12 physical incoming matrix. Do not begin Stage 13.
 last_verified: 2026-09-06
 
 ## Stage index
@@ -15,7 +15,7 @@ last_verified: 2026-09-06
 | 9 | complete | manual physical iPhone-to-kiosk delivery matrix accepted |
 | 10 | complete | opt-in kiosk receiver/UI lifecycle accepted |
 | 11 | complete | plugin package consolidation and full physical suite accepted |
-| 12 | in progress | snapshot/pull design retired; event-driven incoming push is now the required architecture |
+| 12 | in progress | local event-driven phone push and kiosk control implementation accepted; physical activation remains |
 | 13 | not started | outbound text, media, and reactions remain unauthorized |
 
 ## Current Stage 12 decisions
@@ -35,17 +35,19 @@ last_verified: 2026-09-06
 - The kiosk receiver database remains the independent message record. Weekly
   or twice-weekly bounded reconciliation is initiated by the kiosk but scanned
   on the phone; only missing events are resent.
-- The sibling `phone_relay` PyCharm project exists with CPython 3.9.6 and no
-  source files yet. It will be a standalone runtime with no imports from the
-  Python 3.13.5 BMO package.
+- The sibling `phone_relay` PyCharm project is a standalone, dependency-free
+  CPython 3.9.6 runtime with no imports from the Python 3.13.5 BMO package.
+- A fresh phone state defaults to `new_only`, recording the current maximum
+  Messages ROWID before observing new arrivals. Existing kiosk receipts remain
+  intact and the explicit `all` option is reserved for controlled migrations.
 
 ## Cleanup status
 
 - Removed the Stage 12 SSHFS source manager, kiosk polling worker, source
   configurator/example, snapshot publisher/installer, and their focused tests.
-- Reduced the BMO runtime to the durable receiver and local feed. It now reports
-  receiver readiness while phone control and reconciliation remain explicitly
-  unavailable rather than opening a retired source path.
+- Reduced the BMO data plane to the durable receiver and local feed, then added
+  only the separate authenticated phone-control coordinator; no retired source
+  path or kiosk-side Apple reader was restored.
 - Preserved the stable message model/scroll behavior, kiosk receipt store,
   authenticated event/attachment protocol, and receiver-secret file support.
 - Removed SSHFS/FUSE from `setup.sh` and its setup contract with explicit
@@ -64,13 +66,23 @@ last_verified: 2026-09-06
 
 ## Verification status
 
-- Local receiver/runtime focus after the architecture reset: 33 tests and 9
-  subtests passed with loopback permission.
-- Complete relay suite: 110 tests and 17 subtests passed.
-- Combined relay and shared extension/runtime-menu/Qt/setup suite: 181 tests
-  and 57 subtests passed.
-- Complete repository suite: 825 tests and 10,002 subtests passed in 19.97
+- Kiosk Stage 12 control/configuration and lifecycle focus: 19 tests passed.
+- Standalone exact CPython 3.9.6 suite: 31 tests passed, including strict
+  private configuration, cursor/backlog restart, the resume-only retry latch,
+  read-only burst discovery, text/reaction/photo/video materialization,
+  attachment streaming, bounded reconciliation, service orchestration, and a
+  real loopback control-listener request plus a real macOS/Darwin SQLite-WAL
+  filesystem wake.
+- Shared phone/kiosk control canonical body and HMAC vectors match. An actual
+  local phone sender-to-kiosk receiver loopback delivered one invented event,
+  accepted its duplicate idempotently, and left one durable kiosk receipt.
+
+- Complete relay suite: 119 tests and 17 subtests passed.
+- Complete repository suite: 834 tests and 10,002 subtests passed in 19.89
   seconds with exit status zero.
-- Python compilation, example feature JSON parsing, and `git diff --check`
-  passed. Physical kiosk and phone migration cleanup is complete. The new phone
-  runtime remains unimplemented and therefore unverified.
+- Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
+  --check` passed. Physical kiosk and phone migration cleanup is complete. The
+  new runtime has not been deployed: production certificates/secrets and the
+  kiosk LAN address are not provisioned, the phone's actual `kqueue` behavior
+  has not been observed, and the post-change `mobile` maintenance-login check
+  remains prudent before installation.

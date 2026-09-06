@@ -307,14 +307,26 @@ acknowledges only an exact final ACK containing `attachment_status: complete`.
 A legacy metadata-only ACK, missing/unsafe/changed source, timeout, mismatch,
 or negative response follows the existing bounded retry/dead-letter policy.
 
-## Planned Stage 12 Phone Integration
+## Stage 12 Phone Integration
 
-The production client will be the standalone Python 3.9.6 `phone_relay`
-runtime, not the BMO kiosk process. It will reuse this event, reconciliation,
+The production client is the standalone Python 3.9.6 `phone_relay`
+runtime, not the BMO kiosk process. It reuses this event, reconciliation,
 attachment, HMAC, replay, and ACK contract with shared canonical test vectors.
 The kiosk receiver will require TLS when bound beyond literal loopback.
 
-Kiosk-to-phone resume control is a separate planned contract and is not an
-implemented endpoint in this document. Its sole Stage 12 authority will be to
-reset an exhausted phone delivery circuit and request backlog drain or bounded
-reconciliation; it cannot send or mutate Messages content.
+Kiosk-to-phone control uses the same HMAC canonicalization and private secret
+over three separate phone endpoints: `POST /v1/control/health`,
+`POST /v1/control/resume`, and `POST /v1/control/reconciliation`. Every request
+has protocol version, request ID, and exact action; reconciliation additionally
+has either a 1–31 day recent window or an exact UTC year/month. Resume returns
+only the identifier-backlog count and is the sole exhausted-circuit reset.
+Reconciliation returns a scheduling ID; its actual receipt comparison still
+uses the existing kiosk `/v1/reconciliation` endpoint.
+
+The kiosk encoder/client is implemented in
+`bmo.features.imessage_relay.phone_control`. The standalone Python 3.9.6 phone
+project has the matching HMAC/parser/application/listener, durable replay-nonce
+storage, and event-driven service orchestration. Both projects assert the same
+invented canonical resume body and HMAC signature, and the phone listener has
+a real loopback HTTP test. Control has no Messages send, write, reaction,
+recipient-selection, or content-return authority.

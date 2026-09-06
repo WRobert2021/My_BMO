@@ -90,11 +90,12 @@ private receiver configuration, opens the kiosk receipt store, binds the
 receiver, and starts its listener. It does not start a source mount, local
 sender queue, Apple parser, or polling worker.
 
-Until the phone control client exists, the relay view reports receiver
-readiness and reconciliation unavailable. Later Stage 12 implementation will
-add a failure-isolated authenticated resume client and infrequent scheduler.
-Cleanup must close the view, join owned threads, close the store/socket, and
-release the port exactly once.
+The failure-isolated phone control client sends resume at receiver startup,
+uses content-free health probes to detect a later network return, and schedules
+bounded recent reconciliation weekly. Missing or invalid control configuration
+does not affect the receiver or local feed. Cleanup closes the view, joins the
+control and receiver threads, closes both transports and the store, and
+releases ports exactly once.
 
 ## Deferred outbound direction
 
