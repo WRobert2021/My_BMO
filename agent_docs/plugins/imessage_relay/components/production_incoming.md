@@ -82,6 +82,14 @@ venv/bin/python -m bmo.features.imessage_relay.tools.configure_incoming \
   --host PHONE_IP_ADDRESS --username pi-bmo
 ```
 
+The configurator validates the existing private feature file before prompting.
+If an earlier version stored the protected password but failed while enabling
+the feature, `--reuse-existing-password` resumes without reading a password
+from the terminal. Failures identify the configuration boundary without
+printing secret contents. A missing private `features.json` is initialized from
+the tracked feature template; an existing symlink or malformed file still
+fails closed rather than being overwritten.
+
 The phone publisher is likewise explicit. Copy only the project-owned
 `refresh_snapshot.sh` and plist template to a temporary phone path through the
 normal `mobile` maintenance login. As `mobile`, install the script as

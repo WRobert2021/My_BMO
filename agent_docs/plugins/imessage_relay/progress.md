@@ -341,6 +341,12 @@ Messages work.
   one-time private configurator that persists phone login without echoing it,
   and an ignored `config/private/` boundary. No password appears in JSON,
   process arguments, logs, or tracked data.
+- The first physical configurator run stored the private credential but failed
+  during the later feature-enablement step. The configurator now validates the
+  private feature file before prompting, emits a bounded actionable error, and
+  supports `--reuse-existing-password` so this partial run can resume without
+  another password entry. It now initializes a missing private feature file
+  from the tracked template while refusing symlink or malformed replacements.
 - Added a bounded receiver feed and local relay-view message list with a
   two-second UI refresh. Private sender/message content is available only in
   that dedicated view; generic status remains aggregate/content-free.
@@ -348,8 +354,8 @@ Messages work.
   verify a read-only `.SMS.next`, apply the existing restricted ownership and
   modes, and atomically rotate it into `/SMS`. It never invokes SQLite or
   changes Apple source ownership/permissions.
-- Focused Stage 12/receiver/runtime verification passes: 43 tests and 9
-  subtests. The complete relay suite passes: 120 tests and 17 subtests. Shared
+- Focused Stage 12/receiver/runtime verification passes: 46 tests and 9
+  subtests. The complete relay suite passes: 123 tests and 17 subtests. Shared
   extension/runtime-menu/Qt/setup verification passes: 72 tests and 40
   subtests. The complete repository suite passes with 836 tests and 10,002
   subtests. Physical provisioning and one automatic live arrival remain.

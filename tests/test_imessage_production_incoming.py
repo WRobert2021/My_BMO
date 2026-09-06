@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -26,6 +28,7 @@ from bmo.features.imessage_relay.source_mount import (
     SourceMountError,
     load_source_config,
 )
+from bmo.features.imessage_relay.tools import configure_incoming
 from bmo.features.imessage_relay.tools.configure_incoming import configure
 
 
@@ -219,6 +222,7 @@ class ProductionIncomingTests(unittest.TestCase):
             username="pi-bmo",
             port=22,
             poll_interval=5.0,
+            reuse_existing_password=False,
         )
         with patch("getpass.getpass", return_value="invented-password"):
             configure(args)
@@ -237,6 +241,104 @@ class ProductionIncomingTests(unittest.TestCase):
             feature["settings"]["source_config_path"],
             "config/imessage_source.json",
         )
+
+    def test_configurator_reports_safe_actionable_failure(self) -> None:
+        output = io.StringIO()
+        with (
+            patch.object(configure_incoming, "parse_args"),
+            patch.object(
+                configure_incoming,
+                "configure",
+                side_effect=ValueError("private features configuration is unavailable"),
+            ),
+            redirect_stdout(output),
+        ):
+            result = configure_incoming.main()
+
+        self.assertEqual(result, 1)
+        self.assertIn("private features configuration is unavailable", output.getvalue())
+        self.assertNotIn("password", output.getvalue())
+
+    def test_configurator_can_resume_with_existing_private_password(self) -> None:
+        config_root = self.root / "config"
+        private_root = config_root / "private"
+        private_root.mkdir(parents=True)
+        password_path = private_root / "imessage_source.password"
+        password_path.write_text("already-stored\n", encoding="utf-8")
+        password_path.chmod(0o600)
+        features_path = config_root / "features.json"
+        features_path.write_text(
+            json.dumps({"features": [], "modes": []}),
+            encoding="utf-8",
+        )
+        known_hosts = self.root / "known_hosts"
+        known_hosts.write_text("invented host key\n", encoding="utf-8")
+        args = argparse.Namespace(
+            project_root=self.root,
+            features_path=Path("config/features.json"),
+            known_hosts_path=known_hosts,
+            mount_path=Path("/var/tmp/invented-imessage/SMS"),
+            host="192.0.2.10",
+            username="pi-bmo",
+            port=22,
+            poll_interval=5.0,
+            reuse_existing_password=True,
+        )
+
+        with patch("getpass.getpass") as password_prompt:
+            configure(args)
+
+        password_prompt.assert_not_called()
+        self.assertEqual(password_path.read_text(encoding="utf-8"), "already-stored\n")
+        self.assertTrue(json.loads(features_path.read_text())["features"][0]["enabled"])
+
+    def test_configurator_initializes_missing_features_from_tracked_example(self) -> None:
+        config_root = self.root / "config"
+        private_root = config_root / "private"
+        private_root.mkdir(parents=True)
+        password_path = private_root / "imessage_source.password"
+        password_path.write_text("already-stored\n", encoding="utf-8")
+        password_path.chmod(0o600)
+        (config_root / "example.features.json").write_text(
+            json.dumps(
+                {
+                    "features": [
+                        {
+                            "module": "bmo.features.say_hello",
+                            "enabled": True,
+                            "settings": {},
+                        }
+                    ],
+                    "modes": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        known_hosts = self.root / "known_hosts"
+        known_hosts.write_text("invented host key\n", encoding="utf-8")
+        args = argparse.Namespace(
+            project_root=self.root,
+            features_path=Path("config/features.json"),
+            known_hosts_path=known_hosts,
+            mount_path=Path("/var/tmp/invented-imessage/SMS"),
+            host="192.0.2.10",
+            username="pi-bmo",
+            port=22,
+            poll_interval=5.0,
+            reuse_existing_password=True,
+        )
+
+        configure(args)
+
+        features = json.loads((config_root / "features.json").read_text())
+        self.assertEqual(features["features"][0]["module"], "bmo.features.say_hello")
+        relay = next(
+            entry
+            for entry in features["features"]
+            if entry["module"] == "bmo.features.imessage_relay"
+        )
+        self.assertTrue(relay["enabled"])
+        self.assertEqual((config_root / "features.json").stat().st_mode & 0o777, 0o600)
 
     def test_phone_publisher_is_syntax_valid_bounded_and_read_only_to_apple(self) -> None:
         script_path = (
