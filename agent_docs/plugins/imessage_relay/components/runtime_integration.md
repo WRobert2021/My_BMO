@@ -52,6 +52,16 @@ request at a time and schedules a bounded recent check weekly during a
 long-running process. Cleanup joins the control worker and closes its transport.
 It never reads Apple data or recreates the removed mount path.
 
+## Notification count boundary
+
+`bmo.features.imessage_relay.received_message_count()` opens the existing
+receiver database read-only and returns the durable count of message events.
+`new_message_count()` compares that total with a caller-owned checkpoint and
+clamps database replacement/reset to zero. Reactions, duplicate requests, and
+attachment-pending events do not inflate the count. This API starts no plugin
+resource and owns no badge state; a future notification feature decides whether
+and how to publish a typed runtime attention.
+
 Its private configuration path is `phone_control_config_path`, defaulting to
 `config/imessage_phone_control.json`; the tracked shape is
 `config/example.imessage_phone_control.json`. Missing or invalid control
@@ -80,4 +90,5 @@ control-absent degradation, stable scrolling, view actions, and cleanup.
 shared canonical/HMAC vectors, ACK handling, resume/probe scheduling,
 single-flight reconciliation, and control cleanup. Receiver and attachment
 protocol behavior remains owned by `tests/test_imessage_receiver.py` and
-`tests/test_imessage_attachments.py`.
+`tests/test_imessage_attachments.py`. `tests/test_imessage_notifications.py`
+owns read-only count/delta semantics and failure behavior.

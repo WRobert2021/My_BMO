@@ -56,6 +56,7 @@ or status changes. Evidence and history are opt-in.
 | production incoming phone push, backlog/retry latch, kiosk resume, migration cleanup | [components/production_incoming.md](plugins/imessage_relay/components/production_incoming.md) |
 | Stage 11 package layout and root cleanup | [components/package_cleanup.md](plugins/imessage_relay/components/package_cleanup.md) |
 | HTTP/HMAC wire contract | [api/receiver_protocol.md](plugins/imessage_relay/api/receiver_protocol.md) |
+| notification badge message count | [api/notifications.md](plugins/imessage_relay/api/notifications.md) |
 | Apple Messages schema evidence only | [evidence/messages_schema.md](plugins/imessage_relay/evidence/messages_schema.md) |
 | completed-stage detail or legacy contradictions | [history](plugins/imessage_relay/history/) |
 

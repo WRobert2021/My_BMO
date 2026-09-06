@@ -28,8 +28,18 @@ inputs. The phone runtime may create only its own private configuration,
 identifier backlog, cursor, and bounded operational state.
 
 The sibling project includes a rootless launchd example that runs continuously
-as `mobile` after one-time private provisioning. It is tracked for review but
-has not been copied to or loaded on the phone.
+as the dedicated non-login `pi-bmo` account after one-time private provisioning.
+`mobile` remains the SSH administrator and is not the service identity. Because the
+Apple SMS directory is private to `mobile`, provisioning must grant `pi-bmo`
+an inherited read/traverse ACL scoped to that directory. The grant must not add
+write authority or change Apple ownership/POSIX mode bits, and both existing
+and newly created attachment access must be verified. The launchd definition
+and access grant are tracked/planned for review but have not been installed on
+the phone.
+
+The deployment addresses for this installation are kiosk `192.168.0.36` and
+phone `192.168.0.42`. Both data and control directions still require private
+TLS and independent HMAC secrets.
 
 ## Normal event flow
 
@@ -161,6 +171,23 @@ The operator completed the live cleanup on 2026-09-06:
 The `mobile` maintenance account and Apple-owned Messages database,
 attachments, permissions, and content were not altered.
 
+## Phone maintenance control
+
+The sibling project provides `deployment/bmo-phone-relay-maintenance` for
+installation as `/var/jb/usr/local/sbin/bmo-phone-relay`. A `mobile` SSH
+administrator can invoke `status`, `start`, `stop`, or `uninstall` through this
+one command. Stop boots the system launchd job out, which removes the observer,
+control listener, retry timers, and all network activity rather than merely
+pausing delivery. Start validates the fixed plist/runtime/config locations,
+bootstraps the job when absent, and kickstarts it.
+
+Uninstall requires the exact typed phrase `REMOVE BMO PHONE RELAY`, stops first,
+then revokes the exact relay ACL, validates and deletes only the non-privileged
+`pi-bmo` identity, and removes `/var/jb/var/lib/bmo-phone-relay`, the exact
+launchd plist, and the command itself. It explicitly retains Apple Messages
+data and `mobile`. The command uses fixed path guards and never expands a
+wildcard or derives a recursive removal target from configuration.
+
 ## Stage 12 acceptance
 
 Invented and physical acceptance must cover:
@@ -176,9 +203,11 @@ Invented and physical acceptance must cover:
 - text, reaction add/remove, photo, video, and bounded attachment resume;
 - kiosk-owned feed persistence without an SSHFS mount;
 - bounded weekly reconciliation and selective resend;
-- TLS/HMAC/replay protection, redacted diagnostics, cleanup, and shutdown; and
-- unchanged Apple database, WAL/SHM, attachments, permissions, and process
-  state.
+- TLS/HMAC/replay protection, redacted diagnostics, cleanup, and shutdown;
+- `pi-bmo` service ownership, complete `mobile`-administered maintenance
+  stop/start/uninstall, and scoped read-only Apple SMS ACL behavior; and
+- unchanged Apple database, WAL/SHM, attachments, ownership, POSIX mode bits,
+  content, and Messages process state (apart from the explicit read-only ACL).
 
 Stop when the physical incoming matrix passes. Outbound text, media, and
 reaction commands remain Stage 13 and require separate authorization.

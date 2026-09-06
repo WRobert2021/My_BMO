@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: bmo.features.imessage_relay (opt-in)
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_phone_control.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_phone_control.py, tests/test_imessage_notifications.py]
 ---
 
 # Plugin: iMessage Relay
@@ -28,6 +28,7 @@ database writes are prohibited in every stage.
 | normalized contracts and read-only parser reference | `bmo/features/imessage_relay/relay/` |
 | kiosk authentication and wire schema | `bmo/features/imessage_relay/receiver/` |
 | kiosk receipt/attachment store and listener | `bmo/features/imessage_relay/receiver/` |
+| read-only notification count API | `bmo/features/imessage_relay/notifications.py` |
 | kiosk lifecycle and private feed | `bmo/features/imessage_relay/feature.py` |
 | Qt relay view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
 | Stage 8/9 manual validation tools | `bmo/features/imessage_relay/tools/` |
@@ -63,12 +64,18 @@ Implemented in the local Stage 12 runtime:
   attachment streaming;
 - phone-to-kiosk TLS/HMAC delivery using the established event/attachment ACK
   contract;
-- authenticated kiosk-to-phone health, resume, and reconciliation control; and
-- kiosk-scheduled, phone-executed bounded receipt reconciliation.
+- authenticated kiosk-to-phone health, resume, and reconciliation control;
+- kiosk-scheduled, phone-executed bounded receipt reconciliation;
+- a read-only kiosk message-count/delta API for a future notification badge;
+  and
+- a dedicated-account launchd definition plus bounded phone maintenance
+  command for status, full stop, start, and confirmed uninstall.
 
-Pending Stage 12 work is private TLS/HMAC provisioning, reviewed phone launchd
-installation, physical `kqueue` and live schema verification, and the complete
-physical incoming acceptance matrix without SSHFS or snapshots.
+Pending Stage 12 work is private TLS/HMAC provisioning, recreation of the
+dedicated `pi-bmo` runtime/maintenance account, a verified inherited read-only
+ACL for Apple SMS input, reviewed phone launchd installation, physical `kqueue`
+and live schema verification, and the complete physical incoming acceptance
+matrix without SSHFS or snapshots.
 
 The abandoned Stage 12 SSHFS source manager, kiosk polling worker, persistent
 phone-login configurator, and snapshot publisher are removed from active code.
@@ -84,11 +91,14 @@ service lifecycle. All phone modules import and test under CPython 3.9.6.
 
 ## Safety and lifecycle
 
-Apple's database, WAL/SHM, attachments, permissions, metadata, and Messages
-process state are read-only. The phone may write only its own private cursor,
-identifier backlog, retry state, configuration, and logs containing bounded
-non-content diagnostics. The kiosk owns a separate private receipt database and
-attachment directory.
+Apple's database, WAL/SHM, attachments, metadata, and Messages process state are
+read-only. The phone may write only its own private cursor, identifier backlog,
+retry state, configuration, and logs containing bounded non-content
+diagnostics. The phone daemon runs as a dedicated non-login `pi-bmo` identity;
+`mobile` remains the administrator and is not the service identity. A narrowly scoped inherited
+read/traverse ACL is required for `pi-bmo` to consume Apple SMS input without
+write authority; Apple ownership and POSIX mode bits remain unchanged. The
+kiosk owns a separate private receipt database and attachment directory.
 
 Import and metadata discovery remain resource-free. Enabled BMO registration
 starts the configured kiosk receiver and independently starts phone control
@@ -98,5 +108,5 @@ worker/transport, receiver socket/thread, and store.
 
 Read `progress.md` for current state, `architecture.md` for boundaries,
 `roadmap.md` for stage gates, `components/production_incoming.md` for the
-corrected Stage 12 design, and `api/receiver_protocol.md` for the implemented
-wire contract.
+corrected Stage 12 design, `api/receiver_protocol.md` for the implemented wire
+contract, and `api/notifications.md` for the future badge-facing count API.

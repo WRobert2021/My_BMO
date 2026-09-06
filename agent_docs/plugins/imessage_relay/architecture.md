@@ -23,6 +23,12 @@ The two runtimes share a documented wire contract rather than importing one
 another. Compatibility is verified with common canonical JSON/signature/ACK
 vectors and real loopback tests.
 
+The phone launchd job runs as dedicated non-login `pi-bmo`; `mobile` remains the
+administrator account used for provisioning and recovery only. Because Apple's
+SMS tree is mode-private to `mobile`, setup grants `pi-bmo` only inherited
+read/traverse ACL rights on that tree. The relay account receives no Messages
+write authority, and Apple ownership and POSIX mode bits remain unchanged.
+
 ## Incoming state model
 
 The phone keeps two distinct durable positions:
@@ -80,6 +86,9 @@ authorizes deletion of kiosk history.
 - Phone writable state is limited to private configuration, cursor/backlog,
   retry metadata, and bounded non-content diagnostics.
 - Kiosk state is separate private receipt/nonce/attachment storage.
+- The public notification count boundary opens only that kiosk receiver state
+  in read-only/query-only mode; its caller owns any last-seen checkpoint or
+  runtime attention.
 - Message content, handles, paths, credentials, keys, and private fixtures do
   not enter tracked files or default logs.
 
@@ -96,6 +105,14 @@ bounded recent reconciliation weekly. Missing or invalid control configuration
 does not affect the receiver or local feed. Cleanup closes the view, joins the
 control and receiver threads, closes both transports and the store, and
 releases ports exactly once.
+
+The installed phone maintenance command is invoked from a `mobile` SSH session
+and controls the launchd unit rather than the Python process directly. Stop
+boots the job out so KeepAlive cannot restart it. Start validates fixed
+installed paths and bootstraps/kickstarts the unit. Confirmed uninstall revokes
+the exact relay ACL, deletes the `pi-bmo` service identity, removes only
+relay-owned paths, and retains Apple Messages data plus the `mobile`
+administrator account.
 
 ## Deferred outbound direction
 
