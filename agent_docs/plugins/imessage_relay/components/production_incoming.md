@@ -20,8 +20,9 @@ Two separately deployable Python runtimes are required:
   owns the authenticated receiver, durable receipt database, attachment store,
   message view, phone-resume client, and infrequent reconciliation schedule.
 - The sibling `phone_relay` project is the Python 3.9 phone runtime. Its local
-  PyCharm virtual environment is CPython 3.9.6. It contains no BMO imports
-  and will be tested against the exact phone interpreter before deployment.
+  PyCharm virtual environment is CPython 3.9.6, while the physical phone has
+  CPython 3.9.9. It contains no BMO imports and will be tested against the
+  exact phone interpreter before deployment.
 
 The phone's Messages database and attachment tree remain external read-only
 inputs. The phone runtime may create only its own private configuration,
@@ -36,6 +37,13 @@ write authority or change Apple ownership/POSIX mode bits, and both existing
 and newly created attachment access must be verified. The launchd definition
 and access grant are tracked/planned for review but have not been installed on
 the phone.
+
+The phone does not provide the Apple BSD ACL-capable `/bin/chmod`. The
+dependency-free `phone_relay.access` administrator helper therefore uses the
+Darwin `acl_*` and membership APIs directly. It rejects symbolic links and
+unsupported filesystem objects before mutation, preserves unrelated entries,
+adds only read/search plus inheritance rights for the dedicated UID, verifies
+unchanged POSIX modes/ownership, and can revoke only that UID's allow entries.
 
 The deployment addresses for this installation are kiosk `192.168.0.36` and
 phone `192.168.0.42`. Both data and control directions still require private
@@ -192,7 +200,7 @@ wildcard or derives a recursive removal target from configuration.
 
 Invented and physical acceptance must cover:
 
-- Python 3.9.6-compatible phone imports and resource-free module import;
+- Python 3.9.6/3.9.9-compatible phone imports and resource-free module import;
 - read-only event observation, coalesced/back-to-back discovery, and cursor
   restart recovery;
 - identifier-only backlog durability and deletion pruning;

@@ -32,7 +32,7 @@ database writes are prohibited in every stage.
 | kiosk lifecycle and private feed | `bmo/features/imessage_relay/feature.py` |
 | Qt relay view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
 | Stage 8/9 manual validation tools | `bmo/features/imessage_relay/tools/` |
-| phone observer/backlog/sender/service | standalone sibling `phone_relay` project, Python 3.9.6 |
+| phone observer/backlog/sender/service | standalone sibling `phone_relay` project, Python 3.9 compatible; physical CPython 3.9.9 |
 
 The completed sender, queue, reconciliation, and attachment work under
 `bmo.features.imessage_relay.relay` remains the behavior reference and local
@@ -56,7 +56,7 @@ Implemented and retained:
 
 Implemented in the local Stage 12 runtime:
 
-- Python 3.9.6 Darwin filesystem observation and bounded read-only incremental
+- Python 3.9-compatible Darwin filesystem observation and bounded read-only incremental
   discovery;
 - identifier-only backlog, deletion prune, and a resume-only exhausted retry
   latch integrated with the delivery service;
@@ -72,7 +72,7 @@ Implemented in the local Stage 12 runtime:
   command for status, full stop, start, and confirmed uninstall.
 
 Pending Stage 12 work is private TLS/HMAC provisioning, recreation of the
-dedicated `pi-bmo` runtime/maintenance account, a verified inherited read-only
+dedicated non-login `pi-bmo` service account, a verified inherited read-only
 ACL for Apple SMS input, reviewed phone launchd installation, physical `kqueue`
 and live schema verification, and the complete physical incoming acceptance
 matrix without SSHFS or snapshots.
@@ -87,7 +87,8 @@ health/resume/reconciliation requests, a startup resume, content-free network
 probes, weekly in-process scheduling, and owned cleanup. The standalone phone
 project has strict private configuration, durable identifier/cursor/retry/nonce
 state, read-only source handling, sender, control listener, and explicit
-service lifecycle. All phone modules import and test under CPython 3.9.6.
+service lifecycle. All phone modules import and test under local CPython 3.9.6;
+the physical phone provides CPython 3.9.9 for deployment verification.
 
 ## Safety and lifecycle
 

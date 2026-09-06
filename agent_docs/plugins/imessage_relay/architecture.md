@@ -15,9 +15,9 @@ a runtime transport.
 ## Runtime split
 
 `be-more-agent` remains Python 3.13.5 on Raspberry Pi OS. The sibling
-`phone_relay` project targets the available CPython 3.9.6 interpreter and must
-remain standalone because the BMO package uses newer Python syntax and runtime
-assumptions.
+`phone_relay` project targets Python 3.9 (CPython 3.9.6 in local compatibility
+tests and CPython 3.9.9 on the physical phone) and must remain standalone
+because the BMO package uses newer Python syntax and runtime assumptions.
 
 The two runtimes share a documented wire contract rather than importing one
 another. Compatibility is verified with common canonical JSON/signature/ACK
@@ -27,7 +27,11 @@ The phone launchd job runs as dedicated non-login `pi-bmo`; `mobile` remains the
 administrator account used for provisioning and recovery only. Because Apple's
 SMS tree is mode-private to `mobile`, setup grants `pi-bmo` only inherited
 read/traverse ACL rights on that tree. The relay account receives no Messages
-write authority, and Apple ownership and POSIX mode bits remain unchanged.
+write authority, and Apple ownership and POSIX mode bits remain unchanged. The
+phone lacks Apple BSD `/bin/chmod`, so the standalone project owns a
+dependency-free Darwin ACL helper rather than depending on a shell ACL tool.
+The helper replaces/removes only the dedicated UID's allow entry and verifies
+that existing ownership/modes remain stable.
 
 ## Incoming state model
 

@@ -36,11 +36,14 @@ last_verified: 2026-09-06
   or twice-weekly bounded reconciliation is initiated by the kiosk but scanned
   on the phone; only missing events are resent.
 - The sibling `phone_relay` PyCharm project is a standalone, dependency-free
-  CPython 3.9.6 runtime with no imports from the Python 3.13.5 BMO package.
+  Python 3.9 runtime with no imports from the Python 3.13.5 BMO package. Its
+  local compatibility environment is CPython 3.9.6 and the physical phone has
+  CPython 3.9.9.
 - The phone daemon runs as dedicated non-login `pi-bmo`; `mobile` remains the
   SSH administrator only. A narrowly scoped inherited read/traverse ACL must let `pi-bmo` read
   current and newly created Apple SMS inputs without write rights or POSIX mode
-  changes.
+  changes. Because `/bin/chmod` is absent on the phone, a dependency-free
+  Darwin ACL API helper owns exact grant/revoke behavior.
 - A fresh phone state defaults to `new_only`, recording the current maximum
   Messages ROWID before observing new arrivals. Existing kiosk receipts remain
   intact and the explicit `all` option is reserved for controlled migrations.
@@ -78,13 +81,15 @@ last_verified: 2026-09-06
 ## Verification status
 
 - Kiosk Stage 12 control/configuration and lifecycle focus: 19 tests passed.
-- Standalone exact CPython 3.9.6 suite: 34 tests passed, including strict
+- Standalone CPython 3.9.6 compatibility suite: 35 tests passed, including strict
   private configuration, cursor/backlog restart, the resume-only retry latch,
   read-only burst discovery, text/reaction/photo/video materialization,
   attachment streaming, bounded reconciliation, service orchestration, and a
   real loopback control-listener request plus a real macOS/Darwin SQLite-WAL
-  filesystem wake. The added deployment tests validate `pi-bmo` launchd
-  ownership and bounded stop/start/status/uninstall command structure.
+  filesystem wake. The Darwin ACL test verifies grant inheritance, exact
+  revocation, preservation of unrelated ACL entries, and unchanged modes and
+  owners. Deployment tests validate `pi-bmo` launchd ownership and bounded
+  stop/start/status/uninstall command structure.
 - Shared phone/kiosk control canonical body and HMAC vectors match. An actual
   local phone sender-to-kiosk receiver loopback delivered one invented event,
   accepted its duplicate idempotently, and left one durable kiosk receipt.
@@ -94,6 +99,7 @@ last_verified: 2026-09-06
   seconds with exit status zero.
 - Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
   --check` passed. Physical kiosk and phone migration cleanup is complete. The
-  new runtime has not been deployed: the dedicated account/ACL and production
+  phone preflight found CPython 3.9.9 and no Apple BSD `/bin/chmod`; user/group
+  next values were `1002:1001`. The new runtime has not been deployed: the dedicated account/ACL and production
   certificates/secrets are not provisioned, the phone's actual `kqueue`
   behavior has not been observed, and no launchd job is installed.

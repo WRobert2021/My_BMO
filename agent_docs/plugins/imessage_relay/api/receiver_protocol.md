@@ -309,7 +309,7 @@ or negative response follows the existing bounded retry/dead-letter policy.
 
 ## Stage 12 Phone Integration
 
-The production client is the standalone Python 3.9.6 `phone_relay`
+The production client is the standalone Python 3.9-compatible `phone_relay`
 runtime, not the BMO kiosk process. It reuses this event, reconciliation,
 attachment, HMAC, replay, and ACK contract with shared canonical test vectors.
 The kiosk receiver will require TLS when bound beyond literal loopback.
@@ -324,7 +324,7 @@ Reconciliation returns a scheduling ID; its actual receipt comparison still
 uses the existing kiosk `/v1/reconciliation` endpoint.
 
 The kiosk encoder/client is implemented in
-`bmo.features.imessage_relay.phone_control`. The standalone Python 3.9.6 phone
+`bmo.features.imessage_relay.phone_control`. The standalone Python 3.9 phone
 project has the matching HMAC/parser/application/listener, durable replay-nonce
 storage, and event-driven service orchestration. Both projects assert the same
 invented canonical resume body and HMAC signature, and the phone listener has
