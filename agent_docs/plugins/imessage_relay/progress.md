@@ -361,6 +361,21 @@ Messages work.
   requires no terminal command after BMO starts, and an invented lifecycle
   regression begins with the directory absent and verifies worker startup only
   after the owner-only directory exists.
+- The first running production view remained at the original 38 receipts and
+  four attachments after new phone traffic because `/SMS` was still the static
+  Stage 9 snapshot; Refresh and reconciliation cannot publish new phone data.
+  Stage 12 therefore still requires activation of its explicit launchd phone
+  publisher. Before activation, its staging contract was tightened to hash and
+  reverify both the attachment set and DB trio before atomic publication.
+- Added a fail-closed one-time phone installer that validates the two publisher
+  assets, refuses to overwrite an existing installation, installs root-owned
+  restricted targets, builds the first snapshot, bootstraps launchd, verifies
+  the loaded job, and removes its new targets if activation fails. After this
+  deployment, neither BMO startup nor normal refresh requires a terminal.
+- The two-second Qt status refresh previously replaced the feed model on every
+  tick and returned a scrolled list to the top. The view now changes its stable
+  feed model only when serialized content changes and restores a non-top scroll
+  offset after a genuine update.
 - Added a bounded receiver feed and local relay-view message list with a
   two-second UI refresh. Private sender/message content is available only in
   that dedicated view; generic status remains aggregate/content-free.
@@ -368,10 +383,10 @@ Messages work.
   verify a read-only `.SMS.next`, apply the existing restricted ownership and
   modes, and atomically rotate it into `/SMS`. It never invokes SQLite or
   changes Apple source ownership/permissions.
-- Focused Stage 12/receiver/runtime verification passes: 46 tests and 9
-  subtests. The complete relay suite passes: 123 tests and 17 subtests. Shared
+- Focused Stage 12/receiver/runtime verification passes: 47 tests and 9
+  subtests. The complete relay suite passes: 124 tests and 17 subtests. Shared
   extension/runtime-menu/Qt/setup verification passes: 72 tests and 40
-  subtests. The complete repository suite passes with 836 tests and 10,002
+  subtests. The complete repository suite passes with 840 tests and 10,002
   subtests. Physical provisioning and one automatic live arrival remain.
 
 ### Remaining and boundary

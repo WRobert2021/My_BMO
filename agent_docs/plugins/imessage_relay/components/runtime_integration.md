@@ -46,6 +46,9 @@ The UI, logs, exceptions, and callbacks must not expose message text, handles,
 chat IDs, GUIDs, ROWIDs, filenames, paths, attachment bytes/digests,
 credentials, environment-variable values, or private configuration content.
 Failures cross the boundary only as fixed error codes and safe status text.
+The Stage 12 private feed is the sole content-bearing exception. Its periodic
+status update does not replace an unchanged message model, and a user who has
+scrolled away from the top retains that bounded position when the feed changes.
 
 ## Acceptance gate
 

@@ -268,6 +268,9 @@ The password is read without echo and stored in an ignored owner-only file, so
 later BMO starts do not prompt. The phone snapshot publisher described in
 [`production_incoming.md`](agent_docs/plugins/imessage_relay/components/production_incoming.md)
 must also be installed explicitly before new messages can appear automatically.
+Its project-owned `install_snapshot_publisher.sh` performs that one-time phone
+installation while BMO is stopped; normal operation thereafter requires no
+terminal command.
 If a run is interrupted after that private password has been stored, repeat the
 command with `--reuse-existing-password` to finish without another prompt.
 When the private feature file does not exist yet, the configurator initializes

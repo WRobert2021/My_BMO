@@ -359,6 +359,7 @@ class ProductionIncomingTests(unittest.TestCase):
         self.assertIn("source_root=/private/var/mobile/Library/SMS", script)
         self.assertIn("next_snapshot=$relay_root/.SMS.next", script)
         self.assertIn('"$sha_tool" -c', script)
+        self.assertIn(".attachments.sha256", script)
         self.assertNotIn("sqlite3", script)
         self.assertNotRegex(script, r'(chmod|chown)[^\n]*"\$source_root')
 
@@ -372,6 +373,22 @@ class ProductionIncomingTests(unittest.TestCase):
         self.assertEqual(values["StartInterval"], 5)
         self.assertEqual(values["StandardOutPath"], "/dev/null")
         self.assertEqual(values["StandardErrorPath"], "/dev/null")
+
+        installer_path = (
+            PROJECT_ROOT
+            / "bmo/features/imessage_relay/phone/install_snapshot_publisher.sh"
+        )
+        installer = installer_path.read_text(encoding="utf-8")
+        completed = subprocess.run(
+            ("sh", "-n", str(installer_path)),
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+        self.assertIn("test ! -e \"$target_script\"", installer)
+        self.assertIn('"$target_script"', installer)
+        self.assertIn('"$launchctl_tool" bootstrap system "$target_plist"', installer)
+        self.assertNotIn("/var/mobile/Library/SMS/sms.db", installer)
 
 
 def _messages_fixture(root: Path) -> tuple[Path, sqlite3.Connection]:

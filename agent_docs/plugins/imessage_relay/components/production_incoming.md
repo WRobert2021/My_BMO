@@ -33,11 +33,11 @@ rejects it before starting SSH.
 
 The `/SMS` export is a snapshot rather than the live Apple directory. A
 root-owned phone publisher may periodically build `.SMS.next` from read-only
-DB/WAL/SHM and attachment inputs, verify the source trio did not change during
-copy, restrict the copy to `root:pi-bmo` with directories `0550` and files
-`0440`, and atomically rotate it into `/SMS`. It never changes Apple ownership,
-permissions, database state, or attachments. An inconclusive copy is discarded
-and retried later.
+DB/WAL/SHM and attachment inputs, fingerprint and reverify both source sets,
+verify both copied sets, restrict the copy to `root:pi-bmo` with directories
+`0550` and files `0440`, and atomically rotate it into `/SMS`. It never changes
+Apple ownership, permissions, database state, or attachments. An inconclusive
+copy is discarded and retried later.
 
 ## Kiosk lifecycle
 
@@ -54,6 +54,10 @@ view. The view may show incoming sender identifiers, message text, timestamp,
 reaction summaries, and attachment categories because this is the explicit
 private message surface. None of that content may cross logs, generic tool
 results, status/error payloads, docs, or fixtures.
+
+The view keeps a stable message model across its two-second status refresh.
+When feed content genuinely changes, it restores a user who has scrolled away
+from the top to the prior bounded scroll offset.
 
 Plugin close stops and joins the worker, closes sender/relay/receiver state,
 unmounts only a mount it created, removes its empty runtime mount directory,
@@ -99,12 +103,13 @@ the Stage 3 fail-closed contract. The enabled BMO plugin repeats this idempotent
 provisioning during normal startup, allowing a clean deployment or removed
 runtime-state directory to recover without an operator shell command.
 
-The phone publisher is likewise explicit. Copy only the project-owned
-`refresh_snapshot.sh` and plist template to a temporary phone path through the
-normal `mobile` maintenance login. As `mobile`, install the script as
-`/var/jb/usr/local/libexec/imessage-relay-refresh` with root ownership and mode
-`0700`, install the plist as
-`/var/jb/Library/LaunchDaemons/com.bmo.imessage-relay-snapshot.plist` with root
-ownership and mode `0600`, syntax-check it, run the script once, then bootstrap
-that exact system launchd path. This does not deploy Python or modify the
-Messages application/database.
+The phone publisher is likewise explicit. Copy the three project-owned files
+in `bmo/features/imessage_relay/phone/` to a temporary phone path through the
+normal `mobile` maintenance login while BMO is stopped. Run
+`install_snapshot_publisher.sh` as root from that source directory. It refuses
+an existing installation, validates the publisher shell and plist, installs
+the script and launchd definition with numeric root ownership and modes `0700`
+and `0600`, builds the first verified snapshot, bootstraps the system job, and
+rolls back its new targets if activation fails. This does not deploy Python or
+modify the Messages application/database. After this one-time deployment,
+normal BMO and phone restarts require no operator terminal command.

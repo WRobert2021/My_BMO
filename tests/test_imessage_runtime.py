@@ -558,6 +558,17 @@ class IMessageRuntimeReconciliationTests(unittest.TestCase):
 
 
 class IMessageRuntimeViewTests(unittest.TestCase):
+    def test_qml_keeps_a_stable_feed_model_between_status_refreshes(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "bmo/qt/qml/IMessageRelayView.qml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("function syncMessages()", source)
+        self.assertIn("model: root.displayedMessages", source)
+        self.assertNotIn("model: viewModel.messages", source)
+        self.assertIn("previousY = messageList.contentY", source)
+
     def status(self, **changes: object) -> RelayRuntimeStatus:
         values: dict[str, object] = {
             "service_state": "available",

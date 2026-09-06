@@ -47,6 +47,8 @@ fi
 (
     cd "$source_root"
     "$sha_tool" sms.db sms.db-wal sms.db-shm > "$next_snapshot/.db.sha256"
+    "$find_tool" Attachments -type f \
+        -exec "$sha_tool" '{}' \; > "$next_snapshot/.attachments.sha256"
 )
 
 "$cp_tool" -a --reflink=auto \
@@ -56,6 +58,9 @@ fi
 (
     cd "$source_root"
     "$sha_tool" -c "$next_snapshot/.db.sha256" >/dev/null 2>&1
+    if [ -s "$next_snapshot/.attachments.sha256" ]; then
+        "$sha_tool" -c "$next_snapshot/.attachments.sha256" >/dev/null 2>&1
+    fi
 )
 
 "$cp_tool" --reflink=auto --preserve=mode,timestamps \
@@ -67,12 +72,20 @@ fi
 (
     cd "$source_root"
     "$sha_tool" -c "$next_snapshot/.db.sha256" >/dev/null 2>&1
+    if [ -s "$next_snapshot/.attachments.sha256" ]; then
+        "$sha_tool" -c "$next_snapshot/.attachments.sha256" >/dev/null 2>&1
+    fi
 )
 (
     cd "$next_snapshot"
     "$sha_tool" -c .db.sha256 >/dev/null 2>&1
+    if [ -s .attachments.sha256 ]; then
+        "$sha_tool" -c .attachments.sha256 >/dev/null 2>&1
+    fi
 )
-"$rm_tool" -- "$next_snapshot/.db.sha256"
+"$rm_tool" -- \
+    "$next_snapshot/.db.sha256" \
+    "$next_snapshot/.attachments.sha256"
 
 "$chown_tool" -R "0:$relay_gid" "$next_snapshot"
 "$find_tool" "$next_snapshot" -type d -exec "$chmod_tool" 0550 '{}' +

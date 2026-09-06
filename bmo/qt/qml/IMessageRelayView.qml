@@ -3,12 +3,43 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 Item {
+    id: root
     required property var controller
     required property var viewModel
+    property var displayedMessages: []
+    property string displayedMessagesJson: ""
 
     function send(action, value) {
         controller.requestViewAction(action, value === undefined ? "" : String(value))
     }
+
+    function syncMessages() {
+        let nextMessages = viewModel.messages || []
+        let serialized = JSON.stringify(nextMessages)
+        if (serialized === displayedMessagesJson)
+            return
+
+        let previousY = messageList.contentY
+        let preservePosition = displayedMessagesJson !== "" && !messageList.atYBeginning
+        displayedMessagesJson = serialized
+        displayedMessages = nextMessages
+        if (preservePosition) {
+            Qt.callLater(function() {
+                let minimumY = messageList.originY
+                let maximumY = Math.max(
+                    minimumY,
+                    minimumY + messageList.contentHeight - messageList.height
+                )
+                messageList.contentY = Math.max(
+                    minimumY,
+                    Math.min(previousY, maximumY)
+                )
+            })
+        }
+    }
+
+    onViewModelChanged: syncMessages()
+    Component.onCompleted: syncMessages()
 
     Timer {
         interval: 2000
@@ -147,11 +178,12 @@ Item {
                             wrapMode: Text.Wrap
                         }
                         ListView {
+                            id: messageList
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
                             spacing: 5
-                            model: viewModel.messages || []
+                            model: root.displayedMessages
 
                             delegate: Rectangle {
                                 required property var modelData
