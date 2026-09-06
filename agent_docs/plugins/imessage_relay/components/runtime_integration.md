@@ -21,8 +21,11 @@ manual run with no default enablement, deployment, or automatic startup.
   source, or UI.
 - A disabled feature entry is skipped before import and starts nothing.
 - Enabled registration may load the existing private receiver and relay config
-  contracts. Receiver startup failure registers a visibly unavailable status
-  surface instead of blocking BMO or another plugin.
+  contracts. Before an incoming worker starts, the enabled plugin creates and
+  secures its configured relay-state parent as owner-only; no operator command
+  is required during or after UI startup. Receiver or relay-state startup
+  failure registers a visibly unavailable status surface instead of blocking
+  BMO or another plugin.
 - A healthy service starts exactly one owned receiver listener. Reconciliation
   starts only from an explicit UI action, permits at most one bounded job, uses
   a stable disposable source copy, and reuses Stage 6 idempotent protocol and

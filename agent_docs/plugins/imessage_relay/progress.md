@@ -356,6 +356,11 @@ Messages work.
   resolves the configured relay database and creates its plugin-owned parent
   as owner-only before enabling the feature; the state store's independent
   missing-parent rejection remains unchanged.
+- Runtime startup now independently creates and secures that plugin-owned
+  parent before starting the continuous worker. A clean deployment therefore
+  requires no terminal command after BMO starts, and an invented lifecycle
+  regression begins with the directory absent and verifies worker startup only
+  after the owner-only directory exists.
 - Added a bounded receiver feed and local relay-view message list with a
   two-second UI refresh. Private sender/message content is available only in
   that dedicated view; generic status remains aggregate/content-free.
