@@ -330,6 +330,10 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             receiver_config, relay_config, _ = write_configs(root)
+            relay_state = root / "private" / "relay" / "relay.db"
+            relay_values = json.loads(relay_config.read_text(encoding="utf-8"))
+            relay_values["state_path"] = str(relay_state)
+            relay_config.write_text(json.dumps(relay_values), encoding="utf-8")
             source_config = root / "source.json"
             mount_path = root / "mounted" / "SMS"
             source_config.write_text(
@@ -370,6 +374,8 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
 
             worker.return_value.start.assert_called_once_with()
             worker.return_value.close.assert_called_once_with()
+            self.assertTrue(relay_state.parent.is_dir())
+            self.assertEqual(relay_state.parent.stat().st_mode & 0o777, 0o700)
             self.assertEqual(service._messages_root, mount_path.resolve())
             self.assertEqual(status.incoming_state, "active")
             self.assertTrue(status.source_mounted)

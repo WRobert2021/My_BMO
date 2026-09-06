@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
+import os
 from pathlib import Path
 import ssl
+import stat
 import threading
 from typing import Any
 
@@ -263,7 +265,9 @@ class RelayRuntimeService:
                 or not self.config.relay_config_path.is_file()
             ):
                 raise StateConfigError("relay state configuration is unavailable")
-            self._relay_config = load_state_config(self.config.relay_config_path)
+            relay_config = load_state_config(self.config.relay_config_path)
+            _ensure_private_state_parent(relay_config.state_path.parent)
+            self._relay_config = relay_config
         except StateConfigError:
             self._reconciliation_error_code = "relay_config_invalid"
         except (OSError, ValueError):
@@ -711,6 +715,28 @@ def _path_value(value: object, key: str) -> Path:
     if isinstance(value, str) and not value.strip():
         raise ValueError(f"iMessage Relay {key} must not be empty")
     return Path(value).expanduser()
+
+
+def _ensure_private_state_parent(path: Path) -> None:
+    """Create only the enabled plugin's missing state parent as owner-only."""
+
+    if path.is_symlink():
+        raise StateConfigError("relay state parent cannot be a symbolic link")
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if path.is_symlink() or not path.is_dir():
+            raise StateConfigError("relay state parent is unavailable")
+        metadata = path.stat()
+        if metadata.st_uid != os.getuid():
+            raise StateConfigError("relay state parent has an unexpected owner")
+        os.chmod(path, 0o700)
+        metadata = path.stat()
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise StateConfigError("relay state parent permissions are unsafe")
+    except StateConfigError:
+        raise
+    except OSError as error:
+        raise StateConfigError("relay state parent is unavailable") from error
 
 
 def _close_partial_receiver(
