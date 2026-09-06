@@ -72,9 +72,6 @@ class QtIMessageRelayView(QtHostedView):
                 status.incoming_state,
                 status.incoming_error_code,
             ),
-            "sourceMounted": status.source_mounted,
-            "lastScannedRows": status.last_scanned_rows,
-            "lastDeliveredEvents": status.last_delivered_events,
             "messages": messages,
         }
 
@@ -143,10 +140,7 @@ def _reconciliation_message(
         repaired = int(report.get("requeued_count", 0))
         return f"Checked {observed}; requeued {repaired}."
     messages = {
-        "relay_config_invalid": "Relay state configuration is unavailable.",
-        "relay_state_unavailable": "Relay state is unavailable.",
-        "source_not_configured": "Read-only Messages source is not configured.",
-        "source_unavailable": "Read-only Messages source is unavailable.",
+        "phone_control_not_configured": "Phone reconciliation is pending Stage 12 implementation.",
         "reconciliation_timeout": "Receipt check timed out.",
         "reconciliation_unavailable": "Receipt check is unavailable.",
         "reconciliation_failed": "Receipt check failed safely.",
@@ -158,29 +152,17 @@ def _reconciliation_message(
 
 
 def _incoming_message(state: str, error_code: str | None) -> str:
-    if state == "active":
-        return "Incoming relay is active."
-    if state == "starting":
-        return "Connecting to the phone…"
-    if state == "disabled":
-        return "Continuous incoming relay is disabled."
+    if state == "ready":
+        return "Kiosk receiver is ready for the phone relay."
     if state == "closed":
         return "Incoming relay is stopped."
     messages = {
-        "known_hosts_unavailable": "Pinned phone identity is unavailable.",
-        "source_password_unavailable": "Phone login is unavailable.",
-        "source_password_permissions_invalid": "Phone login file permissions are unsafe.",
-        "source_mount_failed": "The phone could not be reached.",
-        "source_mount_unverified": "The phone mount was not read-only.",
-        "messages_trio_unreadable": "The phone snapshot is unavailable.",
-        "source_changed_during_copy": "The phone snapshot is refreshing.",
-        "relay_state_unavailable": "Incoming relay state is unavailable.",
-        "source_parse_issues": "Incoming relay skipped an unsupported item.",
-        "incoming_cycle_failed": "Incoming relay will retry shortly.",
-        "source_config_invalid": "Incoming source configuration is unavailable.",
-        "incoming_start_failed": "Incoming relay could not start.",
+        "receiver_config_invalid": "Receiver configuration is unavailable.",
+        "receiver_store_unavailable": "Receiver storage is unavailable.",
+        "receiver_runtime_failed": "Receiver listener stopped unexpectedly.",
+        "receiver_start_failed": "Receiver listener could not start.",
     }
-    return messages.get(error_code, "Incoming relay is unavailable and will retry.")
+    return messages.get(error_code, "Incoming relay is unavailable.")
 
 
 __all__ = ["QtIMessageRelayView"]

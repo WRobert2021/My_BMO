@@ -53,7 +53,7 @@ or status changes. Evidence and history are opt-in.
 | authorized live read-only validation | [components/live_readonly_validation.md](plugins/imessage_relay/components/live_readonly_validation.md) |
 | authorized live delivery validation | [components/live_delivery_validation.md](plugins/imessage_relay/components/live_delivery_validation.md) |
 | optional BMO runtime service, status UI, reconciliation controls | [components/runtime_integration.md](plugins/imessage_relay/components/runtime_integration.md) |
-| persistent read-only source mount, incoming worker, and kiosk activation | [components/production_incoming.md](plugins/imessage_relay/components/production_incoming.md) |
+| production incoming phone push, backlog/retry latch, kiosk resume, migration cleanup | [components/production_incoming.md](plugins/imessage_relay/components/production_incoming.md) |
 | Stage 11 package layout and root cleanup | [components/package_cleanup.md](plugins/imessage_relay/components/package_cleanup.md) |
 | HTTP/HMAC wire contract | [api/receiver_protocol.md](plugins/imessage_relay/api/receiver_protocol.md) |
 | Apple Messages schema evidence only | [evidence/messages_schema.md](plugins/imessage_relay/evidence/messages_schema.md) |

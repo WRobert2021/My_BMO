@@ -2,7 +2,6 @@
 
 from .feature import (
     DEFAULT_RECEIVER_CONFIG_PATH,
-    DEFAULT_RELAY_CONFIG_PATH,
     IMESSAGE_RELAY_MENU_ITEM,
     IMessageRelayTool,
     RelayFeatureConfig,
@@ -16,7 +15,6 @@ from .feature import (
 
 __all__ = [
     "DEFAULT_RECEIVER_CONFIG_PATH",
-    "DEFAULT_RELAY_CONFIG_PATH",
     "IMESSAGE_RELAY_MENU_ITEM",
     "IMessageRelayTool",
     "RelayFeatureConfig",

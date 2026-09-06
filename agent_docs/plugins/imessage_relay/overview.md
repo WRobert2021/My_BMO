@@ -5,117 +5,84 @@ plugin_type: feature/service
 entrypoint: bmo.features.imessage_relay (opt-in)
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_production_incoming.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py]
 ---
 
 # Plugin: iMessage Relay
 
 ## Purpose
 
-Incrementally relay incoming iMessage text, photos, videos, and standard
-tapbacks from a jailbreak/rootless iPhone to the kiosk with at-least-once
-delivery, explicit durable kiosk ACKs, and stable-ID idempotency. Content flows
-iPhone-to-kiosk only; control traffic may be bidirectional. SMS/MMS and sending
-through Messages are out of scope.
+Relay incoming iMessage text, photos, videos, and standard tapbacks from a
+jailbroken iPhone to the kiosk with explicit durable kiosk ACKs and stable-ID
+idempotency. Normal production flow is event-driven phone-to-kiosk push. The
+kiosk must not mount, copy, or poll Apple's Messages database.
 
-That exclusion describes the current incoming implementation, not the final
-product intent. Stage 12 activates production incoming delivery. Separately
-authorized Stage 13 will plan outbound text replies, photo/video sends, and
-reactions through a narrow phone-side bridge. Direct Messages database writes
-remain prohibited.
+Stage 12 owns incoming delivery. Stage 13 will separately plan authenticated
+outbound text replies, photo/video sends, and reactions. Direct Messages
+database writes are prohibited in every stage.
 
-## Current versus intended ownership
+## Current ownership
 
-| Area | Current owner/path |
+| Area | Owner/path |
 | --- | --- |
-| normalized contracts/read-only parser | `bmo/features/imessage_relay/relay/{contracts,reader,attachments,attributed_body,timestamps}.py` |
-| sender-side discovery/queue state | `bmo/features/imessage_relay/relay/{state,state_codec,state_config}.py` |
-| sender and reconciliation | `bmo/features/imessage_relay/relay/{sender,reconciliation}.py` |
-| stable live source snapshots | `bmo/features/imessage_relay/relay/live_source.py` |
-| kiosk authentication/wire schema | `bmo/features/imessage_relay/receiver/{auth,protocol,config}.py` |
-| kiosk receipt store/listener | `bmo/features/imessage_relay/receiver/{store,server}.py` |
-| manual schema/live acceptance tools | `bmo/features/imessage_relay/tools/` |
-| configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json`, disabled entry in `config/example.features.json` |
-| BMO lifecycle/status/reconciliation adapter | `bmo/features/imessage_relay/feature.py` |
-| Qt status view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
-| production SSHFS source and incoming worker | `bmo/features/imessage_relay/{source_mount,incoming}.py` |
-| phone snapshot publisher assets | `bmo/features/imessage_relay/phone/` |
+| normalized contracts and read-only parser reference | `bmo/features/imessage_relay/relay/` |
+| kiosk authentication and wire schema | `bmo/features/imessage_relay/receiver/` |
+| kiosk receipt/attachment store and listener | `bmo/features/imessage_relay/receiver/` |
+| kiosk lifecycle and private feed | `bmo/features/imessage_relay/feature.py` |
+| Qt relay view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
+| Stage 8/9 manual validation tools | `bmo/features/imessage_relay/tools/` |
+| phone observer/backlog/sender | planned standalone sibling `phone_relay` project, Python 3.9.6 |
 
-Stage 11 consolidates the reusable backend and manual tools under the BMO
-plugin package. The adapter remains absent from feature defaults and starts
-only when an explicit enabled feature entry names it. No root compatibility
-package preserves the retired import identities.
+The completed sender, queue, reconciliation, and attachment work under
+`bmo.features.imessage_relay.relay` remains the behavior reference and local
+simulation harness. The production phone implementation must reproduce its
+wire behavior in Python 3.9-compatible code without importing the Python
+3.13-oriented BMO package.
 
-## Implemented flow
+## Implemented versus pending
 
-1. `MessagesReader.scan()` opens an Apple Messages database read-only and
-   returns immutable normalized events/issues plus a source boundary.
-2. `RelayStateStore.commit_scan()` atomically persists payloads/issues and the
-   cursor, then owns leases, retries, ACKs, dead letters, and restart recovery.
-3. The standalone authenticated kiosk receiver strictly validates one event,
-   reserves its nonce, commits canonical event JSON exactly once, and ACKs only
-   after commit.
-4. `RelaySender` claims Stage 3 entries and delivers them through a bounded
-   HTTP(S) transport with fresh request authentication, strict ACK identity,
-   durable retry/dead-letter outcomes, and content-free status. The complete
-   path is verified only against invented local simulation data.
-5. `RelayReconciler` re-scans an explicit recent/month window without moving
-   the live cursor, compares bounded canonical event digests with kiosk
-   receipts, and selectively requeues acknowledged events reported missing.
-   Conflicts and kiosk-only history are never overwritten or deleted.
-6. For an event with available attachment data, the receiver first persists a
-   pending manifest. `RelaySender` hashes and sends each ordinary file or Live
-   Photo component in authenticated 64-KiB chunks, resumes from kiosk-owned
-   durable offsets, and acknowledges sender state only after a repeated event
-   receives an attachment-complete ACK.
-7. Stage 8 exposes an authorized Messages root through a read-only mount,
-   copies the live DB/WAL/SHM trio to disposable local storage, and runs only
-   privacy-safe schema, query-plan, parser, and attachment-read diagnostics.
-8. The Stage 9 manual runner composes stable disposable source snapshots, the
-   durable queue, attachment sender, and real loopback receiver. It injects
-   bounded auth, outage, lost-ACK, and restart faults and emits only aggregate
-   acceptance status. It creates no daemon or BMO integration.
-9. The Stage 10 adapter owns an opt-in BMO receiver listener and content-free
-   Qt status view. Explicit recent/month controls start at most one worker,
-   use a disposable source snapshot, and reuse Stage 6 reconciliation against
-   the in-process authenticated receiver application. It has no sender loop.
-10. Stage 12 adds strict private SSHFS source configuration, automatic
-    read-only mount/recovery, a bounded plugin-owned discovery/delivery worker,
-    and a private incoming feed in the relay view. A separately installed
-    phone publisher atomically refreshes only the isolated `/SMS` export.
+Implemented and retained:
 
-Stage 8 live read-only acceptance completed on 2026-09-02. Stage 9 completed
-on 2026-09-05 after the full physical Raspberry Pi matrix, one post-baseline
-incoming event, SIGINT cleanup, and explicit private-state cleanup passed.
-Stage 10 completed on 2026-09-05 after physical listener lifecycle, Qt UI,
-recent/month reconciliation, restart, clean shutdown, requested-icon, and
-bounded stability evidence passed on the Raspberry Pi kiosk.
-Stage 12 production activation is authorized and under implementation; Stage
-13 outbound behavior remains unimplemented and unauthorized.
+- read-only Apple schema parsing and normalized incoming event contracts;
+- sender queue, retry, ACK, reconciliation, and attachment behavior in local
+  simulation;
+- authenticated kiosk HTTP(S) receiver with replay protection;
+- durable idempotent kiosk receipts and resumable attachment storage;
+- bounded recent/month receipt classification;
+- opt-in BMO receiver lifecycle, private message feed, stable scrolling UI,
+  aggregate status, and complete cleanup; and
+- authorized manual live validation evidence through Stage 11.
 
-## Safety and failure boundaries
+Pending Stage 12 work:
 
-Apple's Messages database, WAL/SHM, attachments, metadata, and state are
-strictly read-only: no insert/update/delete, read-state/reaction change, send,
-checkpoint, attachment modification, or live-device deployment outside an
-authorized stage. Relay and receiver state are separate private SQLite files;
-receiver-owned partial and complete attachment files use a private sibling
-directory.
-Logs omit content/handles/paths by default. Network receipt never means
-delivery without a validated kiosk ACK.
+- Python 3.9.6 phone filesystem observer and read-only incremental discovery;
+- identifier-only phone backlog and deletion revalidation;
+- exhausted retry latch reset only by an authenticated kiosk resume;
+- phone-to-kiosk TLS delivery using the established event/attachment ACK
+  contract;
+- kiosk-to-phone resume control and infrequent phone-owned reconciliation; and
+- physical deployment and acceptance without SSHFS or snapshots.
 
-The receiver can run either as its explicit standalone process or inside the
-enabled BMO feature lifecycle. BMO registration failure is content-free and
-isolated; invalid private receiver configuration registers a visibly degraded
-menu surface without a listener. Registry cleanup closes the view, joins
-reconciliation and incoming workers, unmounts only the plugin-owned source,
-shuts the listener, closes stores, and releases its port. The feature remains
-opt-in. The phone publisher is an explicit Stage 12 installation and is never
-installed by repository setup.
+The abandoned Stage 12 SSHFS source manager, kiosk polling worker, persistent
+phone-login configurator, and snapshot publisher are removed from active code.
+Historical Stage 8/9 snapshot evidence remains opt-in and does not define the
+production topology.
 
-## Detailed routing
+## Safety and lifecycle
 
-Read `progress.md` for the sole current stage. Read `architecture.md` for
-lifecycle/safety ownership, `roadmap.md` for future stage gates, a component
-doc for implementation, and `api/receiver_protocol.md` for the wire contract.
-Schema evidence and completed-stage archives are opt-in.
+Apple's database, WAL/SHM, attachments, permissions, metadata, and Messages
+process state are read-only. The phone may write only its own private cursor,
+identifier backlog, retry state, configuration, and logs containing bounded
+non-content diagnostics. The kiosk owns a separate private receipt database and
+attachment directory.
+
+Import and metadata discovery remain resource-free. Enabled BMO registration
+starts only the configured kiosk receiver. Until the phone control client is
+implemented, the UI reports receiver readiness and disables reconciliation.
+Disabled, invalid, or unavailable relay configuration cannot block BMO or any
+other plugin. Cleanup closes the view, receiver socket/thread, and store.
+
+Read `progress.md` for current state, `architecture.md` for boundaries,
+`roadmap.md` for stage gates, `components/production_incoming.md` for the
+corrected Stage 12 design, and `api/receiver_protocol.md` for the implemented
+wire contract.

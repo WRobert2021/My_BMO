@@ -17,6 +17,13 @@ companions. A new state file is created with mode `0600`; existing state files
 with group or world permissions fail closed. The containing directory should
 be created privately by the operator, for example with mode `0700`.
 
+This Python 3.13-oriented store remains the completed simulation/reference
+implementation. The corrected Stage 12 phone agent will not import it. Its
+Python 3.9.6-compatible state is intentionally smaller: an observation cursor
+plus stable identifiers, source ROWIDs, event kinds, retry timestamps, and ACK
+state. It does not persist normalized message bodies or attachment bytes. The
+kiosk no longer opens a sender store during normal BMO runtime.
+
 ## Ownership and persisted data
 
 `bmo.features.imessage_relay.relay.state` solely owns the SQLite schema and

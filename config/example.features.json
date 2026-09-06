@@ -111,8 +111,6 @@
       "enabled": false,
       "settings": {
         "receiver_config_path": "config/imessage_receiver.json",
-        "relay_config_path": "config/imessage_relay.json",
-        "source_config_path": "config/imessage_source.json",
         "reconciliation_recent_days": 7
       }
     },

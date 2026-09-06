@@ -1,16 +1,14 @@
-"""Stage 10 opt-in lifecycle, reconciliation, and status UI coverage."""
+"""Opt-in kiosk receiver lifecycle, feed, and status UI coverage."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
 import socket
 import sqlite3
 import tempfile
-import threading
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -24,18 +22,17 @@ from bmo.features.imessage_relay import (
     RelayRuntimeStatus,
     register_metadata,
 )
-from bmo.features.loader import DEFAULT_FEATURE_MODULES, load_feature_registry
-from bmo.menu_loader import load_menu_catalog
-from bmo.qt.views.imessage_relay import QtIMessageRelayView
-from bmo.features.imessage_relay.relay import MessagesReader, RelayStateStore
-from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
-from bmo.features.imessage_relay.relay.timestamps import APPLE_EPOCH
-from bmo.features.imessage_relay.incoming import IncomingDeliveryStatus
 from bmo.features.imessage_relay.receiver import (
     EVENT_PATH,
     encode_event_envelope,
     sign_request,
 )
+from bmo.features.imessage_relay.relay import MessagesReader
+from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
+from bmo.features.imessage_relay.relay.timestamps import APPLE_EPOCH
+from bmo.features.loader import DEFAULT_FEATURE_MODULES, load_feature_registry
+from bmo.menu_loader import load_menu_catalog
+from bmo.qt.views.imessage_relay import QtIMessageRelayView
 
 
 SECRET_ENV = "TEST_IMESSAGE_RUNTIME_SECRET"
@@ -105,18 +102,15 @@ class RuntimeMessagesFixture:
         self.connection.close()
 
 
-def write_configs(root: Path) -> tuple[Path, Path, Path]:
-    receiver_state = root / "receiver.db"
-    relay_state = root / "relay.db"
+def write_receiver_config(root: Path) -> Path:
     receiver_config = root / "receiver.json"
-    relay_config = root / "relay.json"
     receiver_config.write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "bind_host": "127.0.0.1",
                 "port": 0,
-                "state_path": str(receiver_state),
+                "state_path": str(root / "receiver.db"),
                 "tls_cert_path": None,
                 "tls_key_path": None,
                 "allow_insecure_loopback": True,
@@ -129,23 +123,7 @@ def write_configs(root: Path) -> tuple[Path, Path, Path]:
         ),
         encoding="utf-8",
     )
-    relay_config.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "state_path": str(relay_state),
-                "retry_policy": {
-                    "initial_delay_seconds": 1,
-                    "multiplier": 2,
-                    "max_delay_seconds": 8,
-                    "max_attempts": 5,
-                    "lease_duration_seconds": 5,
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    return receiver_config, relay_config, relay_state
+    return receiver_config
 
 
 class IMessageRuntimeRegistrationTests(unittest.TestCase):
@@ -172,7 +150,6 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
         registry = ToolRegistry()
         with (
             patch("bmo.features.imessage_relay.feature.load_receiver_config") as receiver,
-            patch("bmo.features.imessage_relay.feature.load_state_config") as relay,
             patch("bmo.features.imessage_relay.feature.build_server") as server,
         ):
             register_metadata(registry, {"invalid": object()})
@@ -190,7 +167,6 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
             )
 
         receiver.assert_not_called()
-        relay.assert_not_called()
         server.assert_not_called()
         self.assertEqual(registry.menu_items, (IMESSAGE_RELAY_MENU_ITEM,))
         self.assertEqual(
@@ -234,8 +210,7 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
                             "module": "bmo.features.imessage_relay",
                             "enabled": True,
                             "settings": {
-                                "receiver_config_path": root / "missing.json",
-                                "relay_config_path": root / "missing-relay.json",
+                                "receiver_config_path": root / "missing.json"
                             },
                         },
                         {
@@ -261,7 +236,7 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
     def test_enabled_service_starts_and_registry_close_releases_port(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            receiver_config, relay_config, _ = write_configs(root)
+            receiver_config = write_receiver_config(root)
             with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
                 result = load_feature_registry(
                     {
@@ -271,7 +246,8 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
                                 "enabled": True,
                                 "settings": {
                                     "receiver_config_path": receiver_config,
-                                    "relay_config_path": relay_config,
+                                    "relay_config_path": "retired-value-is-ignored",
+                                    "source_config_path": "retired-value-is-ignored",
                                 },
                             }
                         ]
@@ -284,8 +260,11 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
 
                 self.assertEqual(result.failures, ())
                 self.assertTrue(status.listening)
-                self.assertEqual(status.service_state, "available")
-                self.assertEqual(status.reconciliation_error_code, "source_not_configured")
+                self.assertEqual(status.incoming_state, "ready")
+                self.assertEqual(
+                    status.reconciliation_error_code,
+                    "phone_control_not_configured",
+                )
                 result.registry.close()
                 result.registry.close()
 
@@ -298,263 +277,76 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
             finally:
                 probe.close()
 
-    def test_missing_relay_config_does_not_create_default_state(self) -> None:
+
+class IMessageRuntimeReceiverTests(unittest.TestCase):
+    def test_listener_receipt_updates_runtime_status_and_feed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            receiver_config, _relay_config, _relay_state = write_configs(root)
-            missing_relay_config = root / "missing-relay.json"
-            with (
-                patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}),
-                patch("bmo.features.imessage_relay.feature.load_state_config") as loader,
-            ):
+            fixture = RuntimeMessagesFixture(root)
+            receiver_config = write_receiver_config(root)
+            event = MessagesReader(
+                fixture.database_path,
+                messages_root=fixture.messages_root,
+            ).scan(limit=10).events[0]
+            request_id = "invented-runtime-request"
+            body = encode_event_envelope(event, request_id)
+            headers = sign_request(
+                SECRET_TEXT.encode("utf-8"),
+                key_id="invented-runtime-key",
+                method="POST",
+                path=EVENT_PATH,
+                timestamp=int(time.time()),
+                nonce="invented-runtime-nonce",
+                body=body,
+            )
+            headers.update(
+                {"Content-Type": "application/json", "Accept": "application/json"}
+            )
+
+            with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
                 service = RelayRuntimeService(
-                    RelayFeatureConfig(
-                        receiver_config_path=receiver_config,
-                        relay_config_path=missing_relay_config,
-                        messages_root=root / "SMS",
-                    )
+                    RelayFeatureConfig(receiver_config_path=receiver_config)
+                )
+                transport = HTTPEventTransport(
+                    f"http://127.0.0.1:{service._server.server_address[1]}",
+                    allow_insecure_loopback=True,
                 )
                 try:
+                    response = transport.send(body=body, headers=headers)
                     status = service.status()
+                    feed = service.recent_items()
                 finally:
+                    transport.close()
                     service.close()
-
-            loader.assert_not_called()
-            self.assertEqual(status.service_state, "available")
-            self.assertEqual(
-                status.reconciliation_error_code,
-                "relay_config_invalid",
-            )
-
-    def test_source_config_starts_and_closes_owned_incoming_worker(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            receiver_config, relay_config, _ = write_configs(root)
-            relay_state = root / "private" / "relay" / "relay.db"
-            relay_values = json.loads(relay_config.read_text(encoding="utf-8"))
-            relay_values["state_path"] = str(relay_state)
-            relay_config.write_text(json.dumps(relay_values), encoding="utf-8")
-            source_config = root / "source.json"
-            mount_path = root / "mounted" / "SMS"
-            source_config.write_text(
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "host": "192.0.2.10",
-                        "username": "pi-bmo",
-                        "port": 22,
-                        "remote_path": "/SMS",
-                        "mount_path": str(mount_path),
-                        "known_hosts_path": str(root / "known_hosts"),
-                        "password_file": str(root / "password"),
-                        "poll_interval_seconds": 5,
-                        "scan_limit": 100,
-                        "delivery_limit": 500,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            with (
-                patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}),
-                patch("bmo.features.imessage_relay.feature.IncomingRelayWorker") as worker,
-            ):
-                worker.return_value.status.return_value = IncomingDeliveryStatus(
-                    "active", None, True, 1, 1
-                )
-                service = RelayRuntimeService(
-                    RelayFeatureConfig(
-                        receiver_config_path=receiver_config,
-                        relay_config_path=relay_config,
-                        messages_root=None,
-                        source_config_path=source_config,
-                    )
-                )
-                status = service.status()
-                service.close()
-
-            worker.return_value.start.assert_called_once_with()
-            worker.return_value.close.assert_called_once_with()
-            self.assertTrue(relay_state.parent.is_dir())
-            self.assertEqual(relay_state.parent.stat().st_mode & 0o777, 0o700)
-            self.assertEqual(service._messages_root, mount_path.resolve())
-            self.assertEqual(status.incoming_state, "active")
-            self.assertTrue(status.source_mounted)
-
-
-class IMessageRuntimeReconciliationTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
-        self.fixture = RuntimeMessagesFixture(self.root)
-        self.receiver_config, self.relay_config, self.relay_state = write_configs(
-            self.root
-        )
-
-    def tearDown(self) -> None:
-        self.fixture.close()
-        self.temporary.cleanup()
-
-    def make_service(self, messages_root: Path | None = None) -> RelayRuntimeService:
-        return RelayRuntimeService(
-            RelayFeatureConfig(
-                receiver_config_path=self.receiver_config,
-                relay_config_path=self.relay_config,
-                messages_root=messages_root,
-                reconciliation_recent_days=7,
-            )
-        )
-
-    def test_recent_reconciliation_requeues_missing_acknowledged_event(self) -> None:
-        reader = MessagesReader(
-            self.fixture.database_path,
-            messages_root=self.fixture.messages_root,
-        )
-        batch = reader.scan(limit=10)
-        with RelayStateStore(self.relay_state) as store:
-            store.commit_scan(batch, expected_after_rowid=0, now_ms=0)
-            lease = store.claim_next(now_ms=0)
-            assert lease is not None
-            store.acknowledge(lease.event.event_id, now_ms=1)
-        hashes_before = _trio_hashes(self.fixture.messages_root)
-        complete = threading.Event()
-
-        with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
-            service = self.make_service(self.fixture.messages_root)
-            try:
-                self.assertTrue(service.reconcile_recent(complete.set))
-                self.assertTrue(complete.wait(5))
-                recent_status = service.status()
-                complete.clear()
-                now = datetime.now(timezone.utc)
-                self.assertTrue(
-                    service.reconcile_month(now.year, now.month, complete.set)
-                )
-                self.assertTrue(complete.wait(5))
-                month_status = service.status()
-            finally:
-                service.close()
-
-        self.assertEqual(recent_status.reconciliation_state, "complete")
-        self.assertEqual(recent_status.last_reconciliation["candidate_count"], 1)
-        self.assertEqual(recent_status.last_reconciliation["missing_count"], 1)
-        self.assertEqual(recent_status.last_reconciliation["requeued_count"], 1)
-        self.assertEqual(
-            month_status.last_reconciliation["window_kind"],
-            "calendar_month",
-        )
-        self.assertEqual(_trio_hashes(self.fixture.messages_root), hashes_before)
-        with RelayStateStore(self.relay_state) as reopened:
-            self.assertEqual(reopened.summary().queued_count, 1)
-        rendered = json.dumps(month_status.last_reconciliation, sort_keys=True)
-        for private in (
-            "invented-runtime-handle",
-            "invented-runtime-chat",
-            "invented-runtime-message",
-            "invented runtime text",
-            str(self.fixture.messages_root),
-            SECRET_TEXT,
-        ):
-            self.assertNotIn(private, rendered)
-
-    def test_completion_callback_observes_reconciliation_available(self) -> None:
-        callback_statuses: list[RelayRuntimeStatus] = []
-        complete = threading.Event()
-
-        with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
-            service = self.make_service(self.fixture.messages_root)
-
-            def finished() -> None:
-                callback_statuses.append(service.status())
-                complete.set()
-
-            try:
-                self.assertTrue(service.reconcile_recent(finished))
-                self.assertTrue(complete.wait(5))
-            finally:
-                service.close()
-
-        self.assertEqual(len(callback_statuses), 1)
-        self.assertEqual(
-            callback_statuses[0].reconciliation_state,
-            "complete",
-        )
-        self.assertTrue(callback_statuses[0].reconciliation_available)
-
-    def test_listener_receipt_updates_content_free_runtime_status(self) -> None:
-        event = MessagesReader(
-            self.fixture.database_path,
-            messages_root=self.fixture.messages_root,
-        ).scan(limit=10).events[0]
-        request_id = "invented-runtime-request"
-        body = encode_event_envelope(event, request_id)
-        headers = sign_request(
-            SECRET_TEXT.encode("utf-8"),
-            key_id="invented-runtime-key",
-            method="POST",
-            path=EVENT_PATH,
-            timestamp=int(time.time()),
-            nonce="invented-runtime-nonce",
-            body=body,
-        )
-        headers.update(
-            {"Content-Type": "application/json", "Accept": "application/json"}
-        )
-
-        with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
-            service = self.make_service()
-            transport = HTTPEventTransport(
-                f"http://127.0.0.1:{service._server.server_address[1]}",
-                allow_insecure_loopback=True,
-            )
-            try:
-                response = transport.send(body=body, headers=headers)
-                status = service.status()
-                feed = service.recent_items()
-            finally:
-                transport.close()
-                service.close()
+                    fixture.close()
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(status.received_events, 1)
         self.assertEqual(len(feed), 1)
         self.assertEqual(feed[0].sender, "invented-runtime-handle")
         self.assertEqual(feed[0].text, "invented runtime text")
-        rendered = json.dumps(status.last_reconciliation, sort_keys=True)
-        self.assertNotIn("invented runtime text", rendered)
+        self.assertIsNone(status.last_reconciliation)
 
-    def test_missing_source_fails_closed_with_bounded_status(self) -> None:
-        complete = threading.Event()
-        with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
-            service = self.make_service(self.root / "missing-source")
-            try:
-                self.assertTrue(service.reconcile_recent(complete.set))
-                self.assertTrue(complete.wait(5))
-                status = service.status()
-            finally:
-                service.close()
+    def test_reconciliation_is_unavailable_until_phone_control_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receiver_config = write_receiver_config(root)
+            with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
+                service = RelayRuntimeService(
+                    RelayFeatureConfig(receiver_config_path=receiver_config)
+                )
+                try:
+                    self.assertFalse(service.reconcile_recent())
+                    self.assertFalse(service.reconcile_month(2026, 9))
+                    status = service.status()
+                finally:
+                    service.close()
 
-        self.assertEqual(status.reconciliation_state, "failed")
-        self.assertEqual(status.reconciliation_error_code, "source_unavailable")
-        self.assertFalse(self.relay_state.exists())
-
-    def test_second_reconciliation_is_rejected_while_job_is_running(self) -> None:
-        entered = threading.Event()
-        release = threading.Event()
-
-        def hold(window, callback) -> None:
-            del window, callback
-            entered.set()
-            release.wait(5)
-
-        with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
-            service = self.make_service(self.fixture.messages_root)
-            with patch.object(service, "_run_reconciliation", hold):
-                self.assertTrue(service.reconcile_recent())
-                self.assertTrue(entered.wait(2))
-                self.assertFalse(service.reconcile_recent())
-                release.set()
-                service._job_thread.join(2)
-            service.close()
+        self.assertFalse(status.reconciliation_available)
+        self.assertEqual(
+            status.reconciliation_error_code,
+            "phone_control_not_configured",
+        )
 
 
 class IMessageRuntimeViewTests(unittest.TestCase):
@@ -578,18 +370,20 @@ class IMessageRuntimeViewTests(unittest.TestCase):
             "pending_events": 1,
             "complete_attachments": 2,
             "partial_attachments": 0,
-            "reconciliation_state": "idle",
-            "reconciliation_error_code": None,
-            "reconciliation_available": True,
+            "reconciliation_state": "unavailable",
+            "reconciliation_error_code": "phone_control_not_configured",
+            "reconciliation_available": False,
             "last_reconciliation": None,
+            "incoming_state": "ready",
+            "incoming_error_code": None,
         }
         values.update(changes)
         return RelayRuntimeStatus(**values)
 
     def test_qt_view_payload_and_actions_are_content_free(self) -> None:
         host = Mock()
-        recent = Mock(return_value=True)
-        month = Mock(return_value=True)
+        recent = Mock(return_value=False)
+        month = Mock(return_value=False)
         closed = Mock()
         view = QtIMessageRelayView(
             host,
@@ -610,7 +404,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
 
         payload = view.payload()
         view.handle_action("relay_reconcile_recent", "")
-        view.handle_action("relay_reconcile_month", "2026-09")
+        unavailable_payload = view.payload()
         view.handle_action("relay_reconcile_month", "private-value")
         invalid_payload = view.payload()
         view.close()
@@ -618,9 +412,10 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertEqual(payload["receivedEvents"], 4)
         self.assertEqual(payload["serviceMessage"], "Receiver is listening.")
         self.assertEqual(payload["messages"][0]["text"], "invented message")
-        recent.assert_called_once()
-        month.assert_called_once()
+        self.assertEqual(unavailable_payload["error"], "Reconciliation is unavailable.")
         self.assertEqual(invalid_payload["error"], "Enter a UTC month as YYYY-MM.")
+        recent.assert_called_once()
+        month.assert_not_called()
         closed.assert_called_once_with()
 
     def test_tool_closes_view_before_service(self) -> None:
@@ -635,21 +430,6 @@ class IMessageRuntimeViewTests(unittest.TestCase):
 
         menu.close.assert_called_once_with()
         service.close.assert_called_once_with()
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _trio_hashes(messages_root: Path) -> dict[str, str]:
-    return {
-        name: _sha256(messages_root / name)
-        for name in ("sms.db", "sms.db-wal", "sms.db-shm")
-    }
 
 
 if __name__ == "__main__":

@@ -173,7 +173,7 @@ Item {
                         Label {
                             Layout.fillWidth: true
                             text: viewModel.incomingMessage || ""
-                            color: viewModel.incomingState === "active" ? "#2f9f83" : "#58708c"
+                            color: viewModel.incomingState === "ready" ? "#2f9f83" : "#58708c"
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
                         }

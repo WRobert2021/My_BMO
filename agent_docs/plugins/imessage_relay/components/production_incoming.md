@@ -1,115 +1,179 @@
-# Production Incoming Activation
+# Production Incoming Relay
 
-## Stage and goal
+## Stage and corrected direction
 
-Stage 12 turns the accepted manual incoming relay into an opt-in service owned
-by the normal BMO plugin lifecycle. It makes new incoming messages available on
-the kiosk without an SSH password prompt on each start. Stage 13 outbound
-Messages work is not authorized by this stage.
+Stage 12 implements the original phone-to-kiosk design. The iPhone observes
+new incoming iMessage activity and pushes only new normalized events and their
+referenced attachments to the kiosk. Normal production operation never mounts,
+copies, or polls Apple's Messages database from the kiosk.
 
-## Configuration and credentials
+The earlier SSHFS/snapshot implementation is retired. Its repository runtime,
+configuration, publisher, and focused tests have been removed. The established
+kiosk receiver, durable receipts, attachment uploads, feed, and UI remain the
+foundation of the corrected implementation.
 
-The feature entry names a private source configuration file. That file stores
-the restricted phone host, `pi-bmo` username, port, `/SMS` remote path, local
-mount path, pinned known-hosts path, polling bounds, and the path of a private
-password file. The password file must be a regular non-symlink file readable
-only by its kiosk owner (`0600`) and contain exactly one password line.
+## Runtime ownership
 
-Passwords are never accepted in tracked example JSON, process arguments,
-status payloads, exceptions, or logs. SSHFS receives the password through its
-standard input. The tracked example contains placeholders only; the operator
-creates private ignored configuration and the password file directly on the
-kiosk once.
+Two separately deployable Python runtimes are required:
 
-## Source and phone boundary
+- `be-more-agent` remains the Python 3.13.5 Raspberry Pi kiosk application. It
+  owns the authenticated receiver, durable receipt database, attachment store,
+  message view, phone-resume client, and infrequent reconciliation schedule.
+- The sibling `phone_relay` project is the Python 3.9 phone runtime. Its local
+  PyCharm virtual environment is CPython 3.9.6. It will contain no BMO imports
+  and will be tested against the exact phone interpreter before deployment.
 
-The existing `pi-bmo` account remains chrooted, SFTP-only, password-protected,
-server-read-only, and confined to `/SMS`. The kiosk additionally requests a
-read-only SSHFS mount, requires strict host-key verification, disables host-key
-updates, requests no forwarding, and treats an unverified or writable mount as
-unavailable. The validated phone-side account policy disables all forwarding.
-`ClearAllForwardings` is not passed as a mount option because SSHFS 3.7.3
-rejects it before starting SSH.
+The phone's Messages database and attachment tree remain external read-only
+inputs. The phone runtime may create only its own private configuration,
+identifier backlog, cursor, and bounded operational state.
 
-The `/SMS` export is a snapshot rather than the live Apple directory. A
-root-owned phone publisher may periodically build `.SMS.next` from read-only
-DB/WAL/SHM and attachment inputs, fingerprint and reverify both source sets,
-verify both copied sets, restrict the copy to `root:pi-bmo` with directories
-`0550` and files `0440`, and atomically rotate it into `/SMS`. It never changes
-Apple ownership, permissions, database state, or attachments. An inconclusive
-copy is discarded and retried later.
+## Normal event flow
 
-## Kiosk lifecycle
+1. A filesystem notification indicates activity in the Messages database or
+   WAL. The notification is a wake-up hint, never a one-event claim.
+2. After a short debounce, the phone opens one read-only transaction and finds
+   every supported incoming source row after its durable observation cursor.
+3. The phone commits only stable event identifiers, source ROWIDs, event kinds,
+   and retry state to its private backlog before advancing the cursor.
+4. If delivery is permitted, the phone opens an authenticated TLS connection
+   to the kiosk and drains backlog entries in source order.
+5. Message content is normalized only when an entry is being delivered.
+   Attachments are read and streamed only when referenced by that entry.
+6. The kiosk validates and durably commits each event, completes any required
+   attachment uploads, and returns the existing strict event ACK.
+7. Only the exact validated kiosk ACK removes the phone backlog entry.
 
-Enabled registration validates private configs, starts the receiver, mounts or
-adopts the verified read-only source, and starts one plugin-owned worker. Each
-bounded cycle copies the DB trio to disposable local storage, scans from the
-durable cursor, stores normalized events, and drains eligible delivery attempts
-through the in-process authenticated receiver while attachment source paths
-remain under the read-only mounted snapshot. Source, mount, parse, or delivery
-failure becomes bounded status and a later retry; it cannot block BMO.
+Coalesced notifications and several senders or back-to-back messages are safe
+because each wake scans the complete ROWID interval after the cursor. A later
+wake also closes any observation gap caused by a missed filesystem signal.
 
-The receiver store supplies a bounded newest-first local feed for the relay
-view. The view may show incoming sender identifiers, message text, timestamp,
-reaction summaries, and attachment categories because this is the explicit
-private message surface. None of that content may cross logs, generic tool
-results, status/error payloads, docs, or fixtures.
+## Offline circuit
 
-The view keeps a stable message model across its two-second status refresh.
-When feed content genuinely changes, it restores a user who has scrolled away
-from the top to the prior bounded scroll offset.
+The first delivery failure starts one bounded retry episode:
 
-Plugin close stops and joins the worker, closes sender/relay/receiver state,
-unmounts only a mount it created, removes its empty runtime mount directory,
-and remains idempotent. It does not remove durable message state or the phone's
-restricted account/export.
+- try immediately;
+- retry once per minute;
+- stop after five failed retry attempts; and
+- latch delivery dormant while continuing to record new event identifiers.
 
-## Acceptance
+New messages never reset this exhausted retry circuit. They are added to the
+backlog without starting another delivery attempt. Only a valid authenticated
+kiosk resume request resets the circuit and permits backlog delivery again.
 
-Invented tests must cover strict configuration and password-file permissions,
-argument/diagnostic redaction, read-only mount verification, startup failure
-isolation, source outage and recovery, bounded polling and pagination,
-idempotent restart, attachment delivery, feed decoding, UI actions, and full
-cleanup. Physical acceptance then requires one newly published incoming event
-to appear in the kiosk view without a manual password or reconciliation action,
-followed by one restart/offline recovery observation. Stop before Stage 13.
+The phone's resume listener accepts control only; Stage 12 does not expose any
+Messages write, send, reaction, or recipient-selection action. Request bounds,
+authentication, replay protection, and LAN/TLS policy must be specified before
+the listener is implemented.
 
-## Operator activation
+## Deletion and mutation handling
 
-The repository setup script installs/verifies SSHFS on the kiosk but never
-contacts or modifies the phone. After the code is synchronized, the operator
-runs the one-time kiosk configurator with the restricted phone host and
-username. It prompts once without echo, writes ignored owner-only source and
-receiver secrets, updates the existing private feature entry, and requires no
-password input on later BMO starts:
+Messages activity caused by deletion or another supported mutation wakes the
+same observer. Before delivery, the phone revalidates queued identifiers
+against current read-only Apple state:
 
-```text
-venv/bin/python -m bmo.features.imessage_relay.tools.configure_incoming \
-  --host PHONE_IP_ADDRESS --username pi-bmo
-```
+- a conclusively deleted, never-acknowledged event is removed from backlog;
+- an attachment removed before transfer becomes unavailable and the event is
+  handled according to the eventual content policy; and
+- ambiguous or schema-unverified changes remain pending rather than being
+  guessed.
 
-The configurator validates the existing private feature file before prompting.
-If an earlier version stored the protected password but failed while enabling
-the feature, `--reuse-existing-password` resumes without reading a password
-from the terminal. Failures identify the configuration boundary without
-printing secret contents. A missing private `features.json` is initialized from
-the tracked feature template; an existing symlink or malformed file still
-fails closed rather than being overwritten.
+The exact live schema behavior for message deletion, unsend, edit, and reaction
+removal must be verified before implementation claims coverage. Identifier-only
+backlog storage intentionally does not preserve content that Apple state no
+longer contains.
 
-The configurator also resolves the configured relay-state database and creates
-its plugin-owned parent directory as owner-only (`0700`). The state manager
-continues to reject a missing parent itself, so non-configurator callers retain
-the Stage 3 fail-closed contract. The enabled BMO plugin repeats this idempotent
-provisioning during normal startup, allowing a clean deployment or removed
-runtime-state directory to recover without an operator shell command.
+## Kiosk recovery and reconciliation
 
-The phone publisher is likewise explicit. Copy the three project-owned files
-in `bmo/features/imessage_relay/phone/` to a temporary phone path through the
-normal `mobile` maintenance login while BMO is stopped. Run
-`install_snapshot_publisher.sh` as root from that source directory. It refuses
-an existing installation, validates the publisher shell and plist, installs
-the script and launchd definition with numeric root ownership and modes `0700`
-and `0600`, builds the first verified snapshot, bootstraps the system job, and
-rolls back its new targets if activation fails. This does not deploy Python or
-modify the Messages application/database. After this one-time deployment,
-normal BMO and phone restarts require no operator terminal command.
+The kiosk sends an authenticated resume request when its receiver starts or
+when its network availability returns. A successful resume clears the phone's
+exhausted retry latch; the phone then drains its backlog through normal ACKed
+delivery.
+
+Once or twice weekly, the kiosk requests a bounded recent-window
+reconciliation. The phone reads that window locally, sends stable event IDs and
+canonical digests through the existing bounded receipt-classification
+protocol, and resends only entries the kiosk reports missing. The kiosk never
+pulls the Apple database and never treats sender absence as deletion authority.
+
+## Kiosk interim state
+
+Until the phone control client is implemented, the BMO plugin starts only its
+existing receiver and local feed. The UI reports that the receiver is ready
+for the phone relay and keeps reconciliation disabled. Retired
+`source_config_path`, `relay_config_path`, and `messages_root` feature settings
+are ignored and acquire no mount, worker, source file, or relay-state resource.
+
+## Migration cleanup
+
+Repository cleanup removes:
+
+- `source_mount.py` and the kiosk polling worker;
+- the persistent source configurator and source example;
+- the snapshot publisher, launchd example, and installer;
+- snapshot/SSHFS production tests; and
+- active documentation and example-feature references to the pull path.
+
+Private and remote cleanup is deliberately separate because repository policy
+forbids reading or modifying private configuration, and the phone/kiosk are not
+connected to this development session. The operator cleanup inventory is:
+
+- kiosk: unmount and remove only the obsolete relay-owned mount directory;
+  remove `config/imessage_source.json`, its private password file, the
+  kiosk-side sender configuration/state created only for polling, and the
+  retired feature settings; retain receiver configuration, receiver secret,
+  receipt database, received attachments, and UI data;
+- phone: verify no snapshot launch job or publisher was installed, remove the
+  exact `Match User pi-bmo` SSH policy, delete exact UID/GID 1003 only after
+  identity checks, and delete `/private/var/imessage-relay-chroot`; retain the
+  `mobile` maintenance login and never change Apple-owned Messages files; and
+- kiosk setup: remove the now-unused SSHFS package requirement and uninstall
+  the exact `sshfs` package after the obsolete mount is unmounted. Do not use
+  broad package autoremove operations.
+
+Each destructive remote action requires a fresh read-only identity/path check
+and an immediately validated SSH configuration candidate. No broad recursive
+target, guessed match-block range, or private receiver-state deletion is
+allowed.
+
+### Completed live migration cleanup
+
+The operator completed the live cleanup on 2026-09-06:
+
+- the kiosk unmounted and removed the retired relay-owned source path, removed
+  the source and sender configuration/state plus stored SFTP password, and
+  removed only the obsolete pull settings from the private feature entry;
+- kiosk receiver configuration, receiver secret, receipt database, received
+  attachments, and message UI data were retained;
+- Raspberry Pi OS package `sshfs` `3.7.3-1.2~deb13u1` was removed without a
+  broad autoremove operation;
+- the phone had no snapshot publisher executable or launchd plist installed;
+- the exact `Match User pi-bmo` policy was removed through a validated offline
+  candidate, and the active SSH configuration passed `sshd -t` afterward; and
+- exact UID/GID 1003 and `/private/var/imessage-relay-chroot` were removed. A
+  temporary Procursus group-database repair was used only to let `pwd_mkdb`
+  remove the account, after which the original group database was restored.
+
+The `mobile` maintenance account and Apple-owned Messages database,
+attachments, permissions, and content were not altered.
+
+## Stage 12 acceptance
+
+Invented and physical acceptance must cover:
+
+- Python 3.9.6-compatible phone imports and resource-free module import;
+- read-only event observation, coalesced/back-to-back discovery, and cursor
+  restart recovery;
+- identifier-only backlog durability and deletion pruning;
+- immediate delivery plus exactly five one-minute retries;
+- a latched exhausted circuit that new messages cannot reset;
+- authenticated kiosk resume as the sole retry reset;
+- lost ACK, duplicate event, sender/receiver restart, and ordered backlog;
+- text, reaction add/remove, photo, video, and bounded attachment resume;
+- kiosk-owned feed persistence without an SSHFS mount;
+- bounded weekly reconciliation and selective resend;
+- TLS/HMAC/replay protection, redacted diagnostics, cleanup, and shutdown; and
+- unchanged Apple database, WAL/SHM, attachments, permissions, and process
+  state.
+
+Stop when the physical incoming matrix passes. Outbound text, media, and
+reaction commands remain Stage 13 and require separate authorization.

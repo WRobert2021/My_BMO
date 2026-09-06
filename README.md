@@ -26,21 +26,22 @@ Dopamine/rootless jailbroken iPhone and this Raspberry Pi kiosk. Its initial
 scope is incoming iMessage text, photos, videos, and tapbacks, with explicit
 kiosk acknowledgements and duplicate-safe delivery.
 
-Incoming relay activation is now available as an explicit, opt-in Stage 12
-deployment. It continuously pulls only the phone's restricted read-only `/SMS`
-export, delivers new events through the plugin-owned durable receiver, and
-shows them in the BMO relay view. Outbound replies, media sends, and reactions
-remain gated for Stage 13. Never point application commands directly at
-`/var/mobile/Library/SMS`, and never copy private Messages data into source
-control.
+Stage 12 is being rebuilt around the original event-driven design. A narrow
+Python 3.9-compatible phone agent will observe Messages changes, retain only a
+cursor and undelivered event identifiers, and push new incoming events to the
+kiosk's authenticated durable receiver. The kiosk will build its own receipt
+database and will not mount, copy, or poll the phone's Messages database during
+normal operation. Outbound replies, media sends, and reactions remain gated
+for Stage 13.
 
 Safety boundaries:
 
 - Apple's Messages database and attachments are strictly read-only.
-- Relay queues, checkpoints, and acknowledgements will use separate storage.
+- The phone backlog stores identifiers and retry state, not message bodies or
+  attachment copies; kiosk receipts use separate private storage.
 - Message sending and SMS/MMS relay are outside the initial scope.
-- The Stage 12 phone snapshot publisher is installed only by an explicit
-  operator action; the repository setup script never deploys to the phone.
+- The abandoned snapshot publisher and SSHFS production path are not part of
+  Stage 12. Phone deployment remains an explicit later operator action.
 - Secrets and private message or attachment content must not enter tracked
   configuration, logs, fixtures, or documentation.
 
@@ -74,7 +75,6 @@ be-more-agent/
 │   ├── example.compact_face.json # Tracked shared compact-face example
 │   ├── example.imessage_relay.json # Tracked relay-state example
 │   ├── example.imessage_receiver.json # Tracked receiver example
-│   ├── example.imessage_source.json # Tracked read-only phone-source example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)
@@ -84,7 +84,6 @@ be-more-agent/
 │   ├── compact_face.json      # Local shared face layout/animation settings
 │   ├── imessage_relay.json    # Local relay-state/retry settings (ignored)
 │   ├── imessage_receiver.json # Local receiver settings (ignored)
-│   └── imessage_source.json   # Local phone login/mount settings (ignored)
 ├── bmo/data/                  # Plugin-owned local data
 │   ├── 20_questions/          # Base, learned, and recent-target data (ignored)
 │   ├── calendar/              # Local events and acknowledgments (ignored)
@@ -145,14 +144,12 @@ chmod +x setup.sh
 ./setup.sh
 ```
 *The setup script supports 64-bit Raspberry Pi OS. It installs the required
-system libraries, Chromium, and the SSHFS/FUSE 3 client used by the optional
-iMessage Relay, creates local folders, builds Whisper.cpp,
+system libraries, Chromium, creates local folders, builds Whisper.cpp,
 downloads the
 `base.en` speech model and Piper voices, creates the Python environment, pulls
 the Ollama models, installs the default wake-word model, and installs the
 PySide6 Essentials Qt Quick/QML production runtime. It is safe to run again and
-reuses valid existing downloads; existing SSHFS/FUSE commands are detected and
-the distro package is verified idempotently.*
+reuses valid existing downloads.*
 
 ### 4. Configure the Wake Word
 The setup script downloads a default wake word ("Hey Jarvis"). To use your own:
@@ -229,18 +226,15 @@ Configuration is split by audience:
   shared refresh/layout specification used by Menu, features, modes, and
   Weather. Its outer viewport is always 108×65; invalid files safely use
   defaults.
-- `config/imessage_relay.json`, `config/imessage_receiver.json`, and
-  `config/imessage_source.json` own the opt-in incoming relay's private state,
-  receiver, and restricted read-only phone login/mount settings. Passwords and
-  HMAC secrets live in mode-`0600` files under ignored `config/private/`, never
-  in JSON.
+- `config/imessage_receiver.json` owns the opt-in kiosk receiver and its
+  private receipt database. Its TLS material and HMAC secret live in ignored
+  owner-only paths. `config/imessage_relay.json` remains a development example
+  for the completed simulated sender; it is not the Stage 12 production phone
+  configuration.
 
 The normal application runtime does **not** create these local files. If a file
 is absent or invalid, BMO reports a parsing error when applicable without
-writing configuration. The explicit iMessage incoming configurator is the one
-exception: it creates only ignored mode-`0600` relay configuration/secrets and
-updates the existing private feature list after prompting once for the phone
-password. Other configuration can be copied from tracked examples:
+writing configuration. Configuration can be copied from tracked examples:
 
 ```bash
 cp config/example.settings.json config/settings.json
@@ -255,27 +249,10 @@ cp config/example.compact_face.json config/compact_face.json
 cp config/example.imessage_relay.json config/imessage_relay.json
 ```
 
-After the restricted phone account and pinned host key exist, configure and
-enable incoming iMessage once on the kiosk (use `venv/bin/python` on the Pi):
-
-```bash
-venv/bin/python -m bmo.features.imessage_relay.tools.configure_incoming \
-  --host PHONE_IP_ADDRESS \
-  --username pi-bmo
-```
-
-The password is read without echo and stored in an ignored owner-only file, so
-later BMO starts do not prompt. The phone snapshot publisher described in
-[`production_incoming.md`](agent_docs/plugins/imessage_relay/components/production_incoming.md)
-must also be installed explicitly before new messages can appear automatically.
-Its project-owned `install_snapshot_publisher.sh` performs that one-time phone
-installation while BMO is stopped; normal operation thereafter requires no
-terminal command.
-If a run is interrupted after that private password has been stored, repeat the
-command with `--reuse-existing-password` to finish without another prompt.
-When the private feature file does not exist yet, the configurator initializes
-it from `config/example.features.json` before enabling the relay; it never
-overwrites a symlink or malformed existing feature file.
+The event-driven Stage 12 phone-agent configuration and deployment procedure is
+not implemented yet. Do not install the retired snapshot publisher or add an
+SSHFS source setting. The current migration and acceptance plan is documented
+in [`production_incoming.md`](agent_docs/plugins/imessage_relay/components/production_incoming.md).
 
 When upgrading from the former root `config.json`, move its `features` and
 `modes` entries into `config/features.json` and put every other entry in

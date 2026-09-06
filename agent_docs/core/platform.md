@@ -18,11 +18,6 @@ proof of target compatibility. `setup.sh` is the owned installer and
 - Ollama and downloaded text/vision models are system services.
 - `ffmpeg`/`ffplay` is a system package used by Music. Chromium is required
   only by the legacy Tk Weather fallback.
-- `sshfs` and `fusermount3` are system commands used only by the optional
-  iMessage Relay's manually authorized read-only phone mount. They are not
-  installed in either Python virtual environment. `setup.sh` reports whether
-  both commands already exist, asks `apt` to idempotently verify/install the
-  `sshfs` package, and checks both commands afterward.
 - Linux Python 3.13 uses OpenWakeWord 0.6 in ONNX-only mode; installer
   verification must instantiate the configured model, not merely import the
   package.
@@ -39,12 +34,9 @@ No new dependency should duplicate a small standard-library solution or create
 an unsupported iPhone/Raspberry Pi deployment constraint. The iMessage parser,
 state, and current receiver are intentionally standard-library-only.
 
-The SSHFS client is OS-managed and deliberately unpinned so Raspberry Pi OS
-can supply its patched repository revision. Debian publishes the 3.7.3 package
-and FUSE 3 dependencies for `arm64`; upstream SSHFS is GPL-2.0. The physical
-target validated Debian package `3.7.3-1.2~deb13u1`, SSHFS 3.7.3, and FUSE
-3.17.2. This dependency keeps live Apple data read-only and avoids phone-side
-project deployment; it adds no Python package or import surface.
+The retired iMessage pull design used the Raspberry Pi OS `sshfs` package only
+for completed live validation. The corrected phone-push design does not need
+SSHFS or FUSE, so `setup.sh` no longer installs or verifies either command.
 
 ## Platform-owned resources
 

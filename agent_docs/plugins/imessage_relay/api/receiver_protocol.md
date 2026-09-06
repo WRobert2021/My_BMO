@@ -306,3 +306,15 @@ and repeats the identical event after all blobs report complete. Sender state
 acknowledges only an exact final ACK containing `attachment_status: complete`.
 A legacy metadata-only ACK, missing/unsafe/changed source, timeout, mismatch,
 or negative response follows the existing bounded retry/dead-letter policy.
+
+## Planned Stage 12 Phone Integration
+
+The production client will be the standalone Python 3.9.6 `phone_relay`
+runtime, not the BMO kiosk process. It will reuse this event, reconciliation,
+attachment, HMAC, replay, and ACK contract with shared canonical test vectors.
+The kiosk receiver will require TLS when bound beyond literal loopback.
+
+Kiosk-to-phone resume control is a separate planned contract and is not an
+implemented endpoint in this document. Its sole Stage 12 authority will be to
+reset an exhausted phone delivery circuit and request backlog drain or bounded
+reconciliation; it cannot send or mutate Messages content.

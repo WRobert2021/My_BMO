@@ -10,9 +10,11 @@ wire serialization; `store.py` owns receipt/nonce SQLite; `server.py` owns the
 transport-neutral application and HTTP(S) listener. Wire details live only in
 `../api/receiver_protocol.md`.
 
-The receiver does not read Apple data, contact an iPhone, consume the Stage 3
-queue, register with BMO, or install a daemon. Stage 7 accepts only bounded
-authenticated attachment chunks for a previously committed pending manifest.
+The receiver does not read Apple data, consume a sender queue, or install a
+daemon. Stage 7 accepts only bounded authenticated attachment chunks for a
+previously committed pending manifest. The opt-in BMO adapter owns its listener
+and feed; the corrected Stage 12 phone agent will contact this receiver rather
+than exposing Apple data to the kiosk.
 
 ## Runtime and storage
 
@@ -47,7 +49,8 @@ kiosk IDs and has no delete or overwrite path.
 Stage 12 adds a bounded newest-first `recent_events()` read for the dedicated
 private kiosk relay view. It returns persisted canonical event JSON/digest and
 receipt time; it does not mutate receipt state or expose content through status
-or logs.
+or logs. LAN production binding requires TLS and will be activated only with
+the Python 3.9 phone sender and common protocol vectors.
 
 `ReceiverServer` is threaded, size/time bounded, rejects chunked/unsupported
 bodies, caps binary chunks independently at 64 KiB, suppresses content logging,
