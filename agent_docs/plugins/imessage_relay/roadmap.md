@@ -18,7 +18,8 @@ completion never authorizes the next stage.
 | 9 | manually validate real iPhone-to-kiosk at-least-once delivery | no automatic startup |
 | 10 | add optional failure-isolated runtime service/UI status and reconciliation controls | sending/daemon proposals remain separate scope |
 | 11 | consolidate plugin implementation under `bmo.features.imessage_relay` | layout/import changes only; full tests required before completion |
-| 12 | plan and implement authenticated outbound text, photo/video, and reaction commands | begins only after incoming Stages 9/10; separate phone deployment/daemon authorization; never write Messages DB |
+| 12 | activate continuous read-only incoming delivery and kiosk presentation | no Messages writes or outbound actions; credentials remain private |
+| 13 | plan and implement authenticated outbound text, photo/video, and reaction commands | begins only after Stage 12 incoming activation; separate sending authorization; never write Messages DB |
 
 ## Stage 5 acceptance shape
 
@@ -113,15 +114,34 @@ enablement, or deployment. Structural/static checks must pass immediately; the
 complete relay, shared extension/Qt, setup, and repository test suites must pass
 before Stage 11 can be accepted.
 
-## Stage 12 planning gate
+## Stage 12 acceptance shape
 
-Stage 12 is planned but not authorized to begin. After incoming Stages 9 and 10
-are accepted, document the verified phone-side sending interface and evaluate
-whether the separate iPhone Python 3.9.9 environment is sufficient or a narrow
-native bridge is required. Define authenticated and replay-protected command
-contracts, stable outgoing request IDs, duplicate prevention, text replies,
-photo/video staging, reactions bound to source-message identities, delivery
-states, UI confirmation, failure isolation, cleanup, and phone resource use
-before implementation. Direct database writes, implicit recipient selection,
-silent duplicate sends, credential embedding, and automatic daemon deployment
-remain prohibited.
+After explicit authorization, turn the tested incoming pipeline into an
+opt-in production kiosk service. Persist non-secret phone host/user settings
+and a path to a private mode-`0600` password file, manage the SSHFS source with
+strict host-key checking plus client/server read-only enforcement, and recover
+from source outages without blocking BMO. A phone-owned publisher may refresh
+only the isolated `/SMS` export from read-only Apple inputs using verified
+copies and atomic publication; it must never alter the Messages database,
+attachments, permissions, or process state.
+
+An enabled plugin owns one bounded continuous discovery/delivery worker,
+durable cursor/retry state, the receiver, mount lifecycle, and shutdown. New
+incoming text, reactions, and attachment summaries become visible only inside
+the local kiosk relay view; they are never logged or placed in tracked files.
+Test configuration validation, credential redaction, mount failure/recovery,
+stable-source retry, idempotent delivery, polling, restart, UI refresh, and
+cleanup with invented sources before physical activation. Stop before any
+outbound Messages action.
+
+## Stage 13 planning gate
+
+Stage 13 is planned but not authorized to begin. After Stage 12 incoming
+activation is accepted, document the verified phone-side sending interface and
+evaluate whether the separate iPhone Python 3.9.9 environment is sufficient or
+a narrow native bridge is required. Define authenticated and replay-protected
+command contracts, stable outgoing request IDs, duplicate prevention, text
+replies, photo/video staging, reactions bound to source-message identities,
+delivery states, UI confirmation, failure isolation, cleanup, and phone
+resource use before implementation. Direct database writes, implicit recipient
+selection, silent duplicate sends, and credential embedding remain prohibited.

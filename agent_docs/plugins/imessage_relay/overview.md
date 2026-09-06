@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: bmo.features.imessage_relay (opt-in)
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_production_incoming.py]
 ---
 
 # Plugin: iMessage Relay
@@ -19,10 +19,10 @@ iPhone-to-kiosk only; control traffic may be bidirectional. SMS/MMS and sending
 through Messages are out of scope.
 
 That exclusion describes the current incoming implementation, not the final
-product intent. After incoming Stage 9 and Stage 10 acceptance, a separately
-authorized future stage will plan outbound text replies, photo/video sends,
-and reactions through a narrow phone-side bridge. Direct Messages database
-writes remain prohibited.
+product intent. Stage 12 activates production incoming delivery. Separately
+authorized Stage 13 will plan outbound text replies, photo/video sends, and
+reactions through a narrow phone-side bridge. Direct Messages database writes
+remain prohibited.
 
 ## Current versus intended ownership
 
@@ -38,6 +38,8 @@ writes remain prohibited.
 | configuration examples | `config/example.imessage_relay.json`, `config/example.imessage_receiver.json`, disabled entry in `config/example.features.json` |
 | BMO lifecycle/status/reconciliation adapter | `bmo/features/imessage_relay/feature.py` |
 | Qt status view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
+| production SSHFS source and incoming worker | `bmo/features/imessage_relay/{source_mount,incoming}.py` |
+| phone snapshot publisher assets | `bmo/features/imessage_relay/phone/` |
 
 Stage 11 consolidates the reusable backend and manual tools under the BMO
 plugin package. The adapter remains absent from feature defaults and starts
@@ -77,12 +79,19 @@ package preserves the retired import identities.
    Qt status view. Explicit recent/month controls start at most one worker,
    use a disposable source snapshot, and reuse Stage 6 reconciliation against
    the in-process authenticated receiver application. It has no sender loop.
+10. Stage 12 adds strict private SSHFS source configuration, automatic
+    read-only mount/recovery, a bounded plugin-owned discovery/delivery worker,
+    and a private incoming feed in the relay view. A separately installed
+    phone publisher atomically refreshes only the isolated `/SMS` export.
 
 Stage 8 live read-only acceptance completed on 2026-09-02. Stage 9 completed
 on 2026-09-05 after the full physical Raspberry Pi matrix, one post-baseline
 incoming event, SIGINT cleanup, and explicit private-state cleanup passed.
-Stage 10's offline implementation is complete; physical kiosk UI and lifecycle
-acceptance remains in progress.
+Stage 10 completed on 2026-09-05 after physical listener lifecycle, Qt UI,
+recent/month reconciliation, restart, clean shutdown, requested-icon, and
+bounded stability evidence passed on the Raspberry Pi kiosk.
+Stage 12 production activation is authorized and under implementation; Stage
+13 outbound behavior remains unimplemented and unauthorized.
 
 ## Safety and failure boundaries
 
@@ -98,9 +107,11 @@ delivery without a validated kiosk ACK.
 The receiver can run either as its explicit standalone process or inside the
 enabled BMO feature lifecycle. BMO registration failure is content-free and
 isolated; invalid private receiver configuration registers a visibly degraded
-menu surface without a listener. Registry cleanup closes the view, joins a
-reconciliation job, shuts the listener, closes the store, and releases its
-port. No launch daemon or default enablement is authorized.
+menu surface without a listener. Registry cleanup closes the view, joins
+reconciliation and incoming workers, unmounts only the plugin-owned source,
+shuts the listener, closes stores, and releases its port. The feature remains
+opt-in. The phone publisher is an explicit Stage 12 installation and is never
+installed by repository setup.
 
 ## Detailed routing
 

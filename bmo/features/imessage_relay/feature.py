@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+import hashlib
+import hmac
+import json
 from pathlib import Path
 import ssl
 import threading
@@ -40,6 +43,8 @@ from .receiver import (
     build_server,
     load_receiver_config,
 )
+from .incoming import IncomingRelayWorker
+from .source_mount import SourceConfigError, load_source_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -50,6 +55,7 @@ IMESSAGE_RELAY_MENU_ITEM = FeatureMenuItem(
 )
 DEFAULT_RECEIVER_CONFIG_PATH = Path("config/imessage_receiver.json")
 DEFAULT_RELAY_CONFIG_PATH = Path("config/imessage_relay.json")
+DEFAULT_SOURCE_CONFIG_PATH = Path("config/imessage_source.json")
 DEFAULT_RECENT_DAYS = 7
 MAX_RECENT_DAYS = 31
 
@@ -65,6 +71,7 @@ class RelayFeatureConfig:
     relay_config_path: Path
     messages_root: Path | None
     reconciliation_recent_days: int = DEFAULT_RECENT_DAYS
+    source_config_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +89,20 @@ class RelayRuntimeStatus:
     reconciliation_error_code: str | None
     reconciliation_available: bool
     last_reconciliation: Mapping[str, int | str] | None
+    incoming_state: str = "disabled"
+    incoming_error_code: str | None = None
+    source_mounted: bool = False
+    last_scanned_rows: int = 0
+    last_delivered_events: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class IncomingFeedItem:
+    kind: str
+    sender: str
+    timestamp: str
+    text: str
+    attachments: tuple[str, ...]
 
 
 def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
@@ -104,6 +125,15 @@ def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
         messages_root = None
     else:
         messages_root = _path_value(messages_value, "messages_root")
+    source_value = settings.get("source_config_path")
+    if source_value is None:
+        source_config_path = None
+    else:
+        source_config_path = _path_value(source_value, "source_config_path")
+    if messages_root is not None and source_config_path is not None:
+        raise ValueError(
+            "iMessage Relay messages_root and source_config_path are mutually exclusive"
+        )
     recent_days = settings.get("reconciliation_recent_days", DEFAULT_RECENT_DAYS)
     if (
         isinstance(recent_days, bool)
@@ -118,6 +148,7 @@ def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
         relay_config_path=relay_path,
         messages_root=messages_root,
         reconciliation_recent_days=recent_days,
+        source_config_path=source_config_path,
     )
 
 
@@ -164,6 +195,8 @@ class RelayRuntimeService:
         self._receiver_store: ReceiverStateStore | None = None
         self._server_thread: threading.Thread | None = None
         self._job_thread: threading.Thread | None = None
+        self._incoming_worker: IncomingRelayWorker | None = None
+        self._messages_root = config.messages_root
         self._service_state = "unavailable"
         self._service_error_code: str | None = None
         self._reconciliation_state = "idle"
@@ -174,6 +207,7 @@ class RelayRuntimeService:
         self._shared_secret: bytes | None = None
         self._start_receiver()
         self._load_relay_config()
+        self._start_incoming()
 
     def _start_receiver(self) -> None:
         server: Any | None = None
@@ -235,6 +269,38 @@ class RelayRuntimeService:
         except (OSError, ValueError):
             self._reconciliation_error_code = "relay_config_invalid"
 
+    def _start_incoming(self) -> None:
+        source_path = self.config.source_config_path
+        if source_path is None:
+            return
+        try:
+            source_config = load_source_config(source_path)
+        except SourceConfigError:
+            self._reconciliation_error_code = "source_config_invalid"
+            return
+        self._messages_root = source_config.mount_path
+        if (
+            self._service_state != "available"
+            or self._server is None
+            or self._relay_config is None
+            or self._key_id is None
+            or self._shared_secret is None
+        ):
+            return
+        try:
+            worker = IncomingRelayWorker(
+                source_config=source_config,
+                relay_config=self._relay_config,
+                receiver_application=self._server.application,
+                key_id=self._key_id,
+                shared_secret=self._shared_secret,
+            )
+            self._incoming_worker = worker
+            worker.start()
+        except Exception:
+            self._incoming_worker = None
+            self._reconciliation_error_code = "incoming_start_failed"
+
     def status(self) -> RelayRuntimeStatus:
         with self._lock:
             state = self._service_state
@@ -245,7 +311,7 @@ class RelayRuntimeService:
                 not self._closed
                 and state == "available"
                 and self._relay_config is not None
-                and self.config.messages_root is not None
+                and self._messages_root is not None
                 and reconciliation_state != "running"
             )
             reconciliation_error = self._reconciliation_error_code
@@ -254,6 +320,7 @@ class RelayRuntimeService:
                 if self._last_reconciliation is None
                 else dict(self._last_reconciliation)
             )
+            incoming_worker = self._incoming_worker
         received = pending = complete = partial = 0
         if store is not None and state == "available":
             try:
@@ -267,7 +334,25 @@ class RelayRuntimeService:
                 pending = summary.pending_event_count
                 complete = summary.complete_attachment_count
                 partial = summary.partial_attachment_count
-        if self.config.messages_root is None and reconciliation_error is None:
+        if incoming_worker is None:
+            incoming_state = (
+                "unavailable" if self.config.source_config_path is not None else "disabled"
+            )
+            incoming_error = (
+                reconciliation_error
+                if self.config.source_config_path is not None
+                else None
+            )
+            source_mounted = False
+            scanned_rows = delivered_events = 0
+        else:
+            incoming = incoming_worker.status()
+            incoming_state = incoming.state
+            incoming_error = incoming.error_code
+            source_mounted = incoming.source_mounted
+            scanned_rows = incoming.scanned_rows
+            delivered_events = incoming.delivered_events
+        if self._messages_root is None and reconciliation_error is None:
             reconciliation_error = "source_not_configured"
         return RelayRuntimeStatus(
             service_state=state,
@@ -281,7 +366,86 @@ class RelayRuntimeService:
             reconciliation_error_code=reconciliation_error,
             reconciliation_available=reconciliation_available,
             last_reconciliation=last_report,
+            incoming_state=incoming_state,
+            incoming_error_code=incoming_error,
+            source_mounted=source_mounted,
+            last_scanned_rows=scanned_rows,
+            last_delivered_events=delivered_events,
         )
+
+    def recent_items(self, limit: int = 20) -> tuple[IncomingFeedItem, ...]:
+        """Return private incoming content only to the dedicated relay view."""
+
+        with self._lock:
+            store = self._receiver_store
+            closed = self._closed
+        if closed or store is None:
+            return ()
+        try:
+            stored = store.recent_events(min(100, max(1, limit * 3)))
+            items: list[IncomingFeedItem] = []
+            for row in stored:
+                raw = row.event_json.encode("utf-8")
+                if not hmac.compare_digest(
+                    hashlib.sha256(raw).hexdigest(),
+                    row.event_digest,
+                ):
+                    continue
+                event = json.loads(row.event_json)
+                if not isinstance(event, dict) or event.get("direction") != "incoming":
+                    continue
+                sender_mapping = event.get("sender")
+                sender = (
+                    sender_mapping.get("identifier")
+                    if isinstance(sender_mapping, dict)
+                    else None
+                )
+                timestamp = event.get("timestamp_utc")
+                if not isinstance(timestamp, str):
+                    continue
+                if event.get("event_kind") == "message":
+                    raw_text = event.get("text")
+                    text = raw_text.strip() if isinstance(raw_text, str) else ""
+                    raw_attachments = event.get("attachments")
+                    attachments = tuple(
+                        str(attachment.get("media_category"))
+                        for attachment in (
+                            raw_attachments if isinstance(raw_attachments, list) else []
+                        )
+                        if isinstance(attachment, dict)
+                        and isinstance(attachment.get("media_category"), str)
+                    )
+                    if not text:
+                        text = "Attachment" if attachments else "Message"
+                    kind = "message"
+                elif event.get("event_kind") in {"reaction_added", "reaction_removed"}:
+                    attachments = ()
+                    action = (
+                        "Removed"
+                        if event.get("event_kind") == "reaction_removed"
+                        else "Reacted"
+                    )
+                    reaction = event.get("reaction_kind")
+                    if not isinstance(reaction, str):
+                        continue
+                    text = f"{action}: {reaction.replace('_', ' ')}"
+                    kind = "reaction"
+                else:
+                    continue
+                items.append(
+                    IncomingFeedItem(
+                        kind=kind,
+                        sender=sender if isinstance(sender, str) and sender else "Unknown sender",
+                        timestamp=timestamp,
+                        text=text[:2_000],
+                        attachments=attachments,
+                    )
+                )
+                if len(items) >= limit:
+                    break
+            return tuple(items)
+        except Exception:
+            return ()
 
     def reconcile_recent(self, on_complete: StatusCallback | None = None) -> bool:
         window = ReconciliationWindow.recent(
@@ -314,7 +478,7 @@ class RelayRuntimeService:
                 or self._relay_config is None
                 or self._key_id is None
                 or self._shared_secret is None
-                or self.config.messages_root is None
+                or self._messages_root is None
                 or (self._job_thread is not None and self._job_thread.is_alive())
             ):
                 return False
@@ -344,13 +508,13 @@ class RelayRuntimeService:
         report: ReconciliationReport | None = None
         error_code: str | None = None
         try:
-            assert self.config.messages_root is not None
+            assert self._messages_root is not None
             assert self._relay_config is not None
             assert self._key_id is not None
             assert self._shared_secret is not None
-            if self.config.messages_root.is_symlink():
+            if self._messages_root.is_symlink():
                 raise LiveSourceError("messages_trio_unreadable")
-            with disposable_messages_snapshot(self.config.messages_root) as snapshot:
+            with disposable_messages_snapshot(self._messages_root) as snapshot:
                 with RelayStateStore(
                     self._relay_config.state_path,
                     retry_policy=self._relay_config.retry_policy,
@@ -405,9 +569,12 @@ class RelayRuntimeService:
             server_thread = self._server_thread
             server = self._server
             store = self._receiver_store
+            incoming_worker = self._incoming_worker
             self._service_state = "closed"
             self._key_id = None
             self._shared_secret = None
+        if incoming_worker is not None:
+            incoming_worker.close()
         if job_thread is not None and job_thread is not threading.current_thread():
             job_thread.join()
         if server is not None:
@@ -470,6 +637,7 @@ class IMessageRelayTool:
             self._menu_ui = self._app_factory(
                 context.master,
                 status_provider=self.service.status,
+                feed_provider=self.service.recent_items,
                 reconcile_recent=self.service.reconcile_recent,
                 reconcile_month=self.service.reconcile_month,
                 on_close=handle_close,
@@ -564,8 +732,10 @@ def _report_mapping(report: ReconciliationReport) -> dict[str, int | str]:
 __all__ = [
     "DEFAULT_RECEIVER_CONFIG_PATH",
     "DEFAULT_RELAY_CONFIG_PATH",
+    "DEFAULT_SOURCE_CONFIG_PATH",
     "IMESSAGE_RELAY_MENU_ITEM",
     "IMessageRelayTool",
+    "IncomingFeedItem",
     "RelayFeatureConfig",
     "RelayRuntimeService",
     "RelayRuntimeStatus",

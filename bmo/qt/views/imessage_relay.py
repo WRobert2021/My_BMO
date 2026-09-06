@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 import re
 from typing import Any
@@ -25,16 +26,24 @@ class QtIMessageRelayView(QtHostedView):
         reconcile_recent: Callable[[Callable[[], None]], bool],
         reconcile_month: Callable[[int, int, Callable[[], None]], bool],
         on_close: Callable[[], None],
+        feed_provider: Callable[[], Any] | None = None,
     ) -> None:
         self.status_provider = status_provider
         self.reconcile_recent = reconcile_recent
         self.reconcile_month = reconcile_month
+        self.feed_provider = feed_provider or (lambda: ())
         self.error = ""
         super().__init__(host, on_close=on_close)
 
     def payload(self) -> dict[str, object]:
         status = self.status_provider()
         report = dict(status.last_reconciliation or {})
+        messages = []
+        for item in self.feed_provider():
+            if is_dataclass(item) and not isinstance(item, type):
+                messages.append(asdict(item))
+            elif isinstance(item, dict):
+                messages.append(dict(item))
         return {
             "serviceState": status.service_state,
             "serviceMessage": _service_message(
@@ -58,6 +67,15 @@ class QtIMessageRelayView(QtHostedView):
             "error": self.error,
             "healthy": status.service_state == "available",
             "report": report,
+            "incomingState": status.incoming_state,
+            "incomingMessage": _incoming_message(
+                status.incoming_state,
+                status.incoming_error_code,
+            ),
+            "sourceMounted": status.source_mounted,
+            "lastScannedRows": status.last_scanned_rows,
+            "lastDeliveredEvents": status.last_delivered_events,
+            "messages": messages,
         }
 
     def handle_action(self, action: str, value: str) -> None:
@@ -137,6 +155,32 @@ def _reconciliation_message(
     if state == "failed" or error_code is not None:
         return messages.get(error_code, "Receipt check is unavailable.")
     return "Choose a bounded receipt check."
+
+
+def _incoming_message(state: str, error_code: str | None) -> str:
+    if state == "active":
+        return "Incoming relay is active."
+    if state == "starting":
+        return "Connecting to the phone…"
+    if state == "disabled":
+        return "Continuous incoming relay is disabled."
+    if state == "closed":
+        return "Incoming relay is stopped."
+    messages = {
+        "known_hosts_unavailable": "Pinned phone identity is unavailable.",
+        "source_password_unavailable": "Phone login is unavailable.",
+        "source_password_permissions_invalid": "Phone login file permissions are unsafe.",
+        "source_mount_failed": "The phone could not be reached.",
+        "source_mount_unverified": "The phone mount was not read-only.",
+        "messages_trio_unreadable": "The phone snapshot is unavailable.",
+        "source_changed_during_copy": "The phone snapshot is refreshing.",
+        "relay_state_unavailable": "Incoming relay state is unavailable.",
+        "source_parse_issues": "Incoming relay skipped an unsupported item.",
+        "incoming_cycle_failed": "Incoming relay will retry shortly.",
+        "source_config_invalid": "Incoming source configuration is unavailable.",
+        "incoming_start_failed": "Incoming relay could not start.",
+    }
+    return messages.get(error_code, "Incoming relay is unavailable and will retry.")
 
 
 __all__ = ["QtIMessageRelayView"]

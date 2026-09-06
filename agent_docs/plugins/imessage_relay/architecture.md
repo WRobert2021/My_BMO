@@ -59,16 +59,20 @@ When an explicit feature entry enables the Stage 10 adapter:
 5. Invalid private receiver configuration leaves a visibly degraded registered
    surface; malformed feature settings are isolated by loader rollback. Neither
    case blocks app startup or unrelated plugins.
-6. Cleanup invalidates late callbacks, closes the view, joins the optional
-   reconciliation worker, stops accepting traffic, closes its per-job relay
-   store and long-lived receiver store, closes the socket, and releases the
-   port exactly once.
+6. When Stage 12 source configuration is present, enabled registration also
+   owns a strict read-only SSHFS mount and one bounded discovery/delivery
+   worker. The private relay view polls a bounded receiver feed locally.
+7. Cleanup invalidates late callbacks, closes the view, joins optional
+   reconciliation and incoming workers, unmounts only an owned source, stops
+   accepting traffic, closes stores and sockets, and releases the port exactly
+   once.
 
 `python -m bmo.features.imessage_relay.receiver.server` remains an explicit
 standalone alternative.
-The Stage 5 sender still has no unattended process entrypoint, and Stage 10
-does not add a discovery/delivery loop, launch daemon, default feature entry,
-private provisioning, or outbound Messages action.
+The Stage 5 sender still has no independent unattended process entrypoint.
+Stage 12 composes it into the opt-in BMO lifecycle and provides an explicit
+private configurator plus phone snapshot-publisher assets. It adds no outbound
+Messages action.
 
 ## Reliability model
 

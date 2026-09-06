@@ -561,24 +561,34 @@ class ReceiverConfigTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def test_example_config_resolves_paths_and_secret_from_environment(self) -> None:
+    def test_example_config_resolves_paths_and_private_secret_file(self) -> None:
+        secret_path = self.root / "config/private/imessage_receiver.secret"
+        secret_path.parent.mkdir(parents=True)
+        secret_path.write_bytes(SECRET)
+        secret_path.chmod(0o600)
         config = load_receiver_config(
             PROJECT_ROOT / "config" / "example.imessage_receiver.json",
-            environ={"IMESSAGE_RELAY_SHARED_SECRET": SECRET.decode()},
             base_directory=self.root,
         )
-        self.assertEqual(config.bind_host, "0.0.0.0")
-        self.assertEqual(config.port, 8443)
+        self.assertEqual(config.bind_host, "127.0.0.1")
+        self.assertEqual(config.port, 0)
         self.assertEqual(
             config.state_path,
             (self.root / "bmo/data/imessage_receiver/receiver.db").resolve(),
         )
         self.assertNotIn(SECRET.decode(), repr(config))
 
-    def test_missing_secret_and_insecure_nonloopback_fail_before_service_start(self) -> None:
+        secret_path.chmod(0o644)
+        with self.assertRaisesRegex(ReceiverConfigError, "permissions are unsafe"):
+            load_receiver_config(
+                PROJECT_ROOT / "config" / "example.imessage_receiver.json",
+                base_directory=self.root,
+            )
+
+    def test_missing_secret_file_and_insecure_nonloopback_fail_before_service_start(self) -> None:
         example = PROJECT_ROOT / "config" / "example.imessage_receiver.json"
         with self.assertRaises(ReceiverConfigError):
-            load_receiver_config(example, environ={}, base_directory=self.root)
+            load_receiver_config(example, base_directory=self.root)
 
         with self.assertRaises(ReceiverConfigError):
             ReceiverConfig(

@@ -91,8 +91,8 @@ exited zero only after asserting that it started, completed within its bound,
 and reached `complete`. Hidden before/after hashes proved the mounted source
 trio unchanged, and both durable databases were mode `0600`. The operator paste
 did not retain the content-free report mapping, so detailed reconciliation
-counts remain unrecorded pending the visible UI check. Physical Qt rendering,
-touch/VNC actions, application shutdown/restart, and stability remain open.
+counts remain unrecorded rather than being inferred; the subsequent visible UI
+provided the required bounded reconciliation evidence.
 
 The isolated production `typed_agent.py` path subsequently loaded on the
 physical Qt display with exactly one relay menu item and no metadata failures.
@@ -108,11 +108,19 @@ reconciliation state, so a completion callback sees controls available as soon
 as state becomes complete; `_start_reconciliation()` still uses actual thread
 liveness to reject overlapping jobs. A regression captures status inside the
 callback. Local results are 1 focused test passed, all 13 runtime tests passed,
-and all 113 relay tests plus 17 subtests passed. Physical retest of the updated
-code remains required before the control/UI gate can be accepted.
+and all 113 relay tests plus 17 subtests passed.
 
 The relay menu now references the existing protected
 `graphics/icons/message.png` asset selected by the operator. A resource-free
 metadata test fixes that path contract. Post-change verification passed the
 focused metadata test, all 13 runtime tests, and all 113 relay tests plus 17
-subtests; the image file itself was not modified.
+subtests; the image file itself was not modified. The physical Pi subsequently
+confirmed the existing icon was readable and passed all 13 runtime tests in
+1.06 seconds.
+
+The updated physical UI then completed both Recent and Check Month actions.
+After each action, both reconciliation controls returned to enabled without a
+manual Refresh, clearing the completion-callback race regression. Across two
+manual production-Qt launches, the listener and hosted view started normally,
+the UI remained stable through consecutive bounded actions, and the final run
+closed normally with exit status zero. Stage 10 was accepted on 2026-09-05.

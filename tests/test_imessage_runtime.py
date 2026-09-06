@@ -30,6 +30,7 @@ from bmo.qt.views.imessage_relay import QtIMessageRelayView
 from bmo.features.imessage_relay.relay import MessagesReader, RelayStateStore
 from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
 from bmo.features.imessage_relay.relay.timestamps import APPLE_EPOCH
+from bmo.features.imessage_relay.incoming import IncomingDeliveryStatus
 from bmo.features.imessage_relay.receiver import (
     EVENT_PATH,
     encode_event_envelope,
@@ -325,6 +326,54 @@ class IMessageRuntimeRegistrationTests(unittest.TestCase):
                 "relay_config_invalid",
             )
 
+    def test_source_config_starts_and_closes_owned_incoming_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receiver_config, relay_config, _ = write_configs(root)
+            source_config = root / "source.json"
+            mount_path = root / "mounted" / "SMS"
+            source_config.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "host": "192.0.2.10",
+                        "username": "pi-bmo",
+                        "port": 22,
+                        "remote_path": "/SMS",
+                        "mount_path": str(mount_path),
+                        "known_hosts_path": str(root / "known_hosts"),
+                        "password_file": str(root / "password"),
+                        "poll_interval_seconds": 5,
+                        "scan_limit": 100,
+                        "delivery_limit": 500,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}),
+                patch("bmo.features.imessage_relay.feature.IncomingRelayWorker") as worker,
+            ):
+                worker.return_value.status.return_value = IncomingDeliveryStatus(
+                    "active", None, True, 1, 1
+                )
+                service = RelayRuntimeService(
+                    RelayFeatureConfig(
+                        receiver_config_path=receiver_config,
+                        relay_config_path=relay_config,
+                        messages_root=None,
+                        source_config_path=source_config,
+                    )
+                )
+                status = service.status()
+                service.close()
+
+            worker.return_value.start.assert_called_once_with()
+            worker.return_value.close.assert_called_once_with()
+            self.assertEqual(service._messages_root, mount_path.resolve())
+            self.assertEqual(status.incoming_state, "active")
+            self.assertTrue(status.source_mounted)
+
 
 class IMessageRuntimeReconciliationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -454,12 +503,16 @@ class IMessageRuntimeReconciliationTests(unittest.TestCase):
             try:
                 response = transport.send(body=body, headers=headers)
                 status = service.status()
+                feed = service.recent_items()
             finally:
                 transport.close()
                 service.close()
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(status.received_events, 1)
+        self.assertEqual(len(feed), 1)
+        self.assertEqual(feed[0].sender, "invented-runtime-handle")
+        self.assertEqual(feed[0].text, "invented runtime text")
         rendered = json.dumps(status.last_reconciliation, sort_keys=True)
         self.assertNotIn("invented runtime text", rendered)
 
@@ -527,6 +580,15 @@ class IMessageRuntimeViewTests(unittest.TestCase):
             reconcile_recent=recent,
             reconcile_month=month,
             on_close=closed,
+            feed_provider=lambda: (
+                {
+                    "kind": "message",
+                    "sender": "invented sender",
+                    "timestamp": "2026-09-05T00:00:00+00:00",
+                    "text": "invented message",
+                    "attachments": (),
+                },
+            ),
         )
 
         payload = view.payload()
@@ -538,6 +600,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
 
         self.assertEqual(payload["receivedEvents"], 4)
         self.assertEqual(payload["serviceMessage"], "Receiver is listening.")
+        self.assertEqual(payload["messages"][0]["text"], "invented message")
         recent.assert_called_once()
         month.assert_called_once()
         self.assertEqual(invalid_payload["error"], "Enter a UTC month as YYYY-MM.")

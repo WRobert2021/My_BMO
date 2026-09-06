@@ -10,6 +10,13 @@ Item {
         controller.requestViewAction(action, value === undefined ? "" : String(value))
     }
 
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+        onTriggered: send("relay_refresh")
+    }
+
     Rectangle {
         anchors.fill: parent
         color: "#e8f8fb"
@@ -109,55 +116,134 @@ Item {
                 }
             }
 
-            Rectangle {
+            RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                radius: 14
-                color: "white"
+                spacing: 12
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 9
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 3
+                    radius: 14
+                    color: "white"
 
-                    Label {
-                        text: "RECONCILIATION"
-                        color: "#102a5e"
-                        font.pixelSize: 17
-                        font.bold: true
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        text: viewModel.reconciliationMessage || ""
-                        color: "#58708c"
-                        wrapMode: Text.Wrap
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Button {
-                            text: viewModel.busy === true ? "CHECKING…" : "RECENT"
-                            enabled: viewModel.canReconcile === true
-                            onClicked: send("relay_reconcile_recent")
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 7
+
+                        Label {
+                            text: "INCOMING MESSAGES"
+                            color: "#102a5e"
+                            font.pixelSize: 17
+                            font.bold: true
                         }
-                        TextField {
-                            id: monthField
-                            Layout.preferredWidth: 130
-                            text: viewModel.currentMonth || ""
-                            placeholderText: "YYYY-MM"
+                        Label {
+                            Layout.fillWidth: true
+                            text: viewModel.incomingMessage || ""
+                            color: viewModel.incomingState === "active" ? "#2f9f83" : "#58708c"
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                        }
+                        ListView {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            spacing: 5
+                            model: viewModel.messages || []
+
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: ListView.view.width
+                                height: 58
+                                radius: 8
+                                color: "#eef8ff"
+
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.margins: 7
+                                    spacing: 2
+                                    Label {
+                                        width: parent.width
+                                        text: modelData.sender || "Unknown sender"
+                                        color: "#102a5e"
+                                        font.bold: true
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        width: parent.width
+                                        text: modelData.text || "Message"
+                                        color: "#334d68"
+                                        font.pixelSize: 12
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        width: parent.width
+                                        visible: (modelData.attachments || []).length > 0
+                                        text: (modelData.attachments || []).join(", ")
+                                        color: "#58708c"
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 2
+                    radius: 14
+                    color: "white"
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        spacing: 9
+
+                        Label {
+                            text: "RECONCILIATION"
+                            color: "#102a5e"
+                            font.pixelSize: 17
+                            font.bold: true
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: viewModel.reconciliationMessage || ""
+                            color: "#58708c"
+                            wrapMode: Text.Wrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Button {
+                                text: viewModel.busy === true ? "CHECKING…" : "RECENT"
+                                enabled: viewModel.canReconcile === true
+                                onClicked: send("relay_reconcile_recent")
+                            }
+                            TextField {
+                                id: monthField
+                                Layout.fillWidth: true
+                                text: viewModel.currentMonth || ""
+                                placeholderText: "YYYY-MM"
+                            }
                         }
                         Button {
                             text: "CHECK MONTH"
                             enabled: viewModel.canReconcile === true
                             onClicked: send("relay_reconcile_month", monthField.text)
                         }
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        visible: (viewModel.error || "") !== ""
-                        text: viewModel.error || ""
-                        color: "#b3261e"
-                        font.bold: true
-                        wrapMode: Text.Wrap
+                        Label {
+                            Layout.fillWidth: true
+                            visible: (viewModel.error || "") !== ""
+                            text: viewModel.error || ""
+                            color: "#b3261e"
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                        }
                     }
                 }
             }

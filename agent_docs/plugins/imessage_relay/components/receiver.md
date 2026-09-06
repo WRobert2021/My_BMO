@@ -17,11 +17,13 @@ authenticated attachment chunks for a previously committed pending manifest.
 ## Runtime and storage
 
 `load_receiver_config` rejects symlink/non-file/oversized/duplicate/unknown or
-mistyped config and loads the minimum-32-byte secret only from the configured
-environment variable. TLS cert/key are paired; absent TLS is allowed only with
-explicit loopback development. `build_server` loads TLS before binding, opens
-the private store, constructs authenticator/application/server, and closes
-partial resources on any failure.
+mistyped config. Schema 1 loads the minimum-32-byte secret from the configured
+environment variable for compatibility. Schema 2 loads it from a regular,
+non-symlink, owner-readable mode-`0600` file so production startup needs no
+interactive environment setup. TLS cert/key are paired; absent TLS is allowed
+only with explicit loopback development. `build_server` loads TLS before
+binding, opens the private store, constructs authenticator/application/server,
+and closes partial resources on any failure.
 
 `ReceiverStateStore` uses an `IMKR` application ID, schema version 2, WAL,
 foreign keys, `synchronous=FULL`, a `0600` file, and locked transactions over
@@ -41,6 +43,11 @@ Stage 6 adds a read-only, bounded receipt membership lookup. Under the same
 store lock it classifies at most 20 sender-provided event ID/digest pairs as
 `present`, `missing`, or `conflict` in request order. It never returns other
 kiosk IDs and has no delete or overwrite path.
+
+Stage 12 adds a bounded newest-first `recent_events()` read for the dedicated
+private kiosk relay view. It returns persisted canonical event JSON/digest and
+receipt time; it does not mutate receipt state or expose content through status
+or logs.
 
 `ReceiverServer` is threaded, size/time bounded, rejects chunked/unsupported
 bodies, caps binary chunks independently at 64 KiB, suppresses content logging,

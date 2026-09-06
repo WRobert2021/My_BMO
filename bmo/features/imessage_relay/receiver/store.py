@@ -113,6 +113,13 @@ class StoredAttachment:
     storage_path: Path | None
 
 
+@dataclass(frozen=True, slots=True)
+class StoredEvent:
+    event_json: str
+    event_digest: str
+    received_at_ms: int
+
+
 class ReceiverStateStore:
     """Own one kiosk-private SQLite database and serialize its transactions."""
 
@@ -350,6 +357,34 @@ class ReceiverStateStore:
             except sqlite3.Error as exc:
                 raise ReceiverStoreError("event could not be read") from exc
         return str(row["event_json"]) if row is not None else None
+
+    def recent_events(self, limit: int = 20) -> tuple[StoredEvent, ...]:
+        """Return a bounded newest-first feed for the private kiosk view."""
+
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("recent event limit must be from 1 through 100")
+        connection = self._require_connection()
+        with self._lock:
+            try:
+                rows = connection.execute(
+                    """
+                    SELECT event_json, event_digest, received_at_ms
+                    FROM received_events
+                    ORDER BY received_at_ms DESC, event_id DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            except sqlite3.Error as exc:
+                raise ReceiverStoreError("recent events could not be read") from exc
+        return tuple(
+            StoredEvent(
+                event_json=str(row["event_json"]),
+                event_digest=str(row["event_digest"]),
+                received_at_ms=int(row["received_at_ms"]),
+            )
+            for row in rows
+        )
 
     def begin_attachment_upload(
         self,

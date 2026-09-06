@@ -61,6 +61,8 @@ config/alarm_clock.json
 config/compact_face.json
 config/imessage_relay.json
 config/imessage_receiver.json
+config/imessage_source.json
+config/private/
 
 # --- Generated media ---
 camera_capture.jpg

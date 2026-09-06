@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 10
-current_chapter: Physical kiosk runtime and UI acceptance
+current_stage: 12
+current_chapter: Production incoming activation
 state: in_progress
-next_action: Sync and physically retest the reconciliation-control completion fix, then finish Stage 10 UI restart, shutdown, and stability checks without deployment or automatic startup.
+next_action: Provision the Stage 12 phone publisher and private kiosk configuration, then accept one automatic live arrival and restart/outage recovery; stop before Stage 13 outbound work.
 last_verified: 2026-09-05
 
 ## Stage index
@@ -20,17 +20,19 @@ last_verified: 2026-09-05
 | 7 — attachment transfer | complete | bounded resumable digest-verified transfer accepted |
 | 8 — live iPhone read-only integration | complete | live disposable-copy discovery and source immutability accepted |
 | 9 — live relay | complete | physical Pi matrix, live event, SIGINT, and cleanup accepted |
-| 10 — runtime/UI integration | in progress | offline implementation/tests complete; physical kiosk acceptance pending |
+| 10 — runtime/UI integration | complete | physical Pi lifecycle, UI, reconciliation, restart, shutdown, and stability accepted |
 | 11 — package cleanup | complete | nested layout accepted after Pi relay/shared/full suites passed |
-| 12 — outbound Messages bridge | planned | deferred until Stage 10 is accepted; not authorized |
+| 12 — production incoming activation | in progress | implementation and invented tests pass; physical activation remains |
+| 13 — outbound Messages bridge | planned | not authorized |
 
 ## Current chapter
 
 ### Objective
 
-Complete the Stage 10 physical kiosk UI and runtime-lifecycle gate using the
-retained restricted phone export and explicit private Pi configuration,
-without default enablement, deployment, automatic startup, or outbound work.
+Activate the already tested incoming relay as an opt-in persistent kiosk
+service: automatically access the restricted read-only phone export, discover
+and deliver new events, and present them locally without beginning outbound
+Messages work.
 
 ### Completed
 
@@ -314,12 +316,43 @@ without default enablement, deployment, automatic startup, or outbound work.
   `graphics/icons/message.png` asset and added a resource-free metadata
   assertion. The protected graphic remains untouched and untracked. The
   focused metadata test passed, followed by all 13 runtime tests and all 113
-  relay tests plus 17 subtests.
-- The operator confirmed outbound text replies, photo/video sends, and
-  reactions remain final product requirements. A separately authorized Stage
-  12 will plan a phone-side bridge and Python 3.9.9 environment only after the
-  incoming Stage 9/10 gates; no phone environment or outbound behavior is
-  authorized now.
+  relay tests plus 17 subtests. After synchronization, the physical Pi
+  confirmed the existing icon was readable and passed all 13 runtime tests in
+  1.06 seconds.
+- The updated physical UI completed both Recent and Check Month. After each
+  action, both controls returned to enabled without pressing Refresh, clearing
+  the physical completion-callback regression. The requested message icon was
+  visibly present. Two manual production-Qt launches supplied restart evidence;
+  the UI remained stable through consecutive bounded actions, and the final
+  run closed normally with exit status zero. Stage 10 is accepted.
+- The operator authorized production incoming activation as Stage 12 and moved
+  outbound text replies, photo/video sends, and reactions to Stage 13. Phone
+  host/user settings and a private password-file reference may persist so the
+  kiosk does not prompt at startup; credentials must not enter tracked JSON,
+  command arguments, or logs.
+- Documented the Stage 12 gate before implementation. Added schema-1 private
+  phone source configuration, password-file validation, strict host-key/read-
+  only SSHFS mounting, bounded outage recovery, and owned unmount cleanup.
+- Added a plugin-owned incoming worker that copies the DB trio before SQLite
+  inspection, scans from the durable cursor, delivers through the existing
+  authenticated in-process receiver, retries on later cycles, and starts only
+  when an explicit source configuration is present.
+- Added receiver schema 2 for a mode-`0600` shared-secret file, an interactive
+  one-time private configurator that persists phone login without echoing it,
+  and an ignored `config/private/` boundary. No password appears in JSON,
+  process arguments, logs, or tracked data.
+- Added a bounded receiver feed and local relay-view message list with a
+  two-second UI refresh. Private sender/message content is available only in
+  that dedicated view; generic status remains aggregate/content-free.
+- Added a root-owned iPhone shell publisher and launchd template that build and
+  verify a read-only `.SMS.next`, apply the existing restricted ownership and
+  modes, and atomically rotate it into `/SMS`. It never invokes SQLite or
+  changes Apple source ownership/permissions.
+- Focused Stage 12/receiver/runtime verification passes: 43 tests and 9
+  subtests. The complete relay suite passes: 120 tests and 17 subtests. Shared
+  extension/runtime-menu/Qt/setup verification passes: 72 tests and 40
+  subtests. The complete repository suite passes with 836 tests and 10,002
+  subtests. Physical provisioning and one automatic live arrival remain.
 
 ### Remaining and boundary
 
@@ -327,26 +360,22 @@ Stage 11 is complete. Its relocation/static checks, physical-Pi relay suite,
 shared extension/runtime-menu/Qt/setup suite, and complete repository suite all
 pass after the access-time portability correction.
 
-Offline Stage 10 implementation acceptance is complete. Stage 10 remains absent
-from defaults and reads private config or starts resources only when explicitly
-enabled. Physical touch/VNC, listener binding, shutdown/restart, and long-run
-stability remain unverified on the now-online kiosk. Live phone/kiosk contact
-so far was limited to the completed standalone Stage 9 matrix; no Stage 10
-private provisioning or runtime start, deployment, daemon, automatic startup,
-or outbound Messages action has occurred.
+Stage 10 is complete. The physical kiosk passed listener binding, touch/VNC UI,
+recent/month controls, restart, clean shutdown, and bounded stability. The
+feature remains absent from defaults and reads private config or starts
+resources only when explicitly enabled. No deployment, daemon, automatic
+startup, or outbound Messages action occurred.
 
 Stage 9 is complete. Its physical supported-backlog, real-attachment,
 authentication, lost-ACK, receiver-outage, duplicate/durable receipt,
 relay/receiver restart, stable-source, source-offline/recovery, post-baseline
 live-event, SIGINT, and explicit cleanup cases all passed on the Raspberry Pi.
 
-Stage 10 requires physical kiosk touch/VNC, listener binding, shutdown/restart,
-and stability evidence on the now-online kiosk.
-
-Stage 12 outbound planning remains queued behind incoming Stage 10.
-The proposed iPhone Python 3.9.9 environment and any additional phone-side
-dependency, service, credential, or daemon must be evaluated and explicitly
-authorized in that stage; no direct Apple database write is permitted.
+Stage 12 production incoming activation is authorized and in progress. Stage
+13 outbound planning remains gated on separate explicit authorization.
+The proposed iPhone Python 3.9.9 environment and any additional outbound
+dependency, credential, or sending service must be evaluated and explicitly
+authorized in Stage 13; no direct Apple database write is permitted.
 
 Known later-stage risks remain: production endpoint trust, TLS/key provisioning,
 iPhone clock skew, scheduling, retention/pruning, and unverified edits,

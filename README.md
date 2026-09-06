@@ -26,21 +26,21 @@ Dopamine/rootless jailbroken iPhone and this Raspberry Pi kiosk. Its initial
 scope is incoming iMessage text, photos, videos, and tapbacks, with explicit
 kiosk acknowledgements and duplicate-safe delivery.
 
-The relay is **not deployable yet**. Local Stages 2–4 now include the read-only
-parser, relay-owned durable queue/retry state, and an authenticated,
-duplicate-safe standalone kiosk receiver. Sender integration, live-iPhone use,
-and BMO runtime registration have not begun. No live iPhone was contacted. Do
-not point existing application commands at
-`/var/mobile/Library/SMS`, and do not copy either private
-`iphone_snapshot*/` directory into source control.
+Incoming relay activation is now available as an explicit, opt-in Stage 12
+deployment. It continuously pulls only the phone's restricted read-only `/SMS`
+export, delivers new events through the plugin-owned durable receiver, and
+shows them in the BMO relay view. Outbound replies, media sends, and reactions
+remain gated for Stage 13. Never point application commands directly at
+`/var/mobile/Library/SMS`, and never copy private Messages data into source
+control.
 
 Safety boundaries:
 
 - Apple's Messages database and attachments are strictly read-only.
 - Relay queues, checkpoints, and acknowledgements will use separate storage.
 - Message sending and SMS/MMS relay are outside the initial scope.
-- Automatic iPhone startup/launch-daemon installation is not permitted during
-  initial development.
+- The Stage 12 phone snapshot publisher is installed only by an explicit
+  operator action; the repository setup script never deploys to the phone.
 - Secrets and private message or attachment content must not enter tracked
   configuration, logs, fixtures, or documentation.
 
@@ -74,6 +74,7 @@ be-more-agent/
 │   ├── example.compact_face.json # Tracked shared compact-face example
 │   ├── example.imessage_relay.json # Tracked relay-state example
 │   ├── example.imessage_receiver.json # Tracked receiver example
+│   ├── example.imessage_source.json # Tracked read-only phone-source example
 │   ├── settings.json          # Local user settings (ignored by Git)
 │   ├── features.json          # Local feature/mode wiring (ignored by Git)
 │   ├── weather.json           # Local locations/weather UI settings (ignored)
@@ -82,7 +83,8 @@ be-more-agent/
 │   ├── learning.json          # Local learning behavior/settings (ignored)
 │   ├── compact_face.json      # Local shared face layout/animation settings
 │   ├── imessage_relay.json    # Local relay-state/retry settings (ignored)
-│   └── imessage_receiver.json # Local receiver/TLS settings (ignored)
+│   ├── imessage_receiver.json # Local receiver settings (ignored)
+│   └── imessage_source.json   # Local phone login/mount settings (ignored)
 ├── bmo/data/                  # Plugin-owned local data
 │   ├── 20_questions/          # Base, learned, and recent-target data (ignored)
 │   ├── calendar/              # Local events and acknowledgments (ignored)
@@ -227,14 +229,18 @@ Configuration is split by audience:
   shared refresh/layout specification used by Menu, features, modes, and
   Weather. Its outer viewport is always 108×65; invalid files safely use
   defaults.
-- `config/imessage_relay.json` is reserved for the experimental relay's private
-  state path and retry policy. The relay is not yet connected to application
-  startup or the feature registry.
+- `config/imessage_relay.json`, `config/imessage_receiver.json`, and
+  `config/imessage_source.json` own the opt-in incoming relay's private state,
+  receiver, and restricted read-only phone login/mount settings. Passwords and
+  HMAC secrets live in mode-`0600` files under ignored `config/private/`, never
+  in JSON.
 
-The application does **not** create these local files. If a file is absent or
-invalid, BMO reports a parsing error when applicable and uses defaults for that
-file without writing anything. To keep local configuration, copy the tracked
-examples and edit the copies:
+The normal application runtime does **not** create these local files. If a file
+is absent or invalid, BMO reports a parsing error when applicable without
+writing configuration. The explicit iMessage incoming configurator is the one
+exception: it creates only ignored mode-`0600` relay configuration/secrets and
+updates the existing private feature list after prompting once for the phone
+password. Other configuration can be copied from tracked examples:
 
 ```bash
 cp config/example.settings.json config/settings.json
@@ -248,6 +254,20 @@ cp config/example.music.json config/music.json
 cp config/example.compact_face.json config/compact_face.json
 cp config/example.imessage_relay.json config/imessage_relay.json
 ```
+
+After the restricted phone account and pinned host key exist, configure and
+enable incoming iMessage once on the kiosk (use `venv/bin/python` on the Pi):
+
+```bash
+venv/bin/python -m bmo.features.imessage_relay.tools.configure_incoming \
+  --host PHONE_IP_ADDRESS \
+  --username pi-bmo
+```
+
+The password is read without echo and stored in an ignored owner-only file, so
+later BMO starts do not prompt. The phone snapshot publisher described in
+[`production_incoming.md`](agent_docs/plugins/imessage_relay/components/production_incoming.md)
+must also be installed explicitly before new messages can appear automatically.
 
 When upgrading from the former root `config.json`, move its `features` and
 `modes` entries into `config/features.json` and put every other entry in

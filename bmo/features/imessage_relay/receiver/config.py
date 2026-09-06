@@ -88,24 +88,25 @@ def load_receiver_config(
         raise ReceiverConfigError("receiver configuration is not valid JSON") from exc
     if not isinstance(value, dict):
         raise ReceiverConfigError("receiver configuration must be an object")
-    _exact_keys(
-        value,
-        {
-            "schema_version",
-            "bind_host",
-            "port",
-            "state_path",
-            "tls_cert_path",
-            "tls_key_path",
-            "allow_insecure_loopback",
-            "key_id",
-            "shared_secret_env",
-            "max_clock_skew_seconds",
-            "max_request_bytes",
-            "request_timeout_seconds",
-        },
-    )
-    if _positive_int(value["schema_version"], "schema version") != 1:
+    schema_version = _positive_int(value.get("schema_version"), "schema version")
+    common_fields = {
+        "schema_version",
+        "bind_host",
+        "port",
+        "state_path",
+        "tls_cert_path",
+        "tls_key_path",
+        "allow_insecure_loopback",
+        "key_id",
+        "max_clock_skew_seconds",
+        "max_request_bytes",
+        "request_timeout_seconds",
+    }
+    if schema_version == 1:
+        _exact_keys(value, common_fields | {"shared_secret_env"})
+    elif schema_version == 2:
+        _exact_keys(value, common_fields | {"shared_secret_file"})
+    else:
         raise ReceiverConfigError("receiver configuration version is unsupported")
     base = (
         Path(base_directory).expanduser().resolve(strict=False)
@@ -129,15 +130,28 @@ def load_receiver_config(
     allow_insecure = value["allow_insecure_loopback"]
     if not isinstance(allow_insecure, bool):
         raise ReceiverConfigError("allow_insecure_loopback must be a boolean")
-    secret_env = _string(value["shared_secret_env"], "shared secret environment variable")
-    environment = os.environ if environ is None else environ
-    secret_text = environment.get(secret_env)
-    if secret_text is None:
-        raise ReceiverConfigError("shared secret environment variable is not set")
-    try:
-        shared_secret = secret_text.encode("utf-8")
-    except UnicodeError as exc:
-        raise ReceiverConfigError("shared secret could not be encoded") from exc
+    if schema_version == 1:
+        secret_env = _string(
+            value["shared_secret_env"],
+            "shared secret environment variable",
+        )
+        environment = os.environ if environ is None else environ
+        secret_text = environment.get(secret_env)
+        if secret_text is None:
+            raise ReceiverConfigError("shared secret environment variable is not set")
+        try:
+            shared_secret = secret_text.encode("utf-8")
+        except UnicodeError as exc:
+            raise ReceiverConfigError("shared secret could not be encoded") from exc
+    else:
+        secret_path = _path(
+            value["shared_secret_file"],
+            "shared secret file",
+            base,
+            optional=False,
+        )
+        assert secret_path is not None
+        shared_secret = _read_private_secret(secret_path)
     return ReceiverConfig(
         bind_host=bind_host,
         port=port,
@@ -218,3 +232,21 @@ def _positive_int(value: object, label: str) -> int:
     if result == 0:
         raise ReceiverConfigError(f"{label} must be a positive integer")
     return result
+
+
+def _read_private_secret(path: Path) -> bytes:
+    if path.is_symlink() or not path.is_file():
+        raise ReceiverConfigError("shared secret file is unavailable")
+    try:
+        info = path.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ReceiverConfigError("shared secret file permissions are unsafe")
+        raw = path.read_bytes()
+    except ReceiverConfigError:
+        raise
+    except OSError as exc:
+        raise ReceiverConfigError("shared secret file is unavailable") from exc
+    secret = raw[:-1] if raw.endswith(b"\n") else raw
+    if len(secret) < 32 or b"\n" in secret or b"\r" in secret or b"\x00" in secret:
+        raise ReceiverConfigError("shared secret file is invalid")
+    return secret

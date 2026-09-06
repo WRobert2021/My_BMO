@@ -44,6 +44,7 @@ from .store import (
     ReceiverStateStore,
     ReceiverStoreError,
     StoredAttachment,
+    StoredEvent,
 )
 
 __all__ = [
@@ -75,6 +76,7 @@ __all__ = [
     "ValidatedUploadSessionRequest",
     "ValidatedUploadSessionResponse",
     "StoredAttachment",
+    "StoredEvent",
     "attachment_chunk_path",
     "attachment_chunk_response_body",
     "ValidatedReconciliationRequest",
