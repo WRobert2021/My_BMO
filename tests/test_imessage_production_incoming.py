@@ -236,6 +236,9 @@ class ProductionIncomingTests(unittest.TestCase):
             (config_root / "private/imessage_source.password").stat().st_mode & 0o777,
             0o600,
         )
+        relay_state_root = self.root / "bmo/data/imessage_relay"
+        self.assertTrue(relay_state_root.is_dir())
+        self.assertEqual(relay_state_root.stat().st_mode & 0o777, 0o700)
         feature = json.loads(feature_text)["features"][0]
         self.assertTrue(feature["enabled"])
         self.assertEqual(

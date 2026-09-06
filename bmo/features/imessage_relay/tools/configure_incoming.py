@@ -12,6 +12,8 @@ import secrets
 import tempfile
 from typing import Any
 
+from bmo.features.imessage_relay.relay import RelayStateError, load_state_config
+
 
 def configure(args: argparse.Namespace) -> None:
     project_root = Path(args.project_root).expanduser().resolve()
@@ -97,6 +99,11 @@ def configure(args: argparse.Namespace) -> None:
                 },
             },
         )
+    try:
+        relay_config = load_state_config(relay_path, base_directory=project_root)
+    except RelayStateError as error:
+        raise ValueError("private relay state configuration is invalid") from error
+    _ensure_private_directory(relay_config.state_path.parent)
     _enable_feature(features_path, features)
 
 
@@ -183,6 +190,19 @@ def _validate_existing_password(path: Path) -> None:
     if not password.endswith(b"\n") or not password[:-1] or b"\n" in password[:-1]:
         raise ValueError("existing private phone password must be one non-empty line")
     del password
+
+
+def _ensure_private_directory(path: Path) -> None:
+    if path.is_symlink():
+        raise ValueError("private relay state directory is unavailable")
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        metadata = path.stat()
+        if not path.is_dir() or metadata.st_uid != os.getuid():
+            raise ValueError("private relay state directory is unavailable")
+        os.chmod(path, 0o700)
+    except OSError as error:
+        raise ValueError("private relay state directory is unavailable") from error
 
 
 def parse_args() -> argparse.Namespace:

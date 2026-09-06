@@ -92,6 +92,11 @@ printing secret contents. A missing private `features.json` is initialized from
 the tracked feature template; an existing symlink or malformed file still
 fails closed rather than being overwritten.
 
+The configurator also resolves the configured relay-state database and creates
+its plugin-owned parent directory as owner-only (`0700`). The state manager
+continues to reject a missing parent itself, so non-configurator callers retain
+the Stage 3 fail-closed contract.
+
 The phone publisher is likewise explicit. Copy only the project-owned
 `refresh_snapshot.sh` and plist template to a temporary phone path through the
 normal `mobile` maintenance login. As `mobile`, install the script as
