@@ -359,7 +359,7 @@ class ReceiverStateStore:
         return str(row["event_json"]) if row is not None else None
 
     def recent_events(self, limit: int = 20) -> tuple[StoredEvent, ...]:
-        """Return a bounded newest-first feed for the private kiosk view."""
+        """Return a bounded newest-source-first feed for the private kiosk view."""
 
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError("recent event limit must be from 1 through 100")
@@ -370,7 +370,9 @@ class ReceiverStateStore:
                     """
                     SELECT event_json, event_digest, received_at_ms
                     FROM received_events
-                    ORDER BY received_at_ms DESC, event_id DESC
+                    ORDER BY
+                        CAST(json_extract(event_json, '$.timestamp_raw_ns') AS INTEGER) DESC,
+                        event_id DESC
                     LIMIT ?
                     """,
                     (limit,),

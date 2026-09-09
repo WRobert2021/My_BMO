@@ -33,6 +33,11 @@ available attachment data follows this sequence:
    the pending manifest and returns an ACK containing
    `attachment_status: complete`. Only that response acknowledges relay state.
 
+The phone sender reuses one HTTP/TLS connection across that single delivery,
+including all bounded chunk requests, and releases it when the delivery ends.
+This avoids a TLS handshake for every 64-KiB chunk while preventing an idle
+server timeout from affecting the next event.
+
 The maximum accepted size of one attachment blob is 2 GiB. Whole attachment
 bytes are never placed in JSON, base64 encoded, loaded into memory, or stored
 inside either SQLite database.

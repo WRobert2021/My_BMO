@@ -38,7 +38,8 @@ Enabled registration:
 3. binds and starts one owned receiver thread; and
 4. starts the independent phone-control coordinator when its private
    configuration is valid; and
-5. exposes aggregate status plus the private newest-first incoming feed.
+5. exposes aggregate status plus a bounded private incoming feed selected from
+   the newest source events and rendered oldest-to-newest.
 
 Failure registers a degraded relay surface without preventing BMO startup.
 Cleanup closes the view, stops and joins the listener, closes the socket/store,
@@ -71,7 +72,9 @@ phone control and reconciliation.
 ## UI
 
 The relay view shows receiver availability, durable receipt/attachment counts,
-and messages from the kiosk-owned receiver database. Its two-second refresh
+and messages from the kiosk-owned receiver database in Apple source-time order.
+Receipt time is not used for display ordering because an offline backlog may
+arrive within one receipt-clock tick. Its two-second refresh
 reads local state only. The message model changes only when feed content changes
 and preserves a non-top scroll position.
 

@@ -71,12 +71,17 @@ Implemented in the local Stage 12 runtime:
 - a dedicated-account launchd definition plus bounded phone maintenance
   command for status, full stop, start, and confirmed uninstall.
 
-The dedicated non-login `pi-bmo` service account is now provisioned on the
-phone as UID 1002 and GID 1001. Pending Stage 12 work is private TLS/HMAC
-provisioning, a verified inherited read-only ACL for Apple SMS input, reviewed
-phone launchd installation, physical `kqueue` and live schema verification,
-and the complete physical incoming acceptance matrix without SSHFS or
-snapshots.
+The dedicated non-login `pi-bmo` service account is provisioned on the phone
+as UID 1002 and GID 1001, with private TLS/HMAC material and a verified
+inherited read-only Apple SMS ACL. The runtime, maintenance command, and
+launchd job are installed. Physical testing found that direct system-launchd
+execution lacks the iOS `mobile` persona required by the protected SMS path;
+an exact-command `mobile` launch bridge that immediately drops to `pi-bmo` is
+installed and working. Physical `kqueue` delivery now passes text bursts,
+stable scrolling, photo/video, reaction add/remove, and kiosk-offline recovery.
+Locally verified corrections for source-time feed ordering and per-delivery
+TLS connection reuse still require physical deployment and retest before the
+incoming acceptance matrix can close.
 
 The abandoned Stage 12 SSHFS source manager, kiosk polling worker, persistent
 phone-login configurator, and snapshot publisher are removed from active code.

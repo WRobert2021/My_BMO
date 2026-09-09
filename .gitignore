@@ -86,8 +86,11 @@ graphics/Paw Patrol
 /bmo/data/20_questions/data.jsonl
 /bmo/data/20_questions/learned.jsonl
 /bmo/data/20_questions/history.json
-/bmo/data/calendar/
-/bmo/data/learning/
+/bmo/data/calendar/acknowledgements.json
+/bmo/data/calendar/events.json
+/bmo/data/learning/plans.json
+/bmo/data/learning/profiles.json
+/bmo/data/learning/progress.json
 /bmo/data/music/
 /bmo/data/alarms/
 /bmo/data/imessage_relay/

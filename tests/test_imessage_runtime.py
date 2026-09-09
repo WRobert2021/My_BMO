@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import os
@@ -24,11 +25,15 @@ from bmo.features.imessage_relay import (
 )
 from bmo.features.imessage_relay.receiver import (
     EVENT_PATH,
+    decode_event_envelope,
     encode_event_envelope,
     sign_request,
 )
 from bmo.features.imessage_relay.phone_control import PhoneControlRuntimeStatus
-from bmo.features.imessage_relay.relay import MessagesReader
+from bmo.features.imessage_relay.relay import (
+    MessagesReader,
+    apple_nanoseconds_to_datetime,
+)
 from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
 from bmo.features.imessage_relay.relay.timestamps import APPLE_EPOCH
 from bmo.features.loader import DEFAULT_FEATURE_MODULES, load_feature_registry
@@ -327,6 +332,42 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
         self.assertEqual(feed[0].sender, "invented-runtime-handle")
         self.assertEqual(feed[0].text, "invented runtime text")
         self.assertIsNone(status.last_reconciliation)
+
+    def test_feed_renders_same_receipt_batch_in_source_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = RuntimeMessagesFixture(root)
+            receiver_config = write_receiver_config(root)
+            first = MessagesReader(
+                fixture.database_path,
+                messages_root=fixture.messages_root,
+            ).scan(limit=10).events[0]
+            with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
+                service = RelayRuntimeService(
+                    RelayFeatureConfig(receiver_config_path=receiver_config)
+                )
+                try:
+                    for index, text in enumerate(("first", "second", "third"), 1):
+                        timestamp = first.timestamp_raw_ns + index * 1_000_000_000
+                        event = replace(
+                            first,
+                            event_id=f"EVENT-{4 - index}",
+                            message_id=f"EVENT-{4 - index}",
+                            source_rowid=index,
+                            timestamp_raw_ns=timestamp,
+                            timestamp_utc=apple_nanoseconds_to_datetime(timestamp),
+                            text=text,
+                        )
+                        envelope = decode_event_envelope(
+                            encode_event_envelope(event, f"REQUEST-{index}")
+                        )
+                        service._receiver_store.ingest(envelope, received_at_ms=100)
+                    feed = service.recent_items()
+                finally:
+                    service.close()
+                    fixture.close()
+
+        self.assertEqual([item.text for item in feed], ["first", "second", "third"])
 
     def test_reconciliation_is_unavailable_until_phone_control_exists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

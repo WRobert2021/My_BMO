@@ -236,6 +236,34 @@ class ReceiverStoreTests(unittest.TestCase):
             self.assertEqual(reopened.summary().event_count, 1)
             self.assertEqual(reopened.get_event_json("EVENT-INVENTED"), self.envelope.event_json)
 
+    def test_recent_events_use_source_time_when_receipts_share_a_timestamp(self) -> None:
+        events = []
+        for event_id, text, timestamp in (
+            ("Z-FIRST", "first", 1_000_000_000),
+            ("M-SECOND", "second", 2_000_000_000),
+            ("A-THIRD", "third", 3_000_000_000),
+        ):
+            event = replace(
+                _message_event(text=text),
+                event_id=event_id,
+                message_id=event_id,
+                timestamp_raw_ns=timestamp,
+                timestamp_utc=apple_nanoseconds_to_datetime(timestamp),
+            )
+            events.append(
+                decode_event_envelope(encode_event_envelope(event, event_id))
+            )
+
+        with ReceiverStateStore(self.state_path) as store:
+            for event in events:
+                store.ingest(event, received_at_ms=100)
+            recent = store.recent_events(limit=2)
+
+        self.assertEqual(
+            [json.loads(item.event_json)["text"] for item in recent],
+            ["third", "second"],
+        )
+
     def test_nonce_replay_is_rejected_across_restart(self) -> None:
         with ReceiverStateStore(self.state_path) as store:
             store.reserve_nonce(

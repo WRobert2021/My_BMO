@@ -1,10 +1,10 @@
 # iMessage Relay Progress
 
 current_stage: 12
-current_chapter: Dedicated-account provisioning and physical activation gate
+current_chapter: Physical ordering/throughput corrections and final acceptance
 state: in_progress
-next_action: Validate a narrow inherited read-only Apple SMS ACL for the newly created non-login pi-bmo identity, provision private HMAC/TLS material for kiosk 192.168.0.36 and phone 192.168.0.42, install/validate the phone launchd job and mobile-administered maintenance command, then run the Stage 12 physical incoming matrix. Do not begin Stage 13.
-last_verified: 2026-09-06
+next_action: Deploy the locally verified source-time feed ordering and persistent per-delivery TLS transport, repeat offline ordering and large-video checks, then finish restart/reconciliation/cleanup acceptance. Do not begin Stage 13.
+last_verified: 2026-09-08
 
 ## Stage index
 
@@ -40,7 +40,7 @@ last_verified: 2026-09-06
   local compatibility environment is CPython 3.9.6 and the physical phone has
   CPython 3.9.9.
 - The phone daemon runs as dedicated non-login `pi-bmo`; `mobile` remains the
-  SSH administrator only. A narrowly scoped inherited read/traverse ACL must let `pi-bmo` read
+  SSH administrator and supplies the iOS launch persona only. A narrowly scoped inherited read/traverse ACL lets `pi-bmo` read
   current and newly created Apple SMS inputs without write rights or POSIX mode
   changes. Because `/bin/chmod` is absent on the phone, a dependency-free
   Darwin ACL API helper owns exact grant/revoke behavior.
@@ -57,6 +57,20 @@ last_verified: 2026-09-06
   Procursus `wheel` entry from a private backup and rolls access back if
   deletion does not complete. The `mobile` account and Apple Messages data are
   retained.
+- Physical launch testing established that system launchd cannot give a
+  Procursus-only UID the iOS persona needed for the protected SMS path. The
+  reviewed bridge starts in the built-in `mobile` context, permits exactly one
+  immutable launcher command through passwordless sudo, then validates and
+  permanently drops to UID 1002/GID 1001 before configuration or Apple data is
+  accessed. The top-level service directory is traverse-only to other users;
+  private files and state remain restricted.
+- The kiosk selects its bounded recent feed by Apple source timestamp and
+  renders that window oldest-to-newest. Receipt timestamps are not an ordering
+  authority because a recovered backlog may be accepted within one second.
+- One phone-to-kiosk HTTP/TLS connection is reused across the signed event,
+  attachment session, bounded 64-KiB chunks, and completion ACK for a single
+  delivery. It is closed when that delivery ends so idle server disconnects
+  cannot poison the next event.
 
 ## Cleanup status
 
@@ -84,14 +98,15 @@ last_verified: 2026-09-06
 ## Verification status
 
 - Kiosk Stage 12 control/configuration and lifecycle focus: 19 tests passed.
-- Standalone CPython 3.9.6 compatibility suite: 35 tests passed, including strict
+- Standalone CPython 3.9.6 compatibility suite: 39 tests passed, including strict
   private configuration, cursor/backlog restart, the resume-only retry latch,
   read-only burst discovery, text/reaction/photo/video materialization,
   attachment streaming, bounded reconciliation, service orchestration, and a
   real loopback control-listener request plus a real macOS/Darwin SQLite-WAL
   filesystem wake. The Darwin ACL test verifies grant inheritance, exact
   revocation, preservation of unrelated ACL entries, and unchanged modes and
-  owners. Deployment tests validate `pi-bmo` launchd ownership and bounded
+  owners. Deployment tests validate the exact sudoers command, mobile-persona
+  launch shape, immediate privilege drop, and bounded
   stop/start/status/uninstall command structure.
 - Shared phone/kiosk control canonical body and HMAC vectors match. An actual
   local phone sender-to-kiosk receiver loopback delivered one invented event,
@@ -105,7 +120,17 @@ last_verified: 2026-09-06
   phone preflight found CPython 3.9.9 and no Apple BSD `/bin/chmod`; user/group
   next values were `1002:1001`. The dedicated non-login `pi-bmo` identity is
   now provisioned as UID 1002 and GID 1001; its pre-change group-database
-  backup remains private until activation succeeds. The new runtime has not
-  been deployed: the Apple SMS ACL and production certificates/secrets are not
-  provisioned, the phone's actual `kqueue`
-  behavior has not been observed, and no launchd job is installed.
+  backup remains private until activation succeeds. The runtime, private
+  TLS/HMAC material, exact Apple SMS ACL, launchd job, and maintenance command
+  are installed. Five foreground service cycles passed after dropping to UID
+  1002/GID 1001. Direct system-launchd execution still failed at the protected
+  SMS path, which isolated the missing iOS persona; the reviewed exact-command
+  bridge is installed with a later-sorting exact NOPASSWD rule, the process
+  remains running, and authenticated kiosk health succeeds. Live `kqueue`
+  delivery passed for immediate text, back-to-back text, stable scrolling,
+  photo, an 18–20-MiB video, reaction add/remove, and kiosk-offline recovery.
+  The offline batch exposed unstable display ordering when receipts shared a
+  timestamp, and the large video exposed per-chunk TLS handshake overhead;
+  both corrections pass locally and await physical deployment/retest.
+- Current complete kiosk relay suite: 125 tests and 21 subtests passed. Current
+  complete standalone phone suite: 39 tests passed.

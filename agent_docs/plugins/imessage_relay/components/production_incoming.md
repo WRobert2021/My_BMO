@@ -31,12 +31,13 @@ identifier backlog, cursor, and bounded operational state.
 The sibling project includes a rootless launchd example that runs continuously
 as the dedicated non-login `pi-bmo` account after one-time private provisioning.
 `mobile` remains the SSH administrator and is not the service identity. Because the
-Apple SMS directory is private to `mobile`, provisioning must grant `pi-bmo`
+Apple SMS directory is private to `mobile`, provisioning grants `pi-bmo`
 an inherited read/traverse ACL scoped to that directory. The grant must not add
 write authority or change Apple ownership/POSIX mode bits, and both existing
-and newly created attachment access must be verified. The launchd definition
-and access grant are tracked/planned for review but have not been installed on
-the phone.
+and newly created attachment access is verified. The account, access grant,
+runtime, private material, launchd definition, maintenance command, and
+corrected mobile-persona launch bridge are installed on the phone. The bridge
+has passed authenticated kiosk health plus live delivery.
 
 The phone does not provide the Apple BSD ACL-capable `/bin/chmod`. The
 dependency-free `phone_relay.access` administrator helper therefore uses the
@@ -64,6 +65,11 @@ TLS and independent HMAC secrets.
 6. The kiosk validates and durably commits each event, completes any required
    attachment uploads, and returns the existing strict event ACK.
 7. Only the exact validated kiosk ACK removes the phone backlog entry.
+
+One connection is retained across the requests for a single event, including
+all bounded attachment chunks, and then closed. This avoids repeated TLS
+handshakes during large media transfer without retaining an idle connection
+that the receiver may have timed out.
 
 Coalesced notifications and several senders or back-to-back messages are safe
 because each wake scans the complete ROWID interval after the cursor. A later
@@ -126,6 +132,10 @@ schedules a bounded recent reconciliation weekly. Retired `source_config_path`,
 `relay_config_path`, and `messages_root` feature settings are ignored and
 acquire no mount, worker, source file, or relay-state resource.
 
+The feed selects a bounded window using Apple source timestamps and presents
+it oldest-to-newest. Kiosk receipt time is not a display-order authority:
+several recovered events can share the same receipt-clock tick.
+
 ## Migration cleanup
 
 Repository cleanup removes:
@@ -187,7 +197,8 @@ administrator can invoke `status`, `start`, `stop`, or `uninstall` through this
 one command. Stop boots the system launchd job out, which removes the observer,
 control listener, retry timers, and all network activity rather than merely
 pausing delivery. Start validates the fixed plist/runtime/config locations,
-bootstraps the job when absent, and kickstarts it.
+bootstraps the job when absent, waits briefly, and reports success only when
+launchd still reports the process as running.
 
 Uninstall requires the exact typed phrase `REMOVE BMO PHONE RELAY`, stops first,
 then revokes the exact relay ACL, validates and deletes only the non-privileged
@@ -200,6 +211,21 @@ this phone's Procursus group database lacks the `wheel` entry required by
 only `wheel:*:0:root`, and removes that entry immediately afterward. If
 account deletion fails while the identity remains, the command restores the
 group database and the relay's read-only ACL before stopping.
+
+System launchd on this rootless jailbreak cannot give a Procursus-only UID the
+iOS `mobile` persona needed for Apple's protected SMS path. The installed job
+therefore starts in the built-in `mobile` context through one root-owned
+sudoers rule that permits only the exact fixed Python launcher command. The
+fragment sorts after the broader Procursus administrator rule because sudoers
+uses the last matching authentication tag. The
+launcher validates the account databases, clears supplementary groups,
+permanently drops to the resolved non-privileged UID/GID, and only then imports
+configuration or accesses Apple data. Post-drop UID and GID are verified
+directly; this iOS build cannot reliably report supplementary groups for the
+Procursus-only identity. The top-level service directory is mode `0751` only
+so launchd can enter it before elevation; package files, private material,
+state, and child directories remain restricted to root and `pi-bmo`. Uninstall
+removes the exact sudoers rule.
 
 ## Stage 12 acceptance
 
