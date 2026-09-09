@@ -554,6 +554,10 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         qml_root = Path(__file__).resolve().parents[1] / "bmo/qt/qml"
         source = (qml_root / "IMessageRelayView.qml").read_text(encoding="utf-8")
         hosted = (qml_root / "HostedView.qml").read_text(encoding="utf-8")
+        adapter = (
+            Path(__file__).resolve().parents[1]
+            / "bmo/qt/views/imessage_relay.py"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("function syncMessages()", source)
         self.assertIn("model: root.displayedMessages", source)
@@ -563,6 +567,14 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIn("model: messageCard.modelData.reactions || []", source)
         self.assertIn("function reactionIcon(kind)", source)
         self.assertIn('root.send("relay_open_attachment", modelData.path)', source)
+        self.assertIn("import QtMultimedia", source)
+        self.assertIn('objectName: "relayMediaViewer"', source)
+        self.assertIn('objectName: "relayPhotoViewer"', source)
+        self.assertIn('objectName: "relayVideoViewer"', source)
+        self.assertIn('objectName: "relayMediaPlayer"', source)
+        self.assertIn("MediaPlayer {", source)
+        self.assertIn('root.send("relay_close_attachment")', source)
+        self.assertNotIn("QDesktopServices", adapter)
         self.assertNotIn("RECEIVER AVAILABLE", source)
         self.assertNotIn("RECEIVED", source)
         self.assertNotIn("RECONCILIATION", source)
@@ -607,7 +619,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         values.update(changes)
         return RelayRuntimeStatus(**values)
 
-    def test_qt_view_payload_and_actions_open_only_current_attachments(self) -> None:
+    def test_qt_view_payload_and_actions_select_only_current_attachments(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             attachment = Path(directory) / "invented.jpg"
             attachment.write_bytes(b"invented")
@@ -641,12 +653,15 @@ class IMessageRuntimeViewTests(unittest.TestCase):
             )
 
             payload = view.payload()
-            with patch(
-                "bmo.qt.views.imessage_relay.QDesktopServices.openUrl",
-                return_value=True,
-            ) as open_url:
-                view.handle_action("relay_open_attachment", str(attachment))
-                view.handle_action("relay_open_attachment", str(attachment.parent / "other"))
+            view.handle_action("relay_open_attachment", str(attachment))
+            selected_payload = view.payload()
+            view.handle_action("relay_close_attachment", "")
+            closed_payload = view.payload()
+            view.handle_action(
+                "relay_open_attachment",
+                str(attachment.parent / "other"),
+            )
+            unavailable_attachment_payload = view.payload()
             view.handle_action("relay_reconcile_recent", "")
             unavailable_payload = view.payload()
             view.handle_action("relay_reconcile_month", "private-value")
@@ -659,10 +674,18 @@ class IMessageRuntimeViewTests(unittest.TestCase):
             payload["messages"][0]["reactions"],
             [{"kind": "thumbs_up", "count": 1}],
         )
-        self.assertEqual(open_url.call_count, 1)
         self.assertEqual(
-            Path(open_url.call_args.args[0].toLocalFile()),
+            Path(selected_payload["selectedAttachment"]["source"].toLocalFile()),
             attachment.resolve(),
+        )
+        self.assertEqual(
+            selected_payload["selectedAttachment"]["mediaCategory"],
+            "photo",
+        )
+        self.assertIsNone(closed_payload["selectedAttachment"])
+        self.assertEqual(
+            unavailable_attachment_payload["error"],
+            "Attachment is unavailable.",
         )
         self.assertEqual(unavailable_payload["error"], "Reconciliation is unavailable.")
         self.assertEqual(invalid_payload["error"], "Enter a UTC month as YYYY-MM.")

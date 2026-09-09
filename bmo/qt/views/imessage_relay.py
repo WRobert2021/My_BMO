@@ -1,4 +1,4 @@
-"""Qt/QML adapter for content-free iMessage Relay status and controls."""
+"""Qt/QML adapter for the private relay feed and contained media viewer."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import re
 from typing import Any
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
 
 from bmo.qt.views.base import QtHostedView
 
@@ -37,14 +36,15 @@ class QtIMessageRelayView(QtHostedView):
         self.reconcile_month = reconcile_month
         self.feed_provider = feed_provider or (lambda: ())
         self.error = ""
-        self._attachment_paths: set[str] = set()
+        self._attachments_by_path: dict[str, dict[str, object]] = {}
+        self._selected_attachment_path: str | None = None
         super().__init__(host, on_close=on_close)
 
     def payload(self) -> dict[str, object]:
         status = self.status_provider()
         report = dict(status.last_reconciliation or {})
         messages = []
-        attachment_paths: set[str] = set()
+        attachments_by_path: dict[str, dict[str, object]] = {}
         for item in self.feed_provider():
             if is_dataclass(item) and not isinstance(item, type):
                 message = asdict(item)
@@ -61,9 +61,12 @@ class QtIMessageRelayView(QtHostedView):
                     continue
                 path = attachment.get("path")
                 if isinstance(path, str) and Path(path).is_absolute():
-                    attachment_paths.add(str(Path(path).resolve(strict=False)))
+                    attachments_by_path[str(Path(path).resolve(strict=False))] = attachment
             messages.append(message)
-        self._attachment_paths = attachment_paths
+        self._attachments_by_path = attachments_by_path
+        if self._selected_attachment_path not in attachments_by_path:
+            self._selected_attachment_path = None
+        selected_attachment = self._selected_attachment()
         return {
             "serviceState": status.service_state,
             "serviceMessage": _service_message(
@@ -94,6 +97,7 @@ class QtIMessageRelayView(QtHostedView):
                 status.incoming_error_code,
             ),
             "messages": messages,
+            "selectedAttachment": selected_attachment,
         }
 
     def handle_action(self, action: str, value: str) -> None:
@@ -103,6 +107,10 @@ class QtIMessageRelayView(QtHostedView):
             return
         if action == "relay_open_attachment":
             self._open_attachment(value)
+            return
+        if action == "relay_close_attachment":
+            self._selected_attachment_path = None
+            self.refresh()
             return
         if action == "relay_reconcile_recent":
             self._start(self.reconcile_recent(self.refresh))
@@ -138,12 +146,30 @@ class QtIMessageRelayView(QtHostedView):
             or not candidate.is_absolute()
             or candidate.is_symlink()
             or not resolved.is_file()
-            or str(resolved) not in self._attachment_paths
+            or str(resolved) not in self._attachments_by_path
         ):
             self.error = "Attachment is unavailable."
-        elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))):
-            self.error = "Attachment could not be opened."
+        else:
+            self._selected_attachment_path = str(resolved)
         self.refresh()
+
+    def _selected_attachment(self) -> dict[str, object] | None:
+        path = self._selected_attachment_path
+        if path is None:
+            return None
+        attachment = self._attachments_by_path.get(path)
+        if attachment is None:
+            return None
+        category = attachment.get("media_category")
+        if category not in {"photo", "audio", "video"}:
+            return None
+        label = attachment.get("label")
+        return {
+            "path": path,
+            "source": QUrl.fromLocalFile(path),
+            "label": label if isinstance(label, str) else Path(path).name,
+            "mediaCategory": category,
+        }
 
     def _start(self, started: bool) -> None:
         if not started:

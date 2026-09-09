@@ -91,10 +91,14 @@ state only. The message model changes only when feed content changes and
 preserves a non-top scroll position.
 
 Each completed attachment is rendered as an explicit open button. The Qt
-adapter permits opening only a current feed path that exists as a regular,
-non-symlink file. It delegates the validated local file URL to the kiosk's
-configured desktop handler. An unavailable blob or failed desktop open is
-reported in the view without affecting receiver lifecycle.
+adapter permits selecting only a current feed path that exists as a regular,
+non-symlink file. Photos render in a contained detail view following the Album
+presentation pattern. Video and audio use the version-matched Qt Multimedia
+player within that same hosted view, with play, pause, restart, and back
+controls. No desktop handler, VLC window, shell command, or second process is
+started. An unavailable blob or media decode error is reported in the view
+without affecting receiver lifecycle, and closing the attachment or hosted
+view stops playback.
 
 Reaction receipts are not rendered as separate messages. Both incoming and
 outgoing reactions are folded into their incoming target message. Each target
@@ -121,7 +125,7 @@ mounted-source status is exposed.
 `tests/test_imessage_runtime.py` covers opt-in registration, resource-free
 metadata, failure isolation, listener lifecycle, durable feed updates,
 reaction badge folding/removal, control-absent degradation, stable scrolling,
-compact view structure, validated attachment-open actions, and cleanup.
+compact view structure, validated in-app attachment selection, and cleanup.
 `tests/test_imessage_media_library.py` owns completed-media routing,
 deterministic publication, Live Photo component separation, and unavailable
 blob behavior.

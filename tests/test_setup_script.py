@@ -159,6 +159,7 @@ class SetupScriptTests(unittest.TestCase):
         self.assertIn("tqdm>=4,<5", requirements)
         self.assertIn("scikit-learn>=1,<2", requirements)
         self.assertIn("PySide6-Essentials==6.11.1", requirements)
+        self.assertIn("PySide6-Addons==6.11.1", requirements)
         self.assertIn(
             'openwakeword==0.6.0; platform_system != "Linux" or '
             'python_version < "3.12"',
@@ -167,6 +168,7 @@ class SetupScriptTests(unittest.TestCase):
         for module in (
             "QtCore",
             "QtGui",
+            "QtMultimedia",
             "QtQml",
             "QtQuick",
             "QtQuickControls2",

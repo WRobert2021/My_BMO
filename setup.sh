@@ -328,7 +328,7 @@ import openwakeword
 import scipy
 import sounddevice
 
-from PySide6 import QtCore, QtGui, QtQml, QtQuick, QtQuickControls2
+from PySide6 import QtCore, QtGui, QtMultimedia, QtQml, QtQuick, QtQuickControls2
 
 if PySide6.__version__ != "6.11.1" or QtCore.qVersion() != "6.11.1":
     raise RuntimeError("PySide6 and Qt 6.11.1 are required")

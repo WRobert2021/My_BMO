@@ -52,8 +52,9 @@ Implemented and retained:
 - durable idempotent kiosk receipts and resumable attachment storage;
 - bounded recent/month receipt classification;
 - opt-in BMO receiver lifecycle, private message feed, stable scrolling UI,
-  target-message reaction badges, configurable attachment publication/opening,
-  compact end-to-end status indicator, and complete cleanup; and
+  target-message reaction badges, configurable attachment publication,
+  contained photo/video/audio viewing, compact end-to-end status indicator,
+  and complete cleanup; and
 - authorized manual live validation evidence through Stage 11.
 
 Implemented in the local Stage 12 runtime:

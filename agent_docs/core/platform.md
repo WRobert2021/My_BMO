@@ -12,12 +12,17 @@ proof of target compatibility. `setup.sh` is the owned installer and
 - Python packages are installed into `.venv`; `start_agent.sh` also accepts an
   existing `venv/`.
 - PySide6-Essentials 6.11.1 supplies the Qt/QML production UI and has been
-  validated on the target baseline.
+  validated on the target baseline. The version-matched PySide6-Addons 6.11.1
+  wheel supplies Qt Multimedia for in-process relay photo/video/audio viewing;
+  upstream publishes a CPython 3.10+ `manylinux_2_39_aarch64` wheel, compatible
+  with the kiosk's CPython 3.13.5 and glibc 2.41 baseline. PySide6 uses the
+  LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only/commercial license model.
 - Whisper.cpp, Piper binaries/voices, and the wake-word model are project-local
   native/model artifacts, not Python-environment contents.
 - Ollama and downloaded text/vision models are system services.
-- `ffmpeg`/`ffplay` is a system package used by Music. Chromium is required
-  only by the legacy Tk Weather fallback.
+- `ffmpeg`/`ffplay` is a system package used by Music. Qt Multimedia uses its
+  packaged FFmpeg backend for relay media inside BMO. Chromium is required only
+  by the legacy Tk Weather fallback.
 - Linux Python 3.13 uses OpenWakeWord 0.6 in ONNX-only mode; installer
   verification must instantiate the configured model, not merely import the
   package.

@@ -75,7 +75,8 @@ components are routed separately to photo and video.
 Publication rejects symbolic links, non-regular sources, and conflicting
 destination content. A publication failure leaves the private receiver record
 intact and produces a disabled attachment entry rather than breaking the feed
-or receiver. The Qt boundary only opens validated paths from the current feed.
+or receiver. The Qt boundary only selects validated paths from the current
+feed, then renders photos or plays video/audio inside the hosted relay view.
 
 ## Failure behavior
 

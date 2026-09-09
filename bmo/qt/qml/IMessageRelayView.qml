@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 
 Item {
     id: root
@@ -51,8 +52,43 @@ Item {
         }
     }
 
-    onViewModelChanged: syncMessages()
-    Component.onCompleted: syncMessages()
+    function syncMedia() {
+        let selected = viewModel.selectedAttachment || {}
+        let category = selected.mediaCategory || ""
+        let nextSource = selected.source || ""
+        if ((category === "video" || category === "audio") && nextSource !== "") {
+            if (String(mediaPlayer.source) !== String(nextSource)) {
+                mediaPlayer.stop()
+                mediaPlayer.source = nextSource
+                mediaPlayer.play()
+            }
+        } else {
+            mediaPlayer.stop()
+            mediaPlayer.source = ""
+        }
+    }
+
+    onViewModelChanged: {
+        syncMessages()
+        Qt.callLater(syncMedia)
+    }
+    Component.onCompleted: {
+        syncMessages()
+        Qt.callLater(syncMedia)
+    }
+    Component.onDestruction: mediaPlayer.stop()
+
+    AudioOutput {
+        id: mediaAudio
+        volume: 1.0
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+        objectName: "relayMediaPlayer"
+        audioOutput: mediaAudio
+        videoOutput: videoOutput
+    }
 
     Timer {
         interval: 2000
@@ -193,6 +229,137 @@ Item {
                 color: "#b3261e"
                 font.bold: true
                 wrapMode: Text.Wrap
+            }
+        }
+    }
+
+    Rectangle {
+        id: mediaViewer
+        objectName: "relayMediaViewer"
+        anchors.fill: parent
+        anchors.margins: 16
+        radius: 14
+        color: "#102a5e"
+        visible: viewModel.selectedAttachment !== null
+                 && viewModel.selectedAttachment !== undefined
+        z: 3
+
+        property var selected: viewModel.selectedAttachment || {}
+        property string mediaCategory: selected.mediaCategory || ""
+
+        Image {
+            id: photoViewer
+            objectName: "relayPhotoViewer"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: viewerControls.top
+            anchors.margins: 10
+            visible: mediaViewer.mediaCategory === "photo"
+            source: mediaViewer.selected.source || ""
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+        }
+
+        VideoOutput {
+            id: videoOutput
+            objectName: "relayVideoViewer"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: viewerControls.top
+            anchors.margins: 10
+            visible: mediaViewer.mediaCategory === "video"
+            fillMode: VideoOutput.PreserveAspectFit
+        }
+
+        Column {
+            anchors.centerIn: parent
+            width: parent.width - 80
+            spacing: 10
+            visible: mediaViewer.mediaCategory === "audio"
+
+            Label {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "AUDIO MESSAGE"
+                color: "#5bc9c2"
+                font.pixelSize: 25
+                font.bold: true
+            }
+
+            Label {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: mediaViewer.selected.label || "Audio"
+                color: "white"
+                font.pixelSize: 16
+                elide: Text.ElideMiddle
+            }
+        }
+
+        Label {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: viewerControls.top
+            anchors.bottomMargin: 8
+            width: parent.width - 40
+            visible: (mediaViewer.mediaCategory === "video"
+                      || mediaViewer.mediaCategory === "audio")
+                     && mediaPlayer.error !== MediaPlayer.NoError
+            horizontalAlignment: Text.AlignHCenter
+            text: mediaPlayer.errorString || "This attachment could not be played."
+            color: "#ffb3bd"
+            font.pixelSize: 13
+            font.bold: true
+            elide: Text.ElideRight
+        }
+
+        RowLayout {
+            id: viewerControls
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 10
+            height: 42
+            spacing: 8
+
+            Button {
+                text: "BACK TO MESSAGES"
+                onClicked: root.send("relay_close_attachment")
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: mediaViewer.selected.label || "ATTACHMENT"
+                color: "white"
+                font.pixelSize: 13
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideMiddle
+            }
+
+            Button {
+                visible: mediaViewer.mediaCategory === "video"
+                         || mediaViewer.mediaCategory === "audio"
+                text: mediaPlayer.playbackState === MediaPlayer.PlayingState
+                    ? "PAUSE"
+                    : "PLAY"
+                onClicked: {
+                    if (mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                        mediaPlayer.pause()
+                    else
+                        mediaPlayer.play()
+                }
+            }
+
+            Button {
+                visible: mediaViewer.mediaCategory === "video"
+                         || mediaViewer.mediaCategory === "audio"
+                text: "RESTART"
+                onClicked: {
+                    mediaPlayer.position = 0
+                    mediaPlayer.play()
+                }
             }
         }
     }

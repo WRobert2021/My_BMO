@@ -150,7 +150,8 @@ system libraries, Chromium, creates local folders, builds Whisper.cpp,
 downloads the
 `base.en` speech model and Piper voices, creates the Python environment, pulls
 the Ollama models, installs the default wake-word model, and installs the
-PySide6 Essentials Qt Quick/QML production runtime. It is safe to run again and
+PySide6 Essentials Qt Quick/QML production runtime plus version-matched Qt
+Multimedia Addons for in-app relay attachments. It is safe to run again and
 reuses valid existing downloads.*
 
 ### 4. Configure the Wake Word
