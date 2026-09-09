@@ -56,12 +56,22 @@ class QtIMessageRelayView(QtHostedView):
                 value = message.get(key)
                 if isinstance(value, tuple):
                     message[key] = list(value)
-            for attachment in message.get("attachments", []):
-                if not isinstance(attachment, dict) or attachment.get("available") is not True:
+            normalized_attachments: list[dict[str, object]] = []
+            for raw_attachment in message.get("attachments", []):
+                if not isinstance(raw_attachment, dict):
                     continue
+                attachment = dict(raw_attachment)
                 path = attachment.get("path")
-                if isinstance(path, str) and Path(path).is_absolute():
-                    attachments_by_path[str(Path(path).resolve(strict=False))] = attachment
+                if (
+                    attachment.get("available") is True
+                    and isinstance(path, str)
+                    and Path(path).is_absolute()
+                ):
+                    normalized_path = str(Path(path).resolve(strict=False))
+                    attachment["source"] = QUrl.fromLocalFile(normalized_path)
+                    attachments_by_path[normalized_path] = attachment
+                normalized_attachments.append(attachment)
+            message["attachments"] = normalized_attachments
             messages.append(message)
         self._attachments_by_path = attachments_by_path
         if self._selected_attachment_path not in attachments_by_path:

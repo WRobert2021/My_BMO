@@ -161,15 +161,131 @@ Item {
                         Repeater {
                             model: messageCard.attachmentItems
 
-                            delegate: Button {
+                            delegate: Item {
+                                id: attachmentPreview
                                 required property var modelData
                                 width: messageContent.width
-                                height: 30
-                                enabled: modelData.available === true
-                                text: modelData.available === true
-                                    ? "OPEN " + String(modelData.label || "ATTACHMENT").toUpperCase()
-                                    : String(modelData.label || "ATTACHMENT").toUpperCase() + " UNAVAILABLE"
-                                onClicked: root.send("relay_open_attachment", modelData.path)
+                                height: modelData.media_category === "audio" ? 48 : 104
+
+                                Rectangle {
+                                    id: previewTile
+                                    width: attachmentPreview.modelData.media_category === "audio"
+                                        ? Math.min(parent.width, 340)
+                                        : Math.min(parent.width, 164)
+                                    height: parent.height
+                                    radius: 10
+                                    clip: true
+                                    color: attachmentPreview.modelData.available === true
+                                        ? "#164b78"
+                                        : "#e8edf2"
+                                    border.width: 2
+                                    border.color: attachmentPreview.modelData.available === true
+                                        ? "#5bc9c2"
+                                        : "#b5c0ca"
+
+                                    Image {
+                                        id: photoThumbnail
+                                        objectName: "relayPhotoThumbnail"
+                                        anchors.fill: parent
+                                        visible: attachmentPreview.modelData.available === true
+                                                 && attachmentPreview.modelData.media_category === "photo"
+                                        source: visible
+                                            ? (attachmentPreview.modelData.source || "")
+                                            : ""
+                                        sourceSize.width: 328
+                                        sourceSize.height: 208
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                    }
+
+                                    Item {
+                                        id: videoThumbnail
+                                        objectName: "relayVideoThumbnail"
+                                        anchors.fill: parent
+                                        visible: attachmentPreview.modelData.available === true
+                                                 && attachmentPreview.modelData.media_category === "video"
+
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            width: 42
+                                            height: 42
+                                            radius: 21
+                                            color: "#cc102a5e"
+                                            border.color: "white"
+                                            border.width: 2
+
+                                            Canvas {
+                                                anchors.centerIn: parent
+                                                width: 17
+                                                height: 20
+
+                                                onPaint: {
+                                                    let context = getContext("2d")
+                                                    context.clearRect(0, 0, width, height)
+                                                    context.fillStyle = "white"
+                                                    context.beginPath()
+                                                    context.moveTo(2, 1)
+                                                    context.lineTo(width - 1, height / 2)
+                                                    context.lineTo(2, height - 1)
+                                                    context.closePath()
+                                                    context.fill()
+                                                }
+                                            }
+                                        }
+
+                                        Label {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.bottom: parent.bottom
+                                            anchors.margins: 6
+                                            text: attachmentPreview.modelData.label || "VIDEO"
+                                            color: "white"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            elide: Text.ElideMiddle
+                                        }
+                                    }
+
+                                    Label {
+                                        id: audioTile
+                                        objectName: "relayAudioTile"
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        visible: attachmentPreview.modelData.available === true
+                                                 && attachmentPreview.modelData.media_category === "audio"
+                                        text: "PLAY AUDIO  ·  "
+                                              + (attachmentPreview.modelData.label || "AUDIO MESSAGE")
+                                        color: "white"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        verticalAlignment: Text.AlignVCenter
+                                        elide: Text.ElideMiddle
+                                    }
+
+                                    Label {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        visible: attachmentPreview.modelData.available !== true
+                                        text: (attachmentPreview.modelData.label || "ATTACHMENT")
+                                              + " UNAVAILABLE"
+                                        color: "#58708c"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        verticalAlignment: Text.AlignVCenter
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideMiddle
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        enabled: attachmentPreview.modelData.available === true
+                                        onClicked: root.send(
+                                            "relay_open_attachment",
+                                            attachmentPreview.modelData.path
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

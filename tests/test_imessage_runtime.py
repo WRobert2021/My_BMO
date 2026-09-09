@@ -566,7 +566,12 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIn("id: reactionBadges", source)
         self.assertIn("model: messageCard.modelData.reactions || []", source)
         self.assertIn("function reactionIcon(kind)", source)
-        self.assertIn('root.send("relay_open_attachment", modelData.path)', source)
+        self.assertIn('"relay_open_attachment",', source)
+        self.assertIn("attachmentPreview.modelData.path", source)
+        self.assertIn('objectName: "relayPhotoThumbnail"', source)
+        self.assertIn('objectName: "relayVideoThumbnail"', source)
+        self.assertIn('objectName: "relayAudioTile"', source)
+        self.assertIn("MouseArea {", source)
         self.assertIn("import QtMultimedia", source)
         self.assertIn('objectName: "relayMediaViewer"', source)
         self.assertIn('objectName: "relayPhotoViewer"', source)
@@ -672,6 +677,12 @@ class IMessageRuntimeViewTests(unittest.TestCase):
 
         self.assertEqual(payload["receivedEvents"], 4)
         self.assertEqual(payload["messages"][0]["attachments"][0]["path"], str(attachment))
+        self.assertEqual(
+            Path(
+                payload["messages"][0]["attachments"][0]["source"].toLocalFile()
+            ),
+            attachment.resolve(),
+        )
         self.assertEqual(
             payload["messages"][0]["reactions"],
             [{"kind": "thumbs_up", "count": 1}],

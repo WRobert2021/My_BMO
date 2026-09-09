@@ -3,7 +3,7 @@
 current_stage: 12
 current_chapter: Contained attachment viewing and final physical acceptance
 state: in_progress
-next_action: Sync the media-specific source-routing fix and verify the prior video no longer reaches QQuickImage; then verify deferred audio playback, cleanup, and the header dot before finishing Stage 12 acceptance. Do not begin Stage 13.
+next_action: Sync the inline photo/video preview UI and verify touch selection plus the prior video no longer reaching QQuickImage; then verify deferred audio playback, cleanup, and the header dot before finishing Stage 12 acceptance. Do not begin Stage 13.
 last_verified: 2026-09-09
 
 ## Stage index
@@ -90,6 +90,8 @@ last_verified: 2026-09-09
   current-feed selection opens a contained photo detail or Qt Multimedia
   video/audio player in the relay view. Playback stops on back/navigation and
   decode failures remain isolated from receiver operation.
+- Generic attachment buttons are replaced by touch-sized feed previews: the
+  actual photo for images, a play tile for video, and a labeled tile for audio.
 
 ## Cleanup status
 
@@ -132,7 +134,7 @@ last_verified: 2026-09-09
   accepted its duplicate idempotently, and left one durable kiosk receipt.
 
 - Complete relay suite: 123 tests and 21 subtests passed.
-- Complete repository suite: 845 tests and 10,006 subtests passed in 23.55
+- Complete repository suite: 845 tests and 10,006 subtests passed in 22.77
   seconds with exit status zero.
 - Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
   --check` passed. Physical kiosk and phone migration cleanup is complete. The

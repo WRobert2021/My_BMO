@@ -90,16 +90,19 @@ may arrive within one receipt-clock tick. The two-second refresh reads local
 state only. The message model changes only when feed content changes and
 preserves a non-top scroll position.
 
-Each completed attachment is rendered as an explicit open button. The Qt
-adapter permits selecting only a current feed path that exists as a regular,
-non-symlink file. Photos render in a contained detail view following the Album
-presentation pattern. Video and audio use the version-matched Qt Multimedia
-player within that same hosted view, with play, pause, restart, and back
-controls. No desktop handler, VLC window, shell command, or second process is
-started. An unavailable blob or media decode error is reported in the view
-without affecting receiver lifecycle, and closing the attachment or hosted
-view stops playback. Inactive renderers receive no source URL, so a video/audio
-file is never also offered to the photo decoder.
+Each completed attachment is rendered as a touch-sized inline preview rather
+than a generic button. Photos show the actual local image and open when the
+preview is pressed. Videos use a compact play tile, and audio retains a labeled
+playback tile until physical audio testing is available. The Qt adapter permits
+selecting only a current feed path that exists as a regular, non-symlink file.
+Photos render in a contained detail view following the Album presentation
+pattern. Video and audio use the version-matched Qt Multimedia player within
+that same hosted view, with play, pause, restart, and back controls. No desktop
+handler, VLC window, shell command, or second process is started. An unavailable
+blob or media decode error is reported in the view without affecting receiver
+lifecycle, and closing the attachment or hosted view stops playback. Inactive
+renderers receive no source URL, so a video/audio file is never also offered to
+the photo decoder.
 
 Reaction receipts are not rendered as separate messages. Both incoming and
 outgoing reactions are folded into their incoming target message. Each target

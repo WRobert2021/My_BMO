@@ -27,7 +27,9 @@ belong to plugin docs.
 selections. `bmo.menu_loader` reads configured metadata without constructing
 tools, modes, stores, workers, clients, models, or UI. `bmo.runtime_menu`
 validates selections against a current catalog; it does not branch on concrete
-plugin names.
+plugin names. The production menu renders each icon as artwork only because the
+icon assets contain their own names; catalog labels remain metadata and are not
+drawn as an additional overlay.
 
 The shared compact face uses canonical upper-right bounds `x=684`, `y=5`,
 108x65. `bmo.face_config` owns contained frame discovery/timing; production QML
