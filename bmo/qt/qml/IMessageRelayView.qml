@@ -66,280 +66,133 @@ Item {
         color: "#e8f8fb"
     }
 
-    RowLayout {
+    Rectangle {
         anchors.fill: parent
         anchors.margins: 16
-        spacing: 14
+        radius: 14
+        color: "white"
 
         ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            spacing: 12
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 6
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 82
-                radius: 14
-                color: "white"
-                border.width: 2
-                border.color: viewModel.healthy === true ? "#2f9f83" : "#d45555"
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-
-                    Rectangle {
-                        width: 18
-                        height: 18
-                        radius: 9
-                        color: viewModel.healthy === true ? "#45bd92" : "#db6565"
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Label {
-                            text: viewModel.healthy === true ? "RECEIVER AVAILABLE" : "RECEIVER UNAVAILABLE"
-                            color: "#102a5e"
-                            font.pixelSize: 18
-                            font.bold: true
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: viewModel.serviceMessage || ""
-                            color: "#58708c"
-                            font.pixelSize: 14
-                            wrapMode: Text.Wrap
-                        }
-                    }
-                    Button {
-                        text: "REFRESH"
-                        onClicked: send("relay_refresh")
-                    }
-                }
-            }
-
-            GridLayout {
-                Layout.fillWidth: true
-                columns: 4
-                columnSpacing: 8
-                rowSpacing: 8
-
-                Repeater {
-                    model: [
-                        { label: "RECEIVED", value: viewModel.receivedEvents || 0 },
-                        { label: "PENDING", value: viewModel.pendingEvents || 0 },
-                        { label: "ATTACHMENTS", value: viewModel.completeAttachments || 0 },
-                        { label: "PARTIAL", value: viewModel.partialAttachments || 0 }
-                    ]
-
-                    delegate: Rectangle {
-                        required property var modelData
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 74
-                        radius: 12
-                        color: "#102a5e"
-
-                        Column {
-                            anchors.centerIn: parent
-                            spacing: 2
-                            Label {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: modelData.value
-                                color: "white"
-                                font.pixelSize: 25
-                                font.bold: true
-                            }
-                            Label {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: modelData.label
-                                color: "#bde7ff"
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-                        }
-                    }
-                }
-            }
-
-            RowLayout {
+            ListView {
+                id: messageList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 12
+                clip: true
+                spacing: 5
+                model: root.displayedMessages
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 3
-                    radius: 14
-                    color: "white"
+                delegate: Rectangle {
+                    id: messageCard
+                    required property var modelData
+                    property var attachmentItems: modelData.attachments || []
+                    property bool hasMessageText: String(modelData.text || "").length > 0
+                    width: ListView.view.width
+                    height: Math.max(58, messageContent.implicitHeight + 14)
+                    radius: 8
+                    color: "#eef8ff"
 
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 7
+                    Column {
+                        id: messageContent
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.right: reactionBadges.visible ? reactionBadges.left : parent.right
+                        anchors.margins: 7
+                        anchors.rightMargin: reactionBadges.visible ? 5 : 7
+                        spacing: 3
 
                         Label {
-                            text: "INCOMING MESSAGES"
+                            width: parent.width
+                            text: messageCard.modelData.sender || "Unknown sender"
                             color: "#102a5e"
-                            font.pixelSize: 17
                             font.bold: true
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: viewModel.incomingMessage || ""
-                            color: (viewModel.incomingState === "ready" || viewModel.incomingState === "connected") ? "#2f9f83" : "#58708c"
                             font.pixelSize: 12
-                            wrapMode: Text.Wrap
+                            elide: Text.ElideRight
                         }
-                        ListView {
-                            id: messageList
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
-                            spacing: 5
-                            model: root.displayedMessages
+
+                        Label {
+                            width: parent.width
+                            visible: messageCard.hasMessageText
+                            text: messageCard.modelData.text || ""
+                            color: "#334d68"
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
+                        }
+
+                        Repeater {
+                            model: messageCard.attachmentItems
+
+                            delegate: Button {
+                                required property var modelData
+                                width: messageContent.width
+                                height: 30
+                                enabled: modelData.available === true
+                                text: modelData.available === true
+                                    ? "OPEN " + String(modelData.label || "ATTACHMENT").toUpperCase()
+                                    : String(modelData.label || "ATTACHMENT").toUpperCase() + " UNAVAILABLE"
+                                onClicked: root.send("relay_open_attachment", modelData.path)
+                            }
+                        }
+                    }
+
+                    Row {
+                        id: reactionBadges
+                        anchors.right: parent.right
+                        anchors.rightMargin: 7
+                        anchors.top: parent.top
+                        anchors.topMargin: 17
+                        spacing: 3
+                        visible: (messageCard.modelData.reactions || []).length > 0
+
+                        Repeater {
+                            model: messageCard.modelData.reactions || []
 
                             delegate: Rectangle {
                                 required property var modelData
-                                width: ListView.view.width
-                                height: 58
-                                radius: 8
-                                color: "#eef8ff"
-
-                                Column {
-                                    anchors.left: parent.left
-                                    anchors.top: parent.top
-                                    anchors.bottom: parent.bottom
-                                    anchors.right: reactionBadges.left
-                                    anchors.margins: 7
-                                    anchors.rightMargin: reactionBadges.visible ? 5 : 7
-                                    spacing: 2
-                                    Label {
-                                        width: parent.width
-                                        text: modelData.sender || "Unknown sender"
-                                        color: "#102a5e"
-                                        font.bold: true
-                                        font.pixelSize: 12
-                                        elide: Text.ElideRight
-                                    }
-                                    Label {
-                                        width: parent.width
-                                        text: modelData.text || "Message"
-                                        color: "#334d68"
-                                        font.pixelSize: 12
-                                        elide: Text.ElideRight
-                                    }
-                                    Label {
-                                        width: parent.width
-                                        visible: (modelData.attachments || []).length > 0
-                                        text: (modelData.attachments || []).join(", ")
-                                        color: "#58708c"
-                                        font.pixelSize: 10
-                                        elide: Text.ElideRight
-                                    }
-                                }
+                                width: modelData.count > 1 ? 39 : 26
+                                height: 24
+                                radius: 12
+                                color: "#d9f3ff"
+                                border.width: 1
+                                border.color: "#8fcde6"
 
                                 Row {
-                                    id: reactionBadges
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: 7
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 3
-                                    visible: (modelData.reactions || []).length > 0
+                                    anchors.centerIn: parent
+                                    spacing: 2
 
-                                    Repeater {
-                                        model: modelData.reactions || []
+                                    Image {
+                                        width: 16
+                                        height: 16
+                                        sourceSize.width: 32
+                                        sourceSize.height: 32
+                                        source: root.reactionIcon(modelData.kind)
+                                        fillMode: Image.PreserveAspectFit
+                                    }
 
-                                        delegate: Rectangle {
-                                            required property var modelData
-                                            width: modelData.count > 1 ? 39 : 26
-                                            height: 24
-                                            radius: 12
-                                            color: "#d9f3ff"
-                                            border.width: 1
-                                            border.color: "#8fcde6"
-
-                                            Row {
-                                                anchors.centerIn: parent
-                                                spacing: 2
-
-                                                Image {
-                                                    width: 16
-                                                    height: 16
-                                                    sourceSize.width: 32
-                                                    sourceSize.height: 32
-                                                    source: root.reactionIcon(modelData.kind)
-                                                    fillMode: Image.PreserveAspectFit
-                                                }
-
-                                                Label {
-                                                    visible: modelData.count > 1
-                                                    text: modelData.count
-                                                    color: "#102a5e"
-                                                    font.pixelSize: 10
-                                                    font.bold: true
-                                                }
-                                            }
-                                        }
+                                    Label {
+                                        visible: modelData.count > 1
+                                        text: modelData.count
+                                        color: "#102a5e"
+                                        font.pixelSize: 10
+                                        font.bold: true
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 2
-                    radius: 14
-                    color: "white"
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 9
-
-                        Label {
-                            text: "RECONCILIATION"
-                            color: "#102a5e"
-                            font.pixelSize: 17
-                            font.bold: true
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: viewModel.reconciliationMessage || ""
-                            color: "#58708c"
-                            wrapMode: Text.Wrap
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Button {
-                                text: viewModel.busy === true ? "CHECKING…" : "RECENT"
-                                enabled: viewModel.canReconcile === true
-                                onClicked: send("relay_reconcile_recent")
-                            }
-                            TextField {
-                                id: monthField
-                                Layout.fillWidth: true
-                                text: viewModel.currentMonth || ""
-                                placeholderText: "YYYY-MM"
-                            }
-                        }
-                        Button {
-                            text: "CHECK MONTH"
-                            enabled: viewModel.canReconcile === true
-                            onClicked: send("relay_reconcile_month", monthField.text)
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            visible: (viewModel.error || "") !== ""
-                            text: viewModel.error || ""
-                            color: "#b3261e"
-                            font.bold: true
-                            wrapMode: Text.Wrap
-                        }
-                    }
-                }
+            Label {
+                Layout.fillWidth: true
+                visible: (viewModel.error || "") !== ""
+                text: viewModel.error || ""
+                color: "#b3261e"
+                font.bold: true
+                wrapMode: Text.Wrap
             }
         }
     }

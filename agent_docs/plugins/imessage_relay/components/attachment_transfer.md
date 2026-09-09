@@ -62,6 +62,21 @@ attachments use the attachment ID as the blob ID. Live Photos transfer only
 their deterministic still and motion component IDs, avoiding a duplicate copy
 of the still image.
 
+## Kiosk media publication
+
+The receiver-owned blob remains the durable private source of truth. When a
+completed attachment is included in the bounded kiosk feed, the runtime
+publishes a deterministic digest-suffixed filename into the configured photo,
+audio, or video directory. A same-filesystem hard link avoids duplicating the
+bytes. A cross-filesystem destination receives one atomic copy that must match
+the recorded SHA-256 digest before publication. Live Photo still and motion
+components are routed separately to photo and video.
+
+Publication rejects symbolic links, non-regular sources, and conflicting
+destination content. A publication failure leaves the private receiver record
+intact and produces a disabled attachment entry rather than breaking the feed
+or receiver. The Qt boundary only opens validated paths from the current feed.
+
 ## Failure behavior
 
 Missing/unsafe source metadata, a non-regular or symlink source, size or file
@@ -84,3 +99,5 @@ ordinary and Live Photo transfer, source hash preservation, unavailable source
 handling, legacy ACK rejection, transport-neutral integration, and real
 loopback HTTP. The complete parser/state/receiver/sender/reconciliation/
 attachment suite remains the primary acceptance command.
+`tests/test_imessage_media_library.py` separately covers kiosk-facing
+publication and media-directory routing.

@@ -15,6 +15,9 @@ from bmo.repository_paths import relocated_repository_path
 
 MAX_CONFIG_BYTES = 65_536
 _SAFE_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
+DEFAULT_PHOTO_DIRECTORY = Path("/home/pi-bmo/Pictures/bmo/messages")
+DEFAULT_AUDIO_DIRECTORY = Path("/home/pi-bmo/Music/bmo/messages")
+DEFAULT_VIDEO_DIRECTORY = Path("/home/pi-bmo/Videos/bmo/messages")
 
 
 class ReceiverConfigError(ValueError):
@@ -34,6 +37,9 @@ class ReceiverConfig:
     max_clock_skew_seconds: int = 300
     max_request_bytes: int = 2 * 1024 * 1024
     request_timeout_seconds: int = 10
+    photo_directory: Path = DEFAULT_PHOTO_DIRECTORY
+    audio_directory: Path = DEFAULT_AUDIO_DIRECTORY
+    video_directory: Path = DEFAULT_VIDEO_DIRECTORY
 
     def __post_init__(self) -> None:
         if not _is_host(self.bind_host):
@@ -52,6 +58,13 @@ class ReceiverConfig:
             raise ReceiverConfigError("TLS certificate path must be a Path")
         if self.tls_key_path is not None and not isinstance(self.tls_key_path, Path):
             raise ReceiverConfigError("TLS key path must be a Path")
+        for value, label in (
+            (self.photo_directory, "photo directory"),
+            (self.audio_directory, "audio directory"),
+            (self.video_directory, "video directory"),
+        ):
+            if not isinstance(value, Path) or not value.is_absolute():
+                raise ReceiverConfigError(f"{label} must be an absolute Path")
         for value, label, upper in (
             (self.max_clock_skew_seconds, "maximum clock skew", 3_600),
             (self.max_request_bytes, "maximum request bytes", 8 * 1024 * 1024),
@@ -102,10 +115,23 @@ def load_receiver_config(
         "max_request_bytes",
         "request_timeout_seconds",
     }
+    media_fields = {
+        "photo_directory",
+        "audio_directory",
+        "video_directory",
+    }
     if schema_version == 1:
-        _exact_keys(value, common_fields | {"shared_secret_env"})
+        _configuration_keys(
+            value,
+            required=common_fields | {"shared_secret_env"},
+            optional=media_fields,
+        )
     elif schema_version == 2:
-        _exact_keys(value, common_fields | {"shared_secret_file"})
+        _configuration_keys(
+            value,
+            required=common_fields | {"shared_secret_file"},
+            optional=media_fields,
+        )
     else:
         raise ReceiverConfigError("receiver configuration version is unsupported")
     base = (
@@ -127,6 +153,27 @@ def load_receiver_config(
     )
     cert_path = _path(value["tls_cert_path"], "TLS certificate path", base, optional=True)
     key_path = _path(value["tls_key_path"], "TLS key path", base, optional=True)
+    photo_directory = _path(
+        value.get("photo_directory", str(DEFAULT_PHOTO_DIRECTORY)),
+        "photo directory",
+        base,
+        optional=False,
+    )
+    audio_directory = _path(
+        value.get("audio_directory", str(DEFAULT_AUDIO_DIRECTORY)),
+        "audio directory",
+        base,
+        optional=False,
+    )
+    video_directory = _path(
+        value.get("video_directory", str(DEFAULT_VIDEO_DIRECTORY)),
+        "video directory",
+        base,
+        optional=False,
+    )
+    assert photo_directory is not None
+    assert audio_directory is not None
+    assert video_directory is not None
     allow_insecure = value["allow_insecure_loopback"]
     if not isinstance(allow_insecure, bool):
         raise ReceiverConfigError("allow_insecure_loopback must be a boolean")
@@ -164,6 +211,9 @@ def load_receiver_config(
         max_clock_skew_seconds=_positive_int(value["max_clock_skew_seconds"], "maximum clock skew"),
         max_request_bytes=_positive_int(value["max_request_bytes"], "maximum request bytes"),
         request_timeout_seconds=_positive_int(value["request_timeout_seconds"], "request timeout"),
+        photo_directory=photo_directory,
+        audio_directory=audio_directory,
+        video_directory=video_directory,
     )
 
 
@@ -210,8 +260,14 @@ def _reject_constant(value: str) -> None:
     raise ReceiverConfigError("receiver configuration contains a non-finite number")
 
 
-def _exact_keys(value: dict[str, Any], expected: set[str]) -> None:
-    if set(value) != expected:
+def _configuration_keys(
+    value: dict[str, Any],
+    *,
+    required: set[str],
+    optional: set[str],
+) -> None:
+    actual = set(value)
+    if not required.issubset(actual) or not actual.issubset(required | optional):
         raise ReceiverConfigError("receiver configuration fields are invalid")
 
 

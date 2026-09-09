@@ -26,8 +26,12 @@ are ignored and do not open any resource. Operators should remove them from
 private configuration during migration.
 
 The receiver configuration continues to own bind address, port, durable state,
-TLS, request limits, key ID, and private shared-secret source. Production LAN
-binding requires TLS; plaintext remains limited to explicit loopback tests.
+TLS, request limits, key ID, and private shared-secret source. It also owns the
+user-facing completed-media destinations. Their defaults are
+`/home/pi-bmo/Pictures/bmo/messages`, `/home/pi-bmo/Music/bmo/messages`, and
+`/home/pi-bmo/Videos/bmo/messages`; each may be overridden with the absolute
+`photo_directory`, `audio_directory`, and `video_directory` fields. Production
+LAN binding requires TLS; plaintext remains limited to explicit loopback tests.
 
 ## Lifecycle
 
@@ -39,7 +43,9 @@ Enabled registration:
 4. starts the independent phone-control coordinator when its private
    configuration is valid; and
 5. exposes aggregate status plus a bounded private incoming feed selected and
-   rendered newest-first by Apple source time.
+   rendered newest-first by Apple source time; and
+6. lazily publishes completed attachment blobs into the configured user-facing
+   media directories when they enter that feed.
 
 Failure registers a degraded relay surface without preventing BMO startup.
 Cleanup closes the view, stops and joins the listener, closes the socket/store,
@@ -71,12 +77,24 @@ phone control and reconciliation.
 
 ## UI
 
-The relay view shows receiver availability, durable receipt/attachment counts,
-and messages from the kiosk-owned receiver database in Apple source-time order.
-Receipt time is not used for display ordering because an offline backlog may
-arrive within one receipt-clock tick. Its two-second refresh
-reads local state only. The message model changes only when feed content changes
-and preserves a non-top scroll position.
+The relay view is intentionally only a full-size incoming-message list. It does
+not render aggregate counters, receiver prose, headings, or reconciliation
+controls. A compact header dot is green only when both the kiosk receiver and
+phone control connection are healthy; it is red otherwise. Reconciliation
+remains an owned background/control capability even though it is absent from
+this screen.
+
+Messages are read from the kiosk-owned receiver database in Apple source-time
+order. Receipt time is not used for display ordering because an offline backlog
+may arrive within one receipt-clock tick. The two-second refresh reads local
+state only. The message model changes only when feed content changes and
+preserves a non-top scroll position.
+
+Each completed attachment is rendered as an explicit open button. The Qt
+adapter permits opening only a current feed path that exists as a regular,
+non-symlink file. It delegates the validated local file URL to the kiosk's
+configured desktop handler. An unavailable blob or failed desktop open is
+reported in the view without affecting receiver lifecycle.
 
 Reaction receipts are not rendered as separate messages. Both incoming and
 outgoing reactions are folded into their incoming target message. Each target
@@ -94,18 +112,19 @@ The Qt adapter converts feed tuples to native variant lists before QML receives
 them; nested attachment and reaction models must never cross as opaque Python
 objects.
 
-When phone control connects, incoming status reports the connection and both
-bounded reconciliation controls are enabled. If the phone or its control
-configuration is unavailable, the receiver and existing feed remain usable
-and the controls clearly remain unavailable. No snapshot or mounted-source
-status is exposed.
+If the phone or its control configuration is unavailable, the receiver and
+existing feed remain usable and the header dot turns red. No snapshot or
+mounted-source status is exposed.
 
 ## Verification ownership
 
 `tests/test_imessage_runtime.py` covers opt-in registration, resource-free
 metadata, failure isolation, listener lifecycle, durable feed updates,
 reaction badge folding/removal, control-absent degradation, stable scrolling,
-view actions, and cleanup.
+compact view structure, validated attachment-open actions, and cleanup.
+`tests/test_imessage_media_library.py` owns completed-media routing,
+deterministic publication, Live Photo component separation, and unavailable
+blob behavior.
 `tests/test_imessage_phone_control.py` owns strict configuration,
 shared canonical/HMAC vectors, ACK handling, resume/probe scheduling,
 single-flight reconciliation, and control cleanup. Receiver and attachment

@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: bmo.features.imessage_relay (opt-in)
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_phone_control.py, tests/test_imessage_notifications.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_media_library.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_phone_control.py, tests/test_imessage_notifications.py]
 ---
 
 # Plugin: iMessage Relay
@@ -28,6 +28,7 @@ database writes are prohibited in every stage.
 | normalized contracts and read-only parser reference | `bmo/features/imessage_relay/relay/` |
 | kiosk authentication and wire schema | `bmo/features/imessage_relay/receiver/` |
 | kiosk receipt/attachment store and listener | `bmo/features/imessage_relay/receiver/` |
+| completed kiosk media publication | `bmo/features/imessage_relay/media_library.py` |
 | read-only notification count API | `bmo/features/imessage_relay/notifications.py` |
 | kiosk lifecycle and private feed | `bmo/features/imessage_relay/feature.py` |
 | Qt relay view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
@@ -51,7 +52,8 @@ Implemented and retained:
 - durable idempotent kiosk receipts and resumable attachment storage;
 - bounded recent/month receipt classification;
 - opt-in BMO receiver lifecycle, private message feed, stable scrolling UI,
-  target-message reaction badges, aggregate status, and complete cleanup; and
+  target-message reaction badges, configurable attachment publication/opening,
+  compact end-to-end status indicator, and complete cleanup; and
 - authorized manual live validation evidence through Stage 11.
 
 Implemented in the local Stage 12 runtime:
@@ -79,9 +81,11 @@ execution lacks the iOS `mobile` persona required by the protected SMS path;
 an exact-command `mobile` launch bridge that immediately drops to `pi-bmo` is
 installed and working. Physical `kqueue` delivery now passes text bursts,
 stable scrolling, photo/video, reaction add/remove, and kiosk-offline recovery.
-Locally verified corrections for source-time feed ordering and per-delivery
-TLS connection reuse still require physical deployment and retest before the
-incoming acceptance matrix can close.
+Source-time/newest-first presentation, per-delivery TLS connection reuse, and
+SVG reaction replacement/removal have also passed after physical deployment.
+Configurable media publication/opening and the compact status UI are locally
+accepted but still need the kiosk sync and physical open/status check before
+the incoming acceptance matrix can close.
 
 The abandoned Stage 12 SSHFS source manager, kiosk polling worker, persistent
 phone-login configurator, and snapshot publisher are removed from active code.
@@ -106,6 +110,9 @@ diagnostics. The phone daemon runs as a dedicated non-login `pi-bmo` identity;
 read/traverse ACL is required for `pi-bmo` to consume Apple SMS input without
 write authority; Apple ownership and POSIX mode bits remain unchanged. The
 kiosk owns a separate private receipt database and attachment directory.
+Completed blobs are exposed to the kiosk user through configurable media
+directories using a hard link where possible or one verified atomic copy across
+filesystems; this never changes the phone-side read-only boundary.
 
 Import and metadata discovery remain resource-free. Enabled BMO registration
 starts the configured kiosk receiver and independently starts phone control

@@ -79,6 +79,21 @@ Rectangle {
             }
         }
 
+        Rectangle {
+            objectName: "relayConnectionIndicator"
+            x: 660
+            anchors.verticalCenter: parent.verticalCenter
+            width: 14
+            height: 14
+            radius: 7
+            visible: controller.viewKind === "imessage_relay"
+            color: viewModel.healthy === true && viewModel.incomingState === "connected"
+                ? "#45bd92"
+                : "#db6565"
+            border.color: "white"
+            border.width: 2
+        }
+
         Image {
             objectName: "hostedCompactFace"
             x: 684

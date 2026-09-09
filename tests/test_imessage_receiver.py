@@ -604,6 +604,18 @@ class ReceiverConfigTests(unittest.TestCase):
             config.state_path,
             (self.root / "bmo/data/imessage_receiver/receiver.db").resolve(),
         )
+        self.assertEqual(
+            config.photo_directory,
+            Path("/home/pi-bmo/Pictures/bmo/messages").resolve(),
+        )
+        self.assertEqual(
+            config.audio_directory,
+            Path("/home/pi-bmo/Music/bmo/messages").resolve(),
+        )
+        self.assertEqual(
+            config.video_directory,
+            Path("/home/pi-bmo/Videos/bmo/messages").resolve(),
+        )
         self.assertNotIn(SECRET.decode(), repr(config))
 
         secret_path.chmod(0o644)
@@ -643,6 +655,28 @@ class ReceiverConfigTests(unittest.TestCase):
             shared_secret=SECRET,
         )
         self.assertTrue(config.allow_insecure_loopback)
+
+    def test_media_directories_are_configurable_absolute_paths(self) -> None:
+        secret_path = self.root / "receiver.secret"
+        secret_path.write_bytes(SECRET)
+        secret_path.chmod(0o600)
+        value = json.loads(
+            (PROJECT_ROOT / "config" / "example.imessage_receiver.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        value["shared_secret_file"] = str(secret_path)
+        value["photo_directory"] = str(self.root / "custom-photos")
+        value["audio_directory"] = str(self.root / "custom-audio")
+        value["video_directory"] = str(self.root / "custom-video")
+        config_path = self.root / "receiver.json"
+        config_path.write_text(json.dumps(value), encoding="utf-8")
+
+        config = load_receiver_config(config_path)
+
+        self.assertEqual(config.photo_directory, (self.root / "custom-photos").resolve())
+        self.assertEqual(config.audio_directory, (self.root / "custom-audio").resolve())
+        self.assertEqual(config.video_directory, (self.root / "custom-video").resolve())
 
     def test_unavailable_tls_files_fail_before_state_or_service_creation(self) -> None:
         config = ReceiverConfig(

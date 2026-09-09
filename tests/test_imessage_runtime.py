@@ -553,14 +553,26 @@ class IMessageRuntimeViewTests(unittest.TestCase):
     def test_qml_keeps_a_stable_feed_model_between_status_refreshes(self) -> None:
         qml_root = Path(__file__).resolve().parents[1] / "bmo/qt/qml"
         source = (qml_root / "IMessageRelayView.qml").read_text(encoding="utf-8")
+        hosted = (qml_root / "HostedView.qml").read_text(encoding="utf-8")
 
         self.assertIn("function syncMessages()", source)
         self.assertIn("model: root.displayedMessages", source)
         self.assertNotIn("model: viewModel.messages", source)
         self.assertIn("previousY = messageList.contentY", source)
         self.assertIn("id: reactionBadges", source)
-        self.assertIn("model: modelData.reactions || []", source)
+        self.assertIn("model: messageCard.modelData.reactions || []", source)
         self.assertIn("function reactionIcon(kind)", source)
+        self.assertIn('root.send("relay_open_attachment", modelData.path)', source)
+        self.assertNotIn("RECEIVER AVAILABLE", source)
+        self.assertNotIn("RECEIVED", source)
+        self.assertNotIn("RECONCILIATION", source)
+        self.assertNotIn("INCOMING MESSAGES", source)
+        self.assertIn('objectName: "relayConnectionIndicator"', hosted)
+        self.assertIn('controller.viewKind === "imessage_relay"', hosted)
+        self.assertIn(
+            'viewModel.healthy === true && viewModel.incomingState === "connected"',
+            hosted,
+        )
         for name in (
             "heart.svg",
             "thumbs-up.svg",
@@ -595,44 +607,62 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         values.update(changes)
         return RelayRuntimeStatus(**values)
 
-    def test_qt_view_payload_and_actions_are_content_free(self) -> None:
-        host = Mock()
-        recent = Mock(return_value=False)
-        month = Mock(return_value=False)
-        closed = Mock()
-        view = QtIMessageRelayView(
-            host,
-            status_provider=self.status,
-            reconcile_recent=recent,
-            reconcile_month=month,
-            on_close=closed,
-            feed_provider=lambda: (
-                {
-                    "kind": "message",
-                    "sender": "invented sender",
-                    "timestamp": "2026-09-05T00:00:00+00:00",
-                    "text": "invented message",
-                    "attachments": (),
-                    "reactions": ({"kind": "thumbs_up", "count": 1},),
-                },
-            ),
-        )
+    def test_qt_view_payload_and_actions_open_only_current_attachments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            attachment = Path(directory) / "invented.jpg"
+            attachment.write_bytes(b"invented")
+            host = Mock()
+            recent = Mock(return_value=False)
+            month = Mock(return_value=False)
+            closed = Mock()
+            view = QtIMessageRelayView(
+                host,
+                status_provider=self.status,
+                reconcile_recent=recent,
+                reconcile_month=month,
+                on_close=closed,
+                feed_provider=lambda: (
+                    {
+                        "kind": "message",
+                        "sender": "invented sender",
+                        "timestamp": "2026-09-05T00:00:00+00:00",
+                        "text": "invented message",
+                        "attachments": (
+                            {
+                                "label": "invented.jpg",
+                                "media_category": "photo",
+                                "path": str(attachment),
+                                "available": True,
+                            },
+                        ),
+                        "reactions": ({"kind": "thumbs_up", "count": 1},),
+                    },
+                ),
+            )
 
-        payload = view.payload()
-        view.handle_action("relay_reconcile_recent", "")
-        unavailable_payload = view.payload()
-        view.handle_action("relay_reconcile_month", "private-value")
-        invalid_payload = view.payload()
-        view.close()
+            payload = view.payload()
+            with patch(
+                "bmo.qt.views.imessage_relay.QDesktopServices.openUrl",
+                return_value=True,
+            ) as open_url:
+                view.handle_action("relay_open_attachment", str(attachment))
+                view.handle_action("relay_open_attachment", str(attachment.parent / "other"))
+            view.handle_action("relay_reconcile_recent", "")
+            unavailable_payload = view.payload()
+            view.handle_action("relay_reconcile_month", "private-value")
+            invalid_payload = view.payload()
+            view.close()
 
         self.assertEqual(payload["receivedEvents"], 4)
-        self.assertIsNone(payload["phoneBacklogCount"])
-        self.assertEqual(payload["serviceMessage"], "Receiver is listening.")
-        self.assertEqual(payload["messages"][0]["text"], "invented message")
-        self.assertEqual(payload["messages"][0]["attachments"], [])
+        self.assertEqual(payload["messages"][0]["attachments"][0]["path"], str(attachment))
         self.assertEqual(
             payload["messages"][0]["reactions"],
             [{"kind": "thumbs_up", "count": 1}],
+        )
+        self.assertEqual(open_url.call_count, 1)
+        self.assertEqual(
+            Path(open_url.call_args.args[0].toLocalFile()),
+            attachment.resolve(),
         )
         self.assertEqual(unavailable_payload["error"], "Reconciliation is unavailable.")
         self.assertEqual(invalid_payload["error"], "Enter a UTC month as YYYY-MM.")

@@ -5,8 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 import re
 from typing import Any
+
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 
 from bmo.qt.views.base import QtHostedView
 
@@ -33,12 +37,14 @@ class QtIMessageRelayView(QtHostedView):
         self.reconcile_month = reconcile_month
         self.feed_provider = feed_provider or (lambda: ())
         self.error = ""
+        self._attachment_paths: set[str] = set()
         super().__init__(host, on_close=on_close)
 
     def payload(self) -> dict[str, object]:
         status = self.status_provider()
         report = dict(status.last_reconciliation or {})
         messages = []
+        attachment_paths: set[str] = set()
         for item in self.feed_provider():
             if is_dataclass(item) and not isinstance(item, type):
                 message = asdict(item)
@@ -50,7 +56,14 @@ class QtIMessageRelayView(QtHostedView):
                 value = message.get(key)
                 if isinstance(value, tuple):
                     message[key] = list(value)
+            for attachment in message.get("attachments", []):
+                if not isinstance(attachment, dict) or attachment.get("available") is not True:
+                    continue
+                path = attachment.get("path")
+                if isinstance(path, str) and Path(path).is_absolute():
+                    attachment_paths.add(str(Path(path).resolve(strict=False)))
             messages.append(message)
+        self._attachment_paths = attachment_paths
         return {
             "serviceState": status.service_state,
             "serviceMessage": _service_message(
@@ -88,6 +101,9 @@ class QtIMessageRelayView(QtHostedView):
         if action == "relay_refresh":
             self.refresh()
             return
+        if action == "relay_open_attachment":
+            self._open_attachment(value)
+            return
         if action == "relay_reconcile_recent":
             self._start(self.reconcile_recent(self.refresh))
             return
@@ -110,6 +126,24 @@ class QtIMessageRelayView(QtHostedView):
             self._start(started)
             return
         super().handle_action(action, value)
+
+    def _open_attachment(self, value: str) -> None:
+        candidate = Path(value)
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            resolved = None
+        if (
+            resolved is None
+            or not candidate.is_absolute()
+            or candidate.is_symlink()
+            or not resolved.is_file()
+            or str(resolved) not in self._attachment_paths
+        ):
+            self.error = "Attachment is unavailable."
+        elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(resolved))):
+            self.error = "Attachment could not be opened."
+        self.refresh()
 
     def _start(self, started: bool) -> None:
         if not started:

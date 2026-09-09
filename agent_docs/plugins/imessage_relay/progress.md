@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
 current_stage: 12
-current_chapter: Reaction badge UI and final physical acceptance
+current_chapter: Attachment opening, compact UI, and final physical acceptance
 state: in_progress
-next_action: Deploy and physically verify target-message reaction badges and removal, recheck optimized large-video transfer, then finish restart/reconciliation/cleanup acceptance. Do not begin Stage 13.
+next_action: Sync the compact kiosk UI and configurable media publication, verify photo/audio/video buttons open their files and the header dot follows phone connectivity, then finish restart/reconciliation/cleanup acceptance. Do not begin Stage 13.
 last_verified: 2026-09-09
 
 ## Stage index
@@ -78,6 +78,14 @@ last_verified: 2026-09-09
 - The Qt boundary converts reaction and attachment tuples into native variant
   lists. This prevents PySide from exposing opaque Python objects to nested QML
   models and is required for reaction badges to render on the physical kiosk.
+- Completed receiver blobs remain private durable state and are lazily exposed
+  through configured photo, audio, and video directories. Same-filesystem hard
+  links avoid another byte copy; cross-filesystem publication is atomic and
+  digest-verified. The compact view opens only current validated feed paths.
+- The kiosk relay view now dedicates its body to messages and attachments. The
+  counters, receiver prose, headings, and reconciliation panel are removed;
+  reconciliation remains in the service. A header dot is green only for a
+  healthy receiver plus connected phone control and red otherwise.
 
 ## Cleanup status
 
@@ -120,7 +128,7 @@ last_verified: 2026-09-09
   accepted its duplicate idempotently, and left one durable kiosk receipt.
 
 - Complete relay suite: 123 tests and 21 subtests passed.
-- Complete repository suite: 838 tests and 10,006 subtests passed in 20.41
+- Complete repository suite: 845 tests and 10,006 subtests passed in 21.48
   seconds with exit status zero.
 - Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
   --check` passed. Physical kiosk and phone migration cleanup is complete. The
@@ -137,9 +145,13 @@ last_verified: 2026-09-09
   delivery passed for immediate text, back-to-back text, stable scrolling,
   photo, an 18–20-MiB video, reaction add/remove, and kiosk-offline recovery.
   The offline batch exposed unstable display ordering when receipts shared a
-  timestamp, and the large video exposed per-chunk TLS handshake overhead.
-  Source-time ordering and TLS reuse were deployed; the first ordering retest
-  established that the feed must remain newest-first, and that final
-  presentation correction awaits deployment/retest.
-- Current complete kiosk relay suite: 125 tests and 21 subtests passed. Current
+  timestamp, and the large video exposed per-chunk TLS handshake overhead;
+  source-time/newest-first ordering and per-delivery TLS reuse were deployed
+  and the corrected visible order passed. Target-message SVG reactions now
+  replace and remove correctly in the physical UI.
+- Reaction badge replacement/removal and SVG rendering passed physical kiosk
+  verification. Photo, 18–20-MiB video, reaction add/remove, offline recovery,
+  newest-first ordering, and stable scrolling have also passed. Configurable
+  attachment opening and the compact status UI still require physical retest.
+- Current complete kiosk relay suite: 130 tests and 21 subtests passed. Current
   complete standalone phone suite: 39 tests passed.

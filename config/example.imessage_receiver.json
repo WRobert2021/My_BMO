@@ -8,6 +8,9 @@
   "allow_insecure_loopback": true,
   "key_id": "kiosk-incoming-1",
   "shared_secret_file": "config/private/imessage_receiver.secret",
+  "photo_directory": "/home/pi-bmo/Pictures/bmo/messages",
+  "audio_directory": "/home/pi-bmo/Music/bmo/messages",
+  "video_directory": "/home/pi-bmo/Videos/bmo/messages",
   "max_clock_skew_seconds": 300,
   "max_request_bytes": 2097152,
   "request_timeout_seconds": 10

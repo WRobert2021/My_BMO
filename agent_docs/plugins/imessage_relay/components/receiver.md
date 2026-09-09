@@ -27,6 +27,12 @@ only with explicit loopback development. `build_server` loads TLS before
 binding, opens the private store, constructs authenticator/application/server,
 and closes partial resources on any failure.
 
+Both schemas accept absolute `photo_directory`, `audio_directory`, and
+`video_directory` destinations. Omitted values default to the `pi-bmo` kiosk
+user's Pictures, Music, and Videos trees under a `bmo/messages` subdirectory.
+These paths are used only by the feature-owned media publisher after a blob is
+complete; the receiver transport continues to write only its private store.
+
 `ReceiverStateStore` uses an `IMKR` application ID, schema version 2, WAL,
 foreign keys, `synchronous=FULL`, a `0600` file, and locked transactions over
 its shared connection. It stores canonical event JSON/digest keyed by stable

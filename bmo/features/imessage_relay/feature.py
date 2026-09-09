@@ -22,6 +22,7 @@ from bmo.features.contracts import (
     ToolResult,
 )
 from bmo.view_factory import NOT_HOSTED, create_hosted_view
+from .media_library import PublishedAttachment, ReceivedMediaLibrary
 from .receiver import (
     ReceiverConfigError,
     ReceiverStateStore,
@@ -105,7 +106,7 @@ class IncomingFeedItem:
     sender: str
     timestamp: str
     text: str
-    attachments: tuple[str, ...]
+    attachments: tuple[PublishedAttachment, ...]
     reactions: tuple[ReactionBadge, ...] = ()
 
 
@@ -152,6 +153,7 @@ class RelayRuntimeService:
         self._server: Any | None = None
         self._receiver_store: ReceiverStateStore | None = None
         self._server_thread: threading.Thread | None = None
+        self._media_library: ReceivedMediaLibrary | None = None
         self._phone_control: PhoneControlCoordinator | None = None
         self._phone_control_error_code: str | None = None
         self._service_state = "unavailable"
@@ -191,6 +193,11 @@ class RelayRuntimeService:
         store: ReceiverStateStore | None = None
         try:
             receiver_config = load_receiver_config(self.config.receiver_config_path)
+            media_library = ReceivedMediaLibrary(
+                photo_directory=receiver_config.photo_directory,
+                audio_directory=receiver_config.audio_directory,
+                video_directory=receiver_config.video_directory,
+            )
             server, store = build_server(receiver_config)
             thread = threading.Thread(
                 target=self._serve_receiver,
@@ -200,6 +207,7 @@ class RelayRuntimeService:
             )
             self._server = server
             self._receiver_store = store
+            self._media_library = media_library
             self._server_thread = thread
             thread.start()
         except ReceiverConfigError:
@@ -305,6 +313,7 @@ class RelayRuntimeService:
 
         with self._lock:
             store = self._receiver_store
+            media_library = self._media_library
             closed = self._closed
         if closed or store is None:
             return ()
@@ -358,17 +367,13 @@ class RelayRuntimeService:
                 timestamp = str(event["timestamp_utc"])
                 raw_text = event.get("text")
                 text = raw_text.strip() if isinstance(raw_text, str) else ""
-                raw_attachments = event.get("attachments")
-                attachments = tuple(
-                    str(attachment.get("media_category"))
-                    for attachment in (
-                        raw_attachments if isinstance(raw_attachments, list) else []
-                    )
-                    if isinstance(attachment, dict)
-                    and isinstance(attachment.get("media_category"), str)
+                attachments = (
+                    media_library.attachments_for_event(store, event)
+                    if media_library is not None
+                    else ()
                 )
                 if not text:
-                    text = "Attachment" if attachments else "Message"
+                    text = "" if attachments else "Message"
                 message_id = event.get("message_id")
                 reactions = _aggregate_reaction_badges(
                     active_reactions.get(message_id, {}).values()
