@@ -75,6 +75,9 @@ last_verified: 2026-09-09
   Active additions render as aggregated badges on their target message; an
   exact referenced removal, or a bounded semantic fallback when no reference
   exists, removes the corresponding badge.
+- The Qt boundary converts reaction and attachment tuples into native variant
+  lists. This prevents PySide from exposing opaque Python objects to nested QML
+  models and is required for reaction badges to render on the physical kiosk.
 
 ## Cleanup status
 

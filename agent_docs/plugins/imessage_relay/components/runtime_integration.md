@@ -87,6 +87,9 @@ Active reactions are aggregated into compact badges on the target message, and
 a removal makes the corresponding badge disappear on the next local refresh.
 Reaction state is resolved before messages are rendered, so Apple timestamp or
 receipt ordering cannot suppress a valid badge.
+The Qt adapter converts feed tuples to native variant lists before QML receives
+them; nested attachment and reaction models must never cross as opaque Python
+objects.
 
 When phone control connects, incoming status reports the connection and both
 bounded reconciliation controls are enabled. If the phone or its control

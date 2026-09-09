@@ -41,9 +41,16 @@ class QtIMessageRelayView(QtHostedView):
         messages = []
         for item in self.feed_provider():
             if is_dataclass(item) and not isinstance(item, type):
-                messages.append(asdict(item))
+                message = asdict(item)
             elif isinstance(item, dict):
-                messages.append(dict(item))
+                message = dict(item)
+            else:
+                continue
+            for key in ("attachments", "reactions"):
+                value = message.get(key)
+                if isinstance(value, tuple):
+                    message[key] = list(value)
+            messages.append(message)
         return {
             "serviceState": status.service_state,
             "serviceMessage": _service_message(
