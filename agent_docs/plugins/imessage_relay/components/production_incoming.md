@@ -138,11 +138,11 @@ recovered events can share the same receipt-clock tick.
 
 Incoming and outgoing reaction events stay in the durable receipt record but
 are presented as active badges on their incoming target message rather than
-standalone feed rows. Removal folds
-against the referenced addition when available and otherwise uses the same
-target/part/sender/kind identity, so the badge disappears without deleting
-either receipt. Folding resolves the bounded reaction set before rendering its
-messages and therefore does not depend on reaction/target receipt order.
+standalone feed rows. A target part has one active slot per sender, so changing
+a reaction replaces the prior badge and removing the current reaction clears
+that slot without deleting either receipt. Folding resolves the bounded
+reaction set before rendering its messages and therefore does not depend on
+reaction/target receipt order.
 
 ## Migration cleanup
 

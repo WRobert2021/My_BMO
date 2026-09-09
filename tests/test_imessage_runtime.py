@@ -404,11 +404,28 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                 reaction_kind=ReactionKind.THUMBS_UP,
                 source_reaction_type=2001,
             )
+            replacement_timestamp = message.timestamp_raw_ns + 1_000_000_000
+            replacement = ReactionEvent(
+                schema_version=1,
+                event_kind=EventKind.REACTION_ADDED,
+                event_id="REACTION-REPLACEMENT",
+                source_rowid=3,
+                chat_id=message.chat_id,
+                participant_ids=message.participant_ids,
+                sender=Sender(kind=SenderKind.SELF, identifier="self"),
+                direction=Direction.OUTGOING,
+                timestamp_raw_ns=replacement_timestamp,
+                timestamp_utc=apple_nanoseconds_to_datetime(replacement_timestamp),
+                target_message_id=message.message_id,
+                target_part=0,
+                reaction_kind=ReactionKind.THUMBS_DOWN,
+                source_reaction_type=2002,
+            )
             removed = ReactionEvent(
                 schema_version=1,
                 event_kind=EventKind.REACTION_REMOVED,
                 event_id="REACTION-REMOVED",
-                source_rowid=3,
+                source_rowid=4,
                 chat_id=message.chat_id,
                 participant_ids=message.participant_ids,
                 sender=Sender(kind=SenderKind.SELF, identifier="self"),
@@ -417,9 +434,9 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                 timestamp_utc=apple_nanoseconds_to_datetime(removed_timestamp),
                 target_message_id=message.message_id,
                 target_part=0,
-                reaction_kind=ReactionKind.THUMBS_UP,
-                source_reaction_type=3001,
-                removed_event_id=added.event_id,
+                reaction_kind=ReactionKind.UNKNOWN,
+                source_reaction_type=3002,
+                removed_event_id=replacement.event_id,
             )
             with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
                 service = RelayRuntimeService(
@@ -434,6 +451,13 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                     added_feed = service.recent_items()
                     service._receiver_store.ingest(
                         decode_event_envelope(
+                            encode_event_envelope(replacement, "REQUEST-REPLACEMENT")
+                        ),
+                        received_at_ms=100,
+                    )
+                    replaced_feed = service.recent_items()
+                    service._receiver_store.ingest(
+                        decode_event_envelope(
                             encode_event_envelope(removed, "REQUEST-REMOVED")
                         ),
                         received_at_ms=100,
@@ -444,7 +468,15 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                     fixture.close()
 
         self.assertEqual(len(added_feed), 1)
-        self.assertEqual(added_feed[0].reactions, ("👍",))
+        self.assertEqual(
+            [(badge.kind, badge.count) for badge in added_feed[0].reactions],
+            [("thumbs_up", 1)],
+        )
+        self.assertEqual(len(replaced_feed), 1)
+        self.assertEqual(
+            [(badge.kind, badge.count) for badge in replaced_feed[0].reactions],
+            [("thumbs_down", 1)],
+        )
         self.assertEqual(len(removed_feed), 1)
         self.assertEqual(removed_feed[0].reactions, ())
 
@@ -519,10 +551,8 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
 
 class IMessageRuntimeViewTests(unittest.TestCase):
     def test_qml_keeps_a_stable_feed_model_between_status_refreshes(self) -> None:
-        source = (
-            Path(__file__).resolve().parents[1]
-            / "bmo/qt/qml/IMessageRelayView.qml"
-        ).read_text(encoding="utf-8")
+        qml_root = Path(__file__).resolve().parents[1] / "bmo/qt/qml"
+        source = (qml_root / "IMessageRelayView.qml").read_text(encoding="utf-8")
 
         self.assertIn("function syncMessages()", source)
         self.assertIn("model: root.displayedMessages", source)
@@ -530,6 +560,20 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIn("previousY = messageList.contentY", source)
         self.assertIn("id: reactionBadges", source)
         self.assertIn("model: modelData.reactions || []", source)
+        self.assertIn("function reactionIcon(kind)", source)
+        for name in (
+            "heart.svg",
+            "thumbs-up.svg",
+            "thumbs-down.svg",
+            "haha.svg",
+            "emphasize.svg",
+            "question.svg",
+            "unknown.svg",
+        ):
+            self.assertTrue(
+                (qml_root / "assets/imessage_reactions" / name).is_file(),
+                name,
+            )
 
     def status(self, **changes: object) -> RelayRuntimeStatus:
         values: dict[str, object] = {
@@ -569,7 +613,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
                     "timestamp": "2026-09-05T00:00:00+00:00",
                     "text": "invented message",
                     "attachments": (),
-                    "reactions": ("👍",),
+                    "reactions": ({"kind": "thumbs_up", "count": 1},),
                 },
             ),
         )
@@ -586,7 +630,10 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertEqual(payload["serviceMessage"], "Receiver is listening.")
         self.assertEqual(payload["messages"][0]["text"], "invented message")
         self.assertEqual(payload["messages"][0]["attachments"], [])
-        self.assertEqual(payload["messages"][0]["reactions"], ["👍"])
+        self.assertEqual(
+            payload["messages"][0]["reactions"],
+            [{"kind": "thumbs_up", "count": 1}],
+        )
         self.assertEqual(unavailable_payload["error"], "Reconciliation is unavailable.")
         self.assertEqual(invalid_payload["error"], "Enter a UTC month as YYYY-MM.")
         recent.assert_called_once()

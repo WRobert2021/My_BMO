@@ -79,14 +79,17 @@ reads local state only. The message model changes only when feed content changes
 and preserves a non-top scroll position.
 
 Reaction receipts are not rendered as separate messages. Both incoming and
-outgoing reactions are folded into their incoming target message using target
-ID, target part, sender, and reaction kind. A referenced removal cancels the
-exact addition;
-the semantic identity is the bounded fallback when Apple supplies no reference.
+outgoing reactions are folded into their incoming target message. Each target
+part and sender has one reaction slot: its newest addition replaces the prior
+kind, while its newest removal clears the slot even when Apple supplies no
+reference to an earlier addition.
 Active reactions are aggregated into compact badges on the target message, and
 a removal makes the corresponding badge disappear on the next local refresh.
 Reaction state is resolved before messages are rendered, so Apple timestamp or
 receipt ordering cannot suppress a valid badge.
+Reaction badges use plugin-owned SVG icons rather than platform emoji fonts, so
+heart, thumb, laugh, emphasize, and question artwork renders consistently on
+the kiosk. Only an optional aggregate count uses text.
 The Qt adapter converts feed tuples to native variant lists before QML receives
 them; nested attachment and reaction models must never cross as opaque Python
 objects.

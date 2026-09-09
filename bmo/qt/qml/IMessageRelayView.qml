@@ -9,6 +9,19 @@ Item {
     property var displayedMessages: []
     property string displayedMessagesJson: ""
 
+    function reactionIcon(kind) {
+        const icons = {
+            "heart": "assets/imessage_reactions/heart.svg",
+            "thumbs_up": "assets/imessage_reactions/thumbs-up.svg",
+            "thumbs_down": "assets/imessage_reactions/thumbs-down.svg",
+            "haha": "assets/imessage_reactions/haha.svg",
+            "emphasize": "assets/imessage_reactions/emphasize.svg",
+            "question": "assets/imessage_reactions/question.svg",
+            "unknown": "assets/imessage_reactions/unknown.svg"
+        }
+        return Qt.resolvedUrl(icons[kind] || icons.unknown)
+    }
+
     function send(action, value) {
         controller.requestViewAction(action, value === undefined ? "" : String(value))
     }
@@ -238,20 +251,33 @@ Item {
 
                                         delegate: Rectangle {
                                             required property var modelData
-                                            width: Math.max(25, reactionLabel.implicitWidth + 12)
+                                            width: modelData.count > 1 ? 39 : 26
                                             height: 24
                                             radius: 12
                                             color: "#d9f3ff"
                                             border.width: 1
                                             border.color: "#8fcde6"
 
-                                            Label {
-                                                id: reactionLabel
+                                            Row {
                                                 anchors.centerIn: parent
-                                                text: modelData
-                                                color: "#102a5e"
-                                                font.pixelSize: 12
-                                                font.bold: true
+                                                spacing: 2
+
+                                                Image {
+                                                    width: 16
+                                                    height: 16
+                                                    sourceSize.width: 32
+                                                    sourceSize.height: 32
+                                                    source: root.reactionIcon(modelData.kind)
+                                                    fillMode: Image.PreserveAspectFit
+                                                }
+
+                                                Label {
+                                                    visible: modelData.count > 1
+                                                    text: modelData.count
+                                                    color: "#102a5e"
+                                                    font.pixelSize: 10
+                                                    font.bold: true
+                                                }
                                             }
                                         }
                                     }

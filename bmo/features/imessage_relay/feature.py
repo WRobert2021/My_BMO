@@ -47,17 +47,17 @@ DEFAULT_PHONE_CONTROL_CONFIG_PATH = Path("config/imessage_phone_control.json")
 DEFAULT_RECENT_DAYS = 7
 MAX_RECENT_DAYS = 31
 
-_REACTION_BADGES = {
-    "heart": "♥",
-    "thumbs_up": "👍",
-    "thumbs_down": "👎",
-    "haha": "HA",
-    "emphasize": "‼",
-    "question": "?",
-    "unknown": "•",
-}
+_REACTION_KINDS = (
+    "heart",
+    "thumbs_up",
+    "thumbs_down",
+    "haha",
+    "emphasize",
+    "question",
+    "unknown",
+)
 _REACTION_BADGE_ORDER = {
-    badge: index for index, badge in enumerate(_REACTION_BADGES.values())
+    reaction_kind: index for index, reaction_kind in enumerate(_REACTION_KINDS)
 }
 
 StatusCallback = Callable[[], None]
@@ -94,13 +94,19 @@ class RelayRuntimeStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class ReactionBadge:
+    kind: str
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
 class IncomingFeedItem:
     kind: str
     sender: str
     timestamp: str
     text: str
     attachments: tuple[str, ...]
-    reactions: tuple[str, ...] = ()
+    reactions: tuple[ReactionBadge, ...] = ()
 
 
 def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
@@ -319,36 +325,21 @@ class RelayRuntimeService:
                 ):
                     events.append(event)
 
-            active_reactions: dict[
-                str, dict[tuple[str, int, str, str, str], str]
-            ] = {}
-            removed_event_ids: set[str] = set()
-            unreferenced_removals: Counter[
-                tuple[str, int, str, str, str]
-            ] = Counter()
+            active_reactions: dict[str, dict[tuple[str, int, str, str], str]] = {}
+            resolved_reaction_slots: set[tuple[str, int, str, str]] = set()
             for event in events:
                 event_kind = event.get("event_kind")
                 if event_kind in {"reaction_added", "reaction_removed"}:
-                    identity = _reaction_identity(event)
-                    if identity is None:
+                    slot = _reaction_slot(event)
+                    if slot is None or slot in resolved_reaction_slots:
                         continue
+                    resolved_reaction_slots.add(slot)
                     if event_kind == "reaction_removed":
-                        removed_event_id = event.get("removed_event_id")
-                        if isinstance(removed_event_id, str) and removed_event_id:
-                            removed_event_ids.add(removed_event_id)
-                        else:
-                            unreferenced_removals[identity] += 1
                         continue
-                    event_id = event.get("event_id")
-                    if isinstance(event_id, str) and event_id in removed_event_ids:
-                        continue
-                    if unreferenced_removals[identity] > 0:
-                        unreferenced_removals[identity] -= 1
-                        continue
-                    target_message_id = identity[0]
+                    target_message_id = slot[0]
                     active_reactions.setdefault(target_message_id, {}).setdefault(
-                        identity,
-                        _reaction_badge(event),
+                        slot,
+                        _reaction_badge_kind(event),
                     )
 
             items: list[IncomingFeedItem] = []
@@ -566,9 +557,9 @@ def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
     registry.register(IMESSAGE_RELAY_MENU_ITEM)
 
 
-def _reaction_identity(
+def _reaction_slot(
     event: Mapping[str, Any],
-) -> tuple[str, int, str, str, str] | None:
+) -> tuple[str, int, str, str] | None:
     target_message_id = event.get("target_message_id")
     target_part = event.get("target_part")
     reaction_kind = event.get("reaction_kind")
@@ -579,7 +570,7 @@ def _reaction_identity(
         and type(target_part) is int
         and target_part >= 0
         and isinstance(reaction_kind, str)
-        and reaction_kind in _REACTION_BADGES
+        and reaction_kind in _REACTION_KINDS
         and isinstance(sender, dict)
     ):
         return None
@@ -597,28 +588,22 @@ def _reaction_identity(
         target_part,
         sender_kind,
         sender_identifier,
-        reaction_kind,
     )
 
 
-def _reaction_badge(event: Mapping[str, Any]) -> str:
+def _reaction_badge_kind(event: Mapping[str, Any]) -> str:
     reaction_kind = event.get("reaction_kind")
-    if reaction_kind == "unknown":
-        emoji = event.get("emoji")
-        if isinstance(emoji, str) and 0 < len(emoji) <= 8:
-            return emoji
-    return _REACTION_BADGES.get(str(reaction_kind), "•")
+    return str(reaction_kind) if reaction_kind in _REACTION_KINDS else "unknown"
 
 
-def _aggregate_reaction_badges(badges: Any) -> tuple[str, ...]:
-    counts = Counter(str(badge) for badge in badges)
+def _aggregate_reaction_badges(badges: Any) -> tuple[ReactionBadge, ...]:
+    counts = Counter(str(reaction_kind) for reaction_kind in badges)
     ordered = sorted(
         counts,
-        key=lambda badge: (_REACTION_BADGE_ORDER.get(badge, 999), badge),
+        key=lambda kind: (_REACTION_BADGE_ORDER.get(kind, 999), kind),
     )
     return tuple(
-        badge if counts[badge] == 1 else f"{badge} {counts[badge]}"
-        for badge in ordered
+        ReactionBadge(kind=kind, count=counts[kind]) for kind in ordered
     )
 
 

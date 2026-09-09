@@ -72,9 +72,9 @@ last_verified: 2026-09-09
   delivery. It is closed when that delivery ends so idle server disconnects
   cannot poison the next event.
 - Reaction receipts remain durable events but are folded out of the kiosk feed.
-  Active additions render as aggregated badges on their target message; an
-  exact referenced removal, or a bounded semantic fallback when no reference
-  exists, removes the corresponding badge.
+  The newest event in each target-part/sender slot determines its state: a new
+  kind replaces the prior badge and a removal clears the slot. Plugin-owned SVG
+  artwork avoids the kiosk's missing color-emoji glyphs.
 - The Qt boundary converts reaction and attachment tuples into native variant
   lists. This prevents PySide from exposing opaque Python objects to nested QML
   models and is required for reaction badges to render on the physical kiosk.
