@@ -572,6 +572,8 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIn('objectName: "relayPhotoViewer"', source)
         self.assertIn('objectName: "relayVideoViewer"', source)
         self.assertIn('objectName: "relayMediaPlayer"', source)
+        self.assertIn('mediaViewer.mediaCategory === "photo"', source)
+        self.assertIn('? (mediaViewer.selected.source || "")', source)
         self.assertIn("MediaPlayer {", source)
         self.assertIn('root.send("relay_close_attachment")', source)
         self.assertNotIn("QDesktopServices", adapter)

@@ -256,7 +256,9 @@ Item {
             anchors.bottom: viewerControls.top
             anchors.margins: 10
             visible: mediaViewer.mediaCategory === "photo"
-            source: mediaViewer.selected.source || ""
+            source: mediaViewer.mediaCategory === "photo"
+                ? (mediaViewer.selected.source || "")
+                : ""
             fillMode: Image.PreserveAspectFit
             asynchronous: true
         }

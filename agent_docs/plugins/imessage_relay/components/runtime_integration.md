@@ -98,7 +98,8 @@ player within that same hosted view, with play, pause, restart, and back
 controls. No desktop handler, VLC window, shell command, or second process is
 started. An unavailable blob or media decode error is reported in the view
 without affecting receiver lifecycle, and closing the attachment or hosted
-view stops playback.
+view stops playback. Inactive renderers receive no source URL, so a video/audio
+file is never also offered to the photo decoder.
 
 Reaction receipts are not rendered as separate messages. Both incoming and
 outgoing reactions are folded into their incoming target message. Each target

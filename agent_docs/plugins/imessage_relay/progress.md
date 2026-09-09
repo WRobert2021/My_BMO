@@ -3,7 +3,7 @@
 current_stage: 12
 current_chapter: Contained attachment viewing and final physical acceptance
 state: in_progress
-next_action: Install the version-matched Qt Addons requirement and sync the contained relay media viewer; verify photo/video playback, deferred audio playback, cleanup, and the header dot on the kiosk, then finish restart/reconciliation/cleanup acceptance. Do not begin Stage 13.
+next_action: Sync the media-specific source-routing fix and verify the prior video no longer reaches QQuickImage; then verify deferred audio playback, cleanup, and the header dot before finishing Stage 12 acceptance. Do not begin Stage 13.
 last_verified: 2026-09-09
 
 ## Stage index
@@ -132,7 +132,7 @@ last_verified: 2026-09-09
   accepted its duplicate idempotently, and left one durable kiosk receipt.
 
 - Complete relay suite: 123 tests and 21 subtests passed.
-- Complete repository suite: 845 tests and 10,006 subtests passed in 23.35
+- Complete repository suite: 845 tests and 10,006 subtests passed in 23.55
   seconds with exit status zero.
 - Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
   --check` passed. Physical kiosk and phone migration cleanup is complete. The
@@ -155,11 +155,14 @@ last_verified: 2026-09-09
   replace and remove correctly in the physical UI.
 - Reaction badge replacement/removal and SVG rendering passed physical kiosk
   verification. Photo, 18–20-MiB video, reaction add/remove, offline recovery,
-  newest-first ordering, and stable scrolling have also passed. Contained
-  attachment viewing and the compact status UI still require physical retest.
+  newest-first ordering, and stable scrolling have also passed. Contained photo
+  and video rendering now pass on the kiosk. Physical output exposed an
+  inactive QQuickImage receiving the video URL; the source-routing correction
+  is local and awaits sync. Audio and the compact status UI remain pending.
 - Current complete kiosk relay suite: 130 tests and 21 subtests passed. Current
   complete standalone phone suite: 39 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo/video
-  rendering, playback cleanup, and later audio output remain to be checked.
+  rendering passed; playback cleanup and later audio output remain to be
+  checked.
