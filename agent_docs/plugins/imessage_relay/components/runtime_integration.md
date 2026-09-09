@@ -78,6 +78,13 @@ arrive within one receipt-clock tick. Its two-second refresh
 reads local state only. The message model changes only when feed content changes
 and preserves a non-top scroll position.
 
+Reaction receipts are not rendered as separate messages. The feed folds each
+supported addition into its target message using target ID, target part,
+sender, and reaction kind. A referenced removal cancels the exact addition;
+the semantic identity is the bounded fallback when Apple supplies no reference.
+Active reactions are aggregated into compact badges on the target message, and
+a removal makes the corresponding badge disappear on the next local refresh.
+
 When phone control connects, incoming status reports the connection and both
 bounded reconciliation controls are enabled. If the phone or its control
 configuration is unavailable, the receiver and existing feed remain usable
@@ -88,7 +95,8 @@ status is exposed.
 
 `tests/test_imessage_runtime.py` covers opt-in registration, resource-free
 metadata, failure isolation, listener lifecycle, durable feed updates,
-control-absent degradation, stable scrolling, view actions, and cleanup.
+reaction badge folding/removal, control-absent degradation, stable scrolling,
+view actions, and cleanup.
 `tests/test_imessage_phone_control.py` owns strict configuration,
 shared canonical/HMAC vectors, ACK handling, resume/probe scheduling,
 single-flight reconciliation, and control cleanup. Receiver and attachment

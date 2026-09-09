@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -46,6 +47,19 @@ DEFAULT_PHONE_CONTROL_CONFIG_PATH = Path("config/imessage_phone_control.json")
 DEFAULT_RECENT_DAYS = 7
 MAX_RECENT_DAYS = 31
 
+_REACTION_BADGES = {
+    "heart": "♥",
+    "thumbs_up": "👍",
+    "thumbs_down": "👎",
+    "haha": "HA",
+    "emphasize": "‼",
+    "question": "?",
+    "unknown": "•",
+}
+_REACTION_BADGE_ORDER = {
+    badge: index for index, badge in enumerate(_REACTION_BADGES.values())
+}
+
 StatusCallback = Callable[[], None]
 RelayAppFactory = Callable[..., Any]
 
@@ -86,6 +100,7 @@ class IncomingFeedItem:
     timestamp: str
     text: str
     attachments: tuple[str, ...]
+    reactions: tuple[str, ...] = ()
 
 
 def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
@@ -288,8 +303,15 @@ class RelayRuntimeService:
         if closed or store is None:
             return ()
         try:
-            stored = store.recent_events(min(100, max(1, limit * 3)))
+            stored = store.recent_events(100)
             items: list[IncomingFeedItem] = []
+            active_reactions: dict[
+                str, dict[tuple[str, int, str, str, str], str]
+            ] = {}
+            removed_event_ids: set[str] = set()
+            unreferenced_removals: Counter[
+                tuple[str, int, str, str, str]
+            ] = Counter()
             for row in stored:
                 raw = row.event_json.encode("utf-8")
                 if not hmac.compare_digest(
@@ -309,7 +331,31 @@ class RelayRuntimeService:
                 timestamp = event.get("timestamp_utc")
                 if not isinstance(timestamp, str):
                     continue
-                if event.get("event_kind") == "message":
+                event_kind = event.get("event_kind")
+                if event_kind in {"reaction_added", "reaction_removed"}:
+                    identity = _reaction_identity(event)
+                    if identity is None:
+                        continue
+                    if event_kind == "reaction_removed":
+                        removed_event_id = event.get("removed_event_id")
+                        if isinstance(removed_event_id, str) and removed_event_id:
+                            removed_event_ids.add(removed_event_id)
+                        else:
+                            unreferenced_removals[identity] += 1
+                        continue
+                    event_id = event.get("event_id")
+                    if isinstance(event_id, str) and event_id in removed_event_ids:
+                        continue
+                    if unreferenced_removals[identity] > 0:
+                        unreferenced_removals[identity] -= 1
+                        continue
+                    target_message_id = identity[0]
+                    active_reactions.setdefault(target_message_id, {}).setdefault(
+                        identity,
+                        _reaction_badge(event),
+                    )
+                    continue
+                if event_kind == "message":
                     raw_text = event.get("text")
                     text = raw_text.strip() if isinstance(raw_text, str) else ""
                     raw_attachments = event.get("attachments")
@@ -324,20 +370,14 @@ class RelayRuntimeService:
                     if not text:
                         text = "Attachment" if attachments else "Message"
                     kind = "message"
-                elif event.get("event_kind") in {"reaction_added", "reaction_removed"}:
-                    attachments = ()
-                    action = (
-                        "Removed"
-                        if event.get("event_kind") == "reaction_removed"
-                        else "Reacted"
-                    )
-                    reaction = event.get("reaction_kind")
-                    if not isinstance(reaction, str):
-                        continue
-                    text = f"{action}: {reaction.replace('_', ' ')}"
-                    kind = "reaction"
                 else:
                     continue
+                message_id = event.get("message_id")
+                reactions = _aggregate_reaction_badges(
+                    active_reactions.get(message_id, {}).values()
+                    if isinstance(message_id, str)
+                    else ()
+                )
                 items.append(
                     IncomingFeedItem(
                         kind=kind,
@@ -349,6 +389,7 @@ class RelayRuntimeService:
                         timestamp=timestamp,
                         text=text[:2_000],
                         attachments=attachments,
+                        reactions=reactions,
                     )
                 )
                 if len(items) >= limit:
@@ -517,6 +558,62 @@ def register_menu_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
 
     del settings
     registry.register(IMESSAGE_RELAY_MENU_ITEM)
+
+
+def _reaction_identity(
+    event: Mapping[str, Any],
+) -> tuple[str, int, str, str, str] | None:
+    target_message_id = event.get("target_message_id")
+    target_part = event.get("target_part")
+    reaction_kind = event.get("reaction_kind")
+    sender = event.get("sender")
+    if not (
+        isinstance(target_message_id, str)
+        and target_message_id
+        and type(target_part) is int
+        and target_part >= 0
+        and isinstance(reaction_kind, str)
+        and reaction_kind in _REACTION_BADGES
+        and isinstance(sender, dict)
+    ):
+        return None
+    sender_kind = sender.get("kind")
+    sender_identifier = sender.get("identifier")
+    if not (
+        isinstance(sender_kind, str)
+        and sender_kind
+        and isinstance(sender_identifier, str)
+        and sender_identifier
+    ):
+        return None
+    return (
+        target_message_id,
+        target_part,
+        sender_kind,
+        sender_identifier,
+        reaction_kind,
+    )
+
+
+def _reaction_badge(event: Mapping[str, Any]) -> str:
+    reaction_kind = event.get("reaction_kind")
+    if reaction_kind == "unknown":
+        emoji = event.get("emoji")
+        if isinstance(emoji, str) and 0 < len(emoji) <= 8:
+            return emoji
+    return _REACTION_BADGES.get(str(reaction_kind), "•")
+
+
+def _aggregate_reaction_badges(badges: Any) -> tuple[str, ...]:
+    counts = Counter(str(badge) for badge in badges)
+    ordered = sorted(
+        counts,
+        key=lambda badge: (_REACTION_BADGE_ORDER.get(badge, 999), badge),
+    )
+    return tuple(
+        badge if counts[badge] == 1 else f"{badge} {counts[badge]}"
+        for badge in ordered
+    )
 
 
 def _path_setting(settings: Mapping[str, Any], key: str, default: Path) -> Path:

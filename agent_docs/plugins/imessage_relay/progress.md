@@ -1,10 +1,10 @@
 # iMessage Relay Progress
 
 current_stage: 12
-current_chapter: Physical ordering/throughput corrections and final acceptance
+current_chapter: Reaction badge UI and final physical acceptance
 state: in_progress
-next_action: Deploy the locally verified source-time feed ordering and persistent per-delivery TLS transport, repeat offline ordering and large-video checks, then finish restart/reconciliation/cleanup acceptance. Do not begin Stage 13.
-last_verified: 2026-09-08
+next_action: Deploy and physically verify target-message reaction badges and removal, recheck optimized large-video transfer, then finish restart/reconciliation/cleanup acceptance. Do not begin Stage 13.
+last_verified: 2026-09-09
 
 ## Stage index
 
@@ -71,6 +71,10 @@ last_verified: 2026-09-08
   attachment session, bounded 64-KiB chunks, and completion ACK for a single
   delivery. It is closed when that delivery ends so idle server disconnects
   cannot poison the next event.
+- Reaction receipts remain durable events but are folded out of the kiosk feed.
+  Active additions render as aggregated badges on their target message; an
+  exact referenced removal, or a bounded semantic fallback when no reference
+  exists, removes the corresponding badge.
 
 ## Cleanup status
 

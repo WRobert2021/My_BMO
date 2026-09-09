@@ -31,7 +31,10 @@ from bmo.features.imessage_relay.receiver import (
 )
 from bmo.features.imessage_relay.phone_control import PhoneControlRuntimeStatus
 from bmo.features.imessage_relay.relay import (
+    EventKind,
     MessagesReader,
+    ReactionEvent,
+    ReactionKind,
     apple_nanoseconds_to_datetime,
 )
 from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
@@ -369,6 +372,77 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
 
         self.assertEqual([item.text for item in feed], ["third", "second", "first"])
 
+    def test_feed_applies_and_removes_reaction_badge_on_target_message(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixture = RuntimeMessagesFixture(root)
+            receiver_config = write_receiver_config(root)
+            message = MessagesReader(
+                fixture.database_path,
+                messages_root=fixture.messages_root,
+            ).scan(limit=10).events[0]
+            added_timestamp = message.timestamp_raw_ns + 1_000_000_000
+            removed_timestamp = message.timestamp_raw_ns + 2_000_000_000
+            added = ReactionEvent(
+                schema_version=1,
+                event_kind=EventKind.REACTION_ADDED,
+                event_id="REACTION-ADDED",
+                source_rowid=2,
+                chat_id=message.chat_id,
+                participant_ids=message.participant_ids,
+                sender=message.sender,
+                direction=message.direction,
+                timestamp_raw_ns=added_timestamp,
+                timestamp_utc=apple_nanoseconds_to_datetime(added_timestamp),
+                target_message_id=message.message_id,
+                target_part=0,
+                reaction_kind=ReactionKind.THUMBS_UP,
+                source_reaction_type=2001,
+            )
+            removed = ReactionEvent(
+                schema_version=1,
+                event_kind=EventKind.REACTION_REMOVED,
+                event_id="REACTION-REMOVED",
+                source_rowid=3,
+                chat_id=message.chat_id,
+                participant_ids=message.participant_ids,
+                sender=message.sender,
+                direction=message.direction,
+                timestamp_raw_ns=removed_timestamp,
+                timestamp_utc=apple_nanoseconds_to_datetime(removed_timestamp),
+                target_message_id=message.message_id,
+                target_part=0,
+                reaction_kind=ReactionKind.THUMBS_UP,
+                source_reaction_type=3001,
+                removed_event_id=added.event_id,
+            )
+            with patch.dict(os.environ, {SECRET_ENV: SECRET_TEXT}):
+                service = RelayRuntimeService(
+                    RelayFeatureConfig(receiver_config_path=receiver_config)
+                )
+                try:
+                    for event in (message, added):
+                        envelope = decode_event_envelope(
+                            encode_event_envelope(event, "REQUEST-" + event.event_id)
+                        )
+                        service._receiver_store.ingest(envelope, received_at_ms=100)
+                    added_feed = service.recent_items()
+                    service._receiver_store.ingest(
+                        decode_event_envelope(
+                            encode_event_envelope(removed, "REQUEST-REMOVED")
+                        ),
+                        received_at_ms=100,
+                    )
+                    removed_feed = service.recent_items()
+                finally:
+                    service.close()
+                    fixture.close()
+
+        self.assertEqual(len(added_feed), 1)
+        self.assertEqual(added_feed[0].reactions, ("👍",))
+        self.assertEqual(len(removed_feed), 1)
+        self.assertEqual(removed_feed[0].reactions, ())
+
     def test_reconciliation_is_unavailable_until_phone_control_exists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -449,6 +523,8 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIn("model: root.displayedMessages", source)
         self.assertNotIn("model: viewModel.messages", source)
         self.assertIn("previousY = messageList.contentY", source)
+        self.assertIn("id: reactionBadges", source)
+        self.assertIn("model: modelData.reactions || []", source)
 
     def status(self, **changes: object) -> RelayRuntimeStatus:
         values: dict[str, object] = {
@@ -488,6 +564,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
                     "timestamp": "2026-09-05T00:00:00+00:00",
                     "text": "invented message",
                     "attachments": (),
+                    "reactions": ("👍",),
                 },
             ),
         )
@@ -503,6 +580,7 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIsNone(payload["phoneBacklogCount"])
         self.assertEqual(payload["serviceMessage"], "Receiver is listening.")
         self.assertEqual(payload["messages"][0]["text"], "invented message")
+        self.assertEqual(payload["messages"][0]["reactions"], ("👍",))
         self.assertEqual(unavailable_payload["error"], "Reconciliation is unavailable.")
         self.assertEqual(invalid_payload["error"], "Enter a UTC month as YYYY-MM.")
         recent.assert_called_once()

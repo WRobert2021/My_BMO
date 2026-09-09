@@ -136,6 +136,12 @@ The feed selects and presents a bounded window newest-first using Apple source
 timestamps. Kiosk receipt time is not a display-order authority: several
 recovered events can share the same receipt-clock tick.
 
+Reaction events stay in the durable receipt record but are presented as active
+badges on their target message rather than standalone feed rows. Removal folds
+against the referenced addition when available and otherwise uses the same
+target/part/sender/kind identity, so the badge disappears without deleting
+either receipt.
+
 ## Migration cleanup
 
 Repository cleanup removes:

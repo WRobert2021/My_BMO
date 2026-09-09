@@ -193,8 +193,12 @@ Item {
                                 color: "#eef8ff"
 
                                 Column {
-                                    anchors.fill: parent
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    anchors.right: reactionBadges.left
                                     anchors.margins: 7
+                                    anchors.rightMargin: reactionBadges.visible ? 5 : 7
                                     spacing: 2
                                     Label {
                                         width: parent.width
@@ -218,6 +222,38 @@ Item {
                                         color: "#58708c"
                                         font.pixelSize: 10
                                         elide: Text.ElideRight
+                                    }
+                                }
+
+                                Row {
+                                    id: reactionBadges
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 7
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 3
+                                    visible: (modelData.reactions || []).length > 0
+
+                                    Repeater {
+                                        model: modelData.reactions || []
+
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            width: Math.max(25, reactionLabel.implicitWidth + 12)
+                                            height: 24
+                                            radius: 12
+                                            color: "#d9f3ff"
+                                            border.width: 1
+                                            border.color: "#8fcde6"
+
+                                            Label {
+                                                id: reactionLabel
+                                                anchors.centerIn: parent
+                                                text: modelData
+                                                color: "#102a5e"
+                                                font.pixelSize: 12
+                                                font.bold: true
+                                            }
+                                        }
                                     }
                                 }
                             }
