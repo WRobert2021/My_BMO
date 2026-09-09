@@ -300,7 +300,7 @@ class AlarmQmlContractTests(unittest.TestCase):
         self.assertIn("x: 684", host)
         self.assertIn("y: 5", host)
         self.assertNotIn("frameSource", source)
-        self.assertIn('objectName: "menuItemLabel"', main)
+        self.assertNotIn('objectName: "menuItemLabel"', main)
 
     def test_alarm_qml_instantiates_inside_kiosk_without_moving_face(self) -> None:
         script = r'''

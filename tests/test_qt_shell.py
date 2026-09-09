@@ -1455,6 +1455,7 @@ def descendants(item):
     return found
 
 icons = [item for item in descendants(scene) if item.objectName() == "menuIcon"]
+labels = [item for item in descendants(scene) if item.objectName() == "menuItemLabel"]
 rects = []
 for icon in icons:
     origin = icon.mapToItem(scene, QPointF(0, 0))
@@ -1469,6 +1470,7 @@ print(json.dumps({
     "pill": [page_pill.x(), page_pill.y(), page_pill.width(), page_pill.height()],
     "window": [root.width(), root.height()],
     "iconCount": len(icons),
+    "labelCount": len(labels),
     "iconSizes": [[icon.width(), icon.height()] for icon in icons],
     "overlaps": overlaps,
 }))
@@ -1493,6 +1495,7 @@ app.processEvents()
         self.assertEqual(geometry["pill"], [361.0, 448.0, 78.0, 24.0])
         self.assertEqual(geometry["window"], [800, 480])
         self.assertEqual(geometry["iconCount"], 7)
+        self.assertEqual(geometry["labelCount"], 0)
         self.assertTrue(
             all(size == [108.0, 108.0] for size in geometry["iconSizes"])
         )
@@ -1509,6 +1512,8 @@ app.processEvents()
         self.assertNotIn("bmoUi.menuSelection", source)
         self.assertIn('objectName: "menuCompactFace"', source)
         self.assertIn('objectName: "menuIconHalo"', source)
+        self.assertNotIn('objectName: "menuItemLabel"', source)
+        self.assertNotIn("text: modelData.label", source)
         self.assertIn("anchors.horizontalCenter: parent.horizontalCenter", source)
         self.assertIn('color: "#fff3d3"', source)
 
