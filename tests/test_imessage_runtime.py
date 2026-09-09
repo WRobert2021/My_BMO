@@ -384,7 +384,9 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                 fixture.database_path,
                 messages_root=fixture.messages_root,
             ).scan(limit=10).events[0]
-            added_timestamp = message.timestamp_raw_ns + 1_000_000_000
+            # Apple does not guarantee that a reaction sorts before its target.
+            # Keep this addition older to verify order-independent folding.
+            added_timestamp = message.timestamp_raw_ns - 1_000_000_000
             removed_timestamp = message.timestamp_raw_ns + 2_000_000_000
             added = ReactionEvent(
                 schema_version=1,

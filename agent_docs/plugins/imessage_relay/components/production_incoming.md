@@ -141,7 +141,8 @@ are presented as active badges on their incoming target message rather than
 standalone feed rows. Removal folds
 against the referenced addition when available and otherwise uses the same
 target/part/sender/kind identity, so the badge disappears without deleting
-either receipt.
+either receipt. Folding resolves the bounded reaction set before rendering its
+messages and therefore does not depend on reaction/target receipt order.
 
 ## Migration cleanup
 

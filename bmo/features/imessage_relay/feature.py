@@ -304,14 +304,7 @@ class RelayRuntimeService:
             return ()
         try:
             stored = store.recent_events(100)
-            items: list[IncomingFeedItem] = []
-            active_reactions: dict[
-                str, dict[tuple[str, int, str, str, str], str]
-            ] = {}
-            removed_event_ids: set[str] = set()
-            unreferenced_removals: Counter[
-                tuple[str, int, str, str, str]
-            ] = Counter()
+            events: list[dict[str, Any]] = []
             for row in stored:
                 raw = row.event_json.encode("utf-8")
                 if not hmac.compare_digest(
@@ -320,17 +313,20 @@ class RelayRuntimeService:
                 ):
                     continue
                 event = json.loads(row.event_json)
-                if not isinstance(event, dict):
-                    continue
-                sender_mapping = event.get("sender")
-                sender = (
-                    sender_mapping.get("identifier")
-                    if isinstance(sender_mapping, dict)
-                    else None
-                )
-                timestamp = event.get("timestamp_utc")
-                if not isinstance(timestamp, str):
-                    continue
+                if (
+                    isinstance(event, dict)
+                    and isinstance(event.get("timestamp_utc"), str)
+                ):
+                    events.append(event)
+
+            active_reactions: dict[
+                str, dict[tuple[str, int, str, str, str], str]
+            ] = {}
+            removed_event_ids: set[str] = set()
+            unreferenced_removals: Counter[
+                tuple[str, int, str, str, str]
+            ] = Counter()
+            for event in events:
                 event_kind = event.get("event_kind")
                 if event_kind in {"reaction_added", "reaction_removed"}:
                     identity = _reaction_identity(event)
@@ -354,26 +350,34 @@ class RelayRuntimeService:
                         identity,
                         _reaction_badge(event),
                     )
+
+            items: list[IncomingFeedItem] = []
+            for event in events:
+                if (
+                    event.get("event_kind") != "message"
+                    or event.get("direction") != "incoming"
+                ):
                     continue
-                if event_kind == "message":
-                    if event.get("direction") != "incoming":
-                        continue
-                    raw_text = event.get("text")
-                    text = raw_text.strip() if isinstance(raw_text, str) else ""
-                    raw_attachments = event.get("attachments")
-                    attachments = tuple(
-                        str(attachment.get("media_category"))
-                        for attachment in (
-                            raw_attachments if isinstance(raw_attachments, list) else []
-                        )
-                        if isinstance(attachment, dict)
-                        and isinstance(attachment.get("media_category"), str)
+                sender_mapping = event.get("sender")
+                sender = (
+                    sender_mapping.get("identifier")
+                    if isinstance(sender_mapping, dict)
+                    else None
+                )
+                timestamp = str(event["timestamp_utc"])
+                raw_text = event.get("text")
+                text = raw_text.strip() if isinstance(raw_text, str) else ""
+                raw_attachments = event.get("attachments")
+                attachments = tuple(
+                    str(attachment.get("media_category"))
+                    for attachment in (
+                        raw_attachments if isinstance(raw_attachments, list) else []
                     )
-                    if not text:
-                        text = "Attachment" if attachments else "Message"
-                    kind = "message"
-                else:
-                    continue
+                    if isinstance(attachment, dict)
+                    and isinstance(attachment.get("media_category"), str)
+                )
+                if not text:
+                    text = "Attachment" if attachments else "Message"
                 message_id = event.get("message_id")
                 reactions = _aggregate_reaction_badges(
                     active_reactions.get(message_id, {}).values()
@@ -382,7 +386,7 @@ class RelayRuntimeService:
                 )
                 items.append(
                     IncomingFeedItem(
-                        kind=kind,
+                        kind="message",
                         sender=(
                             sender
                             if isinstance(sender, str) and sender

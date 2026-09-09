@@ -85,6 +85,8 @@ exact addition;
 the semantic identity is the bounded fallback when Apple supplies no reference.
 Active reactions are aggregated into compact badges on the target message, and
 a removal makes the corresponding badge disappear on the next local refresh.
+Reaction state is resolved before messages are rendered, so Apple timestamp or
+receipt ordering cannot suppress a valid badge.
 
 When phone control connects, incoming status reports the connection and both
 bounded reconciliation controls are enabled. If the phone or its control
