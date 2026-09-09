@@ -78,9 +78,10 @@ arrive within one receipt-clock tick. Its two-second refresh
 reads local state only. The message model changes only when feed content changes
 and preserves a non-top scroll position.
 
-Reaction receipts are not rendered as separate messages. The feed folds each
-supported addition into its target message using target ID, target part,
-sender, and reaction kind. A referenced removal cancels the exact addition;
+Reaction receipts are not rendered as separate messages. Both incoming and
+outgoing reactions are folded into their incoming target message using target
+ID, target part, sender, and reaction kind. A referenced removal cancels the
+exact addition;
 the semantic identity is the bounded fallback when Apple supplies no reference.
 Active reactions are aggregated into compact badges on the target message, and
 a removal makes the corresponding badge disappear on the next local refresh.

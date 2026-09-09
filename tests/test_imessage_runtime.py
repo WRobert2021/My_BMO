@@ -31,10 +31,13 @@ from bmo.features.imessage_relay.receiver import (
 )
 from bmo.features.imessage_relay.phone_control import PhoneControlRuntimeStatus
 from bmo.features.imessage_relay.relay import (
+    Direction,
     EventKind,
     MessagesReader,
     ReactionEvent,
     ReactionKind,
+    Sender,
+    SenderKind,
     apple_nanoseconds_to_datetime,
 )
 from bmo.features.imessage_relay.relay.sender import HTTPEventTransport
@@ -390,8 +393,8 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                 source_rowid=2,
                 chat_id=message.chat_id,
                 participant_ids=message.participant_ids,
-                sender=message.sender,
-                direction=message.direction,
+                sender=Sender(kind=SenderKind.SELF, identifier="self"),
+                direction=Direction.OUTGOING,
                 timestamp_raw_ns=added_timestamp,
                 timestamp_utc=apple_nanoseconds_to_datetime(added_timestamp),
                 target_message_id=message.message_id,
@@ -406,8 +409,8 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                 source_rowid=3,
                 chat_id=message.chat_id,
                 participant_ids=message.participant_ids,
-                sender=message.sender,
-                direction=message.direction,
+                sender=Sender(kind=SenderKind.SELF, identifier="self"),
+                direction=Direction.OUTGOING,
                 timestamp_raw_ns=removed_timestamp,
                 timestamp_utc=apple_nanoseconds_to_datetime(removed_timestamp),
                 target_message_id=message.message_id,

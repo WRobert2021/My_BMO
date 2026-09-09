@@ -320,7 +320,7 @@ class RelayRuntimeService:
                 ):
                     continue
                 event = json.loads(row.event_json)
-                if not isinstance(event, dict) or event.get("direction") != "incoming":
+                if not isinstance(event, dict):
                     continue
                 sender_mapping = event.get("sender")
                 sender = (
@@ -356,6 +356,8 @@ class RelayRuntimeService:
                     )
                     continue
                 if event_kind == "message":
+                    if event.get("direction") != "incoming":
+                        continue
                     raw_text = event.get("text")
                     text = raw_text.strip() if isinstance(raw_text, str) else ""
                     raw_attachments = event.get("attachments")
