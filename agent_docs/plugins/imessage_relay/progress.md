@@ -64,8 +64,8 @@ last_verified: 2026-09-08
   permanently drops to UID 1002/GID 1001 before configuration or Apple data is
   accessed. The top-level service directory is traverse-only to other users;
   private files and state remain restricted.
-- The kiosk selects its bounded recent feed by Apple source timestamp and
-  renders that window oldest-to-newest. Receipt timestamps are not an ordering
+- The kiosk selects and renders its bounded recent feed newest-first by Apple
+  source timestamp. Receipt timestamps are not an ordering
   authority because a recovered backlog may be accepted within one second.
 - One phone-to-kiosk HTTP/TLS connection is reused across the signed event,
   attachment session, bounded 64-KiB chunks, and completion ACK for a single
@@ -130,7 +130,9 @@ last_verified: 2026-09-08
   delivery passed for immediate text, back-to-back text, stable scrolling,
   photo, an 18–20-MiB video, reaction add/remove, and kiosk-offline recovery.
   The offline batch exposed unstable display ordering when receipts shared a
-  timestamp, and the large video exposed per-chunk TLS handshake overhead;
-  both corrections pass locally and await physical deployment/retest.
+  timestamp, and the large video exposed per-chunk TLS handshake overhead.
+  Source-time ordering and TLS reuse were deployed; the first ordering retest
+  established that the feed must remain newest-first, and that final
+  presentation correction awaits deployment/retest.
 - Current complete kiosk relay suite: 125 tests and 21 subtests passed. Current
   complete standalone phone suite: 39 tests passed.

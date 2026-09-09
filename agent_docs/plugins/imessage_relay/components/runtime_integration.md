@@ -38,8 +38,8 @@ Enabled registration:
 3. binds and starts one owned receiver thread; and
 4. starts the independent phone-control coordinator when its private
    configuration is valid; and
-5. exposes aggregate status plus a bounded private incoming feed selected from
-   the newest source events and rendered oldest-to-newest.
+5. exposes aggregate status plus a bounded private incoming feed selected and
+   rendered newest-first by Apple source time.
 
 Failure registers a degraded relay surface without preventing BMO startup.
 Cleanup closes the view, stops and joins the listener, closes the socket/store,

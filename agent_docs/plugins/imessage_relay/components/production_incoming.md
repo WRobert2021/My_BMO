@@ -132,9 +132,9 @@ schedules a bounded recent reconciliation weekly. Retired `source_config_path`,
 `relay_config_path`, and `messages_root` feature settings are ignored and
 acquire no mount, worker, source file, or relay-state resource.
 
-The feed selects a bounded window using Apple source timestamps and presents
-it oldest-to-newest. Kiosk receipt time is not a display-order authority:
-several recovered events can share the same receipt-clock tick.
+The feed selects and presents a bounded window newest-first using Apple source
+timestamps. Kiosk receipt time is not a display-order authority: several
+recovered events can share the same receipt-clock tick.
 
 ## Migration cleanup
 

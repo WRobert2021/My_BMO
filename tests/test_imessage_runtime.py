@@ -367,7 +367,7 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
                     service.close()
                     fixture.close()
 
-        self.assertEqual([item.text for item in feed], ["first", "second", "third"])
+        self.assertEqual([item.text for item in feed], ["third", "second", "first"])
 
     def test_reconciliation_is_unavailable_until_phone_control_exists(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

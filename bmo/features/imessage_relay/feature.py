@@ -353,7 +353,7 @@ class RelayRuntimeService:
                 )
                 if len(items) >= limit:
                     break
-            return tuple(reversed(items))
+            return tuple(items)
         except Exception:
             return ()
 
