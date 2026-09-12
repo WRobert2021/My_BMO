@@ -36,7 +36,7 @@ or status changes. Evidence and history are opt-in.
 | GalaxyRVR | feature | rover, RC, joystick, WebSocket, camera | [overview](plugins/galaxy_rvr/overview.md) | [progress](plugins/galaxy_rvr/progress.md) |
 | Pup Pairs | mode | matching game, Pup Pairs, cards | [overview](plugins/matching_game/overview.md) | [progress](plugins/matching_game/progress.md) |
 | Twenty Questions | mode | twenty questions, 20 questions, dataset | [overview](plugins/twenty_questions/overview.md) | [progress](plugins/twenty_questions/progress.md) |
-| iMessage Relay | feature/service (experimental) | iMessage, relay, parser, receiver, ACK, Stage | [overview](plugins/imessage_relay/overview.md) | [progress](plugins/imessage_relay/progress.md) |
+| iMessage Relay | feature/service (experimental) | iMessage, relay, parser, receiver, ACK, Stage, relay contacts, message speech, kiosk message purge | [overview](plugins/imessage_relay/overview.md) | [progress](plugins/imessage_relay/progress.md) |
 
 ## Specialized relay routing
 

@@ -3,7 +3,7 @@
 current_stage: 12
 current_chapter: Physical incoming acceptance complete
 state: complete
-next_action: Stop at the Stage 12 gate. Begin Stage 13 outbound planning only after explicit authorization.
+next_action: Stop at the Stage 12 gate. Begin Stage 13 outbound planning only after explicit authorization; Stage 14 polish is queued after Stage 13 acceptance.
 last_verified: 2026-09-12
 
 ## Stage index
@@ -17,6 +17,7 @@ last_verified: 2026-09-12
 | 11 | complete | plugin package consolidation and full physical suite accepted |
 | 12 | complete | event-driven incoming phone push, kiosk presentation, maintenance, and physical acceptance passed |
 | 13 | not started | outbound text, media, and reactions remain unauthorized |
+| 14 | planned | post-main-stage media controls, speech, relay address book, and kiosk-only deletion/retrieval polish |
 
 ## Current Stage 12 decisions
 

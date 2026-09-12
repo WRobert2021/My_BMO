@@ -20,6 +20,7 @@ completion never authorizes the next stage.
 | 11 | consolidate plugin implementation under `bmo.features.imessage_relay` | layout/import changes only; full tests required before completion |
 | 12 | activate event-driven incremental phone-to-kiosk incoming delivery and kiosk presentation | no Messages writes, database mounting/copying, or outbound actions; credentials remain private |
 | 13 | plan and implement authenticated outbound text, photo/video, and reaction commands | begins only after Stage 12 incoming activation; separate sending authorization; never write Messages DB |
+| 14 | polish relay media, speech, contacts, and kiosk-local message retention controls | begins only after the main Stage 13 work is accepted; never deletes or modifies iPhone Messages data |
 
 ## Stage 5 acceptance shape
 
@@ -154,3 +155,48 @@ replies, photo/video staging, reactions bound to source-message identities,
 delivery states, UI confirmation, failure isolation, cleanup, and phone
 resource use before implementation. Direct database writes, implicit recipient
 selection, silent duplicate sends, and credential embedding remain prohibited.
+
+## Stage 14 polish gate
+
+Stage 14 is planned but not authorized to begin. It follows acceptance of the
+main Stage 13 outbound work and owns these polish and kiosk-local management
+features:
+
+- contained photos and videos support bounded pinch-to-zoom and pan, with the
+  transform reset whenever the viewer closes or changes media;
+- video and audio players provide a touch-sized volume control plus a seek
+  track with elapsed and total time;
+- audio playback includes a contained visualizer that fails independently when
+  sample data is unavailable and never prevents normal playback;
+- each incoming text message in the relay has a user-invoked speak action, and
+  the face notification badge can invoke speech for its unread text messages;
+- speech resolves a locally assigned contact name as
+  `[sender name] said [message text]`, otherwise it says
+  `An unknown contact said [message text]`; it does not announce numbers or
+  speak automatically on receipt;
+- a plugin-owned address book maps normalized sender identifiers to locally
+  assigned display names without requiring access to the iPhone address book;
+- individual kiosk messages can be deleted locally, and a separately confirmed
+  purge can remove the kiosk's complete relay message and attachment store;
+- durable kiosk-only suppression records prevent deleted events from returning
+  through duplicate delivery or normal reconciliation; and
+- an explicit force-retrieve action can clear the selected suppression scope
+  and request bounded authenticated resend from the phone when the source still
+  exists there.
+
+Message deletion, purge, and force retrieval must be transactional,
+restart-safe, auditable without retaining message content in diagnostics, and
+clear about what will happen before confirmation. They must not send a delete,
+edit, or other mutation to the iPhone. Purge must preserve only the minimum
+suppression/control state needed to honor the user's no-resync choice. Force
+retrieval must be explicit and bounded; it cannot silently restore suppressed
+messages.
+
+Speech must use the scoped feature-announcement interface, respect Quiet Hours,
+cancel when the relay view closes, and remain optional when speech is
+unavailable. Media controls must remain usable by touch at kiosk resolution,
+release playback resources on navigation, and preserve relay operation when a
+codec or visualizer is unavailable. Stage 14 acceptance requires focused
+persistence, restart, UI, destructive-confirmation, resync-suppression,
+force-retrieval, contact-resolution, speech, and physical touch tests. Stop at
+the Stage 14 gate when those pass.
