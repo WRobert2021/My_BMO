@@ -1,10 +1,10 @@
 # iMessage Relay Progress
 
 current_stage: 12
-current_chapter: Contained attachment viewing and final physical acceptance
-state: in_progress
-next_action: Sync the inline photo/video preview UI and verify touch selection plus the prior video no longer reaching QQuickImage; then verify deferred audio playback, cleanup, and the header dot before finishing Stage 12 acceptance. Do not begin Stage 13.
-last_verified: 2026-09-09
+current_chapter: Physical incoming acceptance complete
+state: complete
+next_action: Stop at the Stage 12 gate. Begin Stage 13 outbound planning only after explicit authorization.
+last_verified: 2026-09-12
 
 ## Stage index
 
@@ -15,7 +15,7 @@ last_verified: 2026-09-09
 | 9 | complete | manual physical iPhone-to-kiosk delivery matrix accepted |
 | 10 | complete | opt-in kiosk receiver/UI lifecycle accepted |
 | 11 | complete | plugin package consolidation and full physical suite accepted |
-| 12 | in progress | local event-driven phone push and kiosk control implementation accepted; physical activation remains |
+| 12 | complete | event-driven incoming phone push, kiosk presentation, maintenance, and physical acceptance passed |
 | 13 | not started | outbound text, media, and reactions remain unauthorized |
 
 ## Current Stage 12 decisions
@@ -115,6 +115,9 @@ last_verified: 2026-09-09
   the retired chroot, and retained the `mobile` maintenance account. The active
   SSH policy was syntax-validated, and the original Procursus group database
   was restored after account deletion.
+- Deleted the ignored local `iphone_snapshot` and `iphone_snapshot_stage0`
+  directories after confirming that the current push runtime does not reference
+  them.
 
 ## Verification status
 
@@ -157,14 +160,17 @@ last_verified: 2026-09-09
   replace and remove correctly in the physical UI.
 - Reaction badge replacement/removal and SVG rendering passed physical kiosk
   verification. Photo, 18–20-MiB video, reaction add/remove, offline recovery,
-  newest-first ordering, and stable scrolling have also passed. Contained photo
-  and video rendering now pass on the kiosk. Physical output exposed an
-  inactive QQuickImage receiving the video URL; the source-routing correction
-  is local and awaits sync. Audio and the compact status UI remain pending.
+  newest-first ordering, and stable scrolling have also passed. Touching the
+  compact photo and video previews opens their contained viewers, playback and
+  navigation cleanup work, and video is no longer routed through QQuickImage.
+  The embedded audio attachment path also passed. The connected header status
+  dot is green; its unavailable/red state remains covered by automated UI
+  tests.
 - Current complete kiosk relay suite: 130 tests and 21 subtests passed. Current
   complete standalone phone suite: 39 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
-  component instantiated against its FFmpeg backend. Physical Pi photo/video
-  rendering passed; playback cleanup and later audio output remain to be
-  checked.
+  component instantiated against its FFmpeg backend. Physical Pi photo, video,
+  and audio interaction, touch selection, and playback cleanup passed.
+- Stage 12 physical incoming acceptance is complete. Stage 13 outbound text,
+  media, and reaction work has not begun.
