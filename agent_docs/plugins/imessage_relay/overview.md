@@ -110,11 +110,15 @@ nor PyObjC is required. The kiosk now owns a strict path-free command schema,
 private durable outbox, authenticated client, and bounded resumable media
 uploader. A resource-free in-memory gate now holds one prepared command for an
 exact, expiring, one-shot confirmation, and incoming feed items retain stable
-reply/reaction context. The matching phone executor/staging store and visible
-kiosk composer/confirmation remain pending. A local invented-command
-simulation covers authentication, execution ordering, chunk resumption,
-lost-ACK recovery, and confirmation rejection; the cross-runtime Python 3.9
-simulation is still pending. No physical outbound send has been performed.
+reply/reaction context. The standalone phone runtime now mirrors the protocol,
+owns a durable duplicate-prevention ledger and verified private media staging,
+and routes outbound requests on its existing authenticated listener. Its
+production executor remains intentionally disabled. Invented-data simulations
+cover authentication, execution ordering, chunk resumption, crash recovery,
+lost-ACK recovery, confirmation rejection, and real Python 3.13-to-3.9 HTTP
+interoperability. The physical text adapter and visible kiosk
+composer/confirmation remain pending. No physical outbound send has been
+performed.
 
 ## Safety and lifecycle
 

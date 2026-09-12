@@ -124,9 +124,17 @@ command model. `bmo.features.imessage_relay.outbound.state` owns the private
 kiosk outbox, `bmo.features.imessage_relay.outbound.client` owns signed
 submission and status resolution, and `bmo.features.imessage_relay.outbound.media`
 owns verified bounded upload. `bmo.features.imessage_relay.outbound.confirmation`
-owns the resource-free one-shot user gate. A local invented phone simulation proves
-durable-before-network ordering, all three command kinds, resumable chunk
-transfer, lost-ACK recovery without duplicate execution, and confirmation
-expiry/reuse rejection. The matching Python 3.9 phone handler, durable phone
-execution ledger and staging store, visible confirmation UI, and cross-runtime
-simulation are the next chapter and are not yet deployed.
+owns the resource-free one-shot user gate. The standalone Python 3.9 phone
+runtime now mirrors the strict contract, routes the authenticated endpoints on
+its existing TLS listener, durably reserves commands, converts an interrupted
+execution to terminal `uncertain`, and owns private resumable media staging.
+Its production executor deliberately returns `apple_send_not_enabled`.
+
+Local invented simulations prove durable-before-network ordering, all three
+command kinds, replay/conflict rejection, resumable chunk transfer, verified
+crash recovery, lost-ACK recovery without duplicate execution, confirmation
+expiry/reuse rejection, and real HTTP interoperability between the Python 3.13
+kiosk client and Python 3.9 phone handler. Outbound state failure is isolated
+from incoming phone delivery. The first physical text-send adapter validation
+and visible kiosk composer/confirmation are pending; no phone deployment or
+physical outbound send has occurred from this checkpoint.

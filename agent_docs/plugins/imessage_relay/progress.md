@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
 current_stage: 13
-current_chapter: Phone executor and cross-runtime invented-data simulation
-state: in_progress
-next_action: In the standalone Python 3.9 phone runtime, mirror the frozen command/media contracts and durable duplicate-prevention state, implement the no-send Objective-C adapter boundary, and run a cross-runtime invented-data simulation. Do not perform a physical send without a separate confirmation.
+current_chapter: First physical text-send adapter gate
+state: awaiting_confirmation
+next_action: Obtain separate user confirmation naming the recipient and invented test text before implementing, deploying, or invoking the first physical text-send adapter. Do not send, deploy, or enable outbound from the current checkpoint.
 last_verified: 2026-09-12
 
 ## Stage index
@@ -16,7 +16,7 @@ last_verified: 2026-09-12
 | 10 | complete | opt-in kiosk receiver/UI lifecycle accepted |
 | 11 | complete | plugin package consolidation and full physical suite accepted |
 | 12 | complete | event-driven incoming phone push, kiosk presentation, maintenance, and physical acceptance passed |
-| 13 | in progress | phone discovery passed; kiosk protocol/outbox foundation implemented |
+| 13 | in progress | kiosk and phone command planes plus cross-runtime invented simulation passed; physical send requires separate confirmation |
 | 14 | planned | post-main-stage media controls, speech, relay address book, and kiosk-only deletion/retrieval polish |
 
 ## Current Stage 13 decisions
@@ -84,6 +84,25 @@ last_verified: 2026-09-12
 - Incoming feed entries retain stable message, chat, and participant IDs. This
   supplies explicit reply/reaction context without granting send authority or
   changing the current incoming-only Qt surface.
+- The standalone Python 3.9 runtime mirrors the frozen command and media
+  contract on the existing authenticated listener. A private phone ledger
+  reserves the canonical command before execution, rejects conflicting IDs,
+  converts restart-time `executing` state to `uncertain`, and never retries a
+  terminal outcome automatically.
+- Phone-owned media staging accepts only exact authenticated 64-KiB chunks,
+  resumes at its durable offset, recovers a verified final rename, and requires
+  the declared byte count and SHA-256 before command reservation. Unsafe or
+  exposed staging files fail closed. Terminal sent/failed commands remove their
+  staged media.
+- The production phone executor remains deliberately disabled with
+  `apple_send_not_enabled`. Objective-C framework probing is explicit and
+  resource-free until called; the adapter's execute boundary returns
+  `physical_send_not_authorized`. Outbound state failure returns a bounded
+  unavailable response without stopping incoming delivery or phone control.
+- A real loopback interoperability run passed invented text, photo, and
+  reaction commands from the Python 3.13 kiosk client through the Python 3.9
+  phone handler. Exactly three invented executor calls occurred and no Apple
+  framework send method or physical phone was contacted.
 - Prefer extending the existing authenticated TLS phone-control boundary and
   dedicated `pi-bmo` service. Add a separate native helper only if the verified
   phone interface cannot be called safely and reliably from Python 3.9.9.
@@ -246,7 +265,7 @@ last_verified: 2026-09-12
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
 - Current complete kiosk relay suite: 151 tests and 34 subtests passed. Current
-  complete standalone phone suite: 39 tests passed.
+  complete standalone phone suite: 50 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
@@ -254,5 +273,9 @@ last_verified: 2026-09-12
 - Stage 12 physical incoming acceptance is complete.
 - Stage 13 outbound protocol/client/state focus: 23 tests and 13 subtests passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
-  The local invented phone simulation passed. The matching Python 3.9 phone
-  executor and cross-runtime invented-data simulation have not yet run.
+  The local invented phone simulation passed. The Python 3.9 phone suite now
+  passes 50 tests, including its durable command/media state, real HTTP route,
+  no-send adapter boundary, and incoming failure isolation. A separate real
+  loopback run passed the shared Python 3.13 kiosk-to-Python 3.9 phone contract
+  for invented text, photo, and reaction commands. Physical send remains
+  unperformed and unauthorized by this checkpoint.
