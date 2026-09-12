@@ -83,6 +83,7 @@ operator decision about an uncertain command.
 
 ## Current availability
 
-The canonical model and kiosk outbox are implemented and tested with invented
-data. No production client is wired into the UI, the matching phone endpoint
-is not yet implemented, and no physical outbound send has occurred.
+The canonical model, kiosk outbox, and authenticated kiosk client are
+implemented and tested with invented data. No client is wired into the UI, the
+matching phone endpoint is not yet implemented, and no physical outbound send
+has occurred.

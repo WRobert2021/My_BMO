@@ -105,6 +105,9 @@ media with the rest of relay-owned data while retaining Apple Messages data.
 
 `bmo.features.imessage_relay.outbound.protocol` owns the canonical path-free
 command model. `bmo.features.imessage_relay.outbound.state` owns the private
-kiosk outbox. The matching Python 3.9 phone handler, durable phone execution
-ledger, media upload path, user confirmation UI, and end-to-end simulator are
-the next chapter and are not yet deployed.
+kiosk outbox, and `bmo.features.imessage_relay.outbound.client` owns signed
+submission and status resolution. A local invented phone simulation proves
+durable-before-network ordering, all three command kinds, and lost-ACK recovery
+without duplicate execution. The matching Python 3.9 phone handler, durable
+phone execution ledger, media upload path, user confirmation UI, and
+cross-runtime simulation are the next chapter and are not yet deployed.

@@ -66,6 +66,12 @@ last_verified: 2026-09-12
   durable SQLite outbox. Enqueue is idempotent by command ID and digest,
   attempts enter `executing`, ambiguous transport outcomes become `uncertain`,
   and `sent`/`failed` states cannot silently regress or retry.
+- The authenticated kiosk client signs the exact command/status path, records
+  the command and attempt before transport use, accepts only exact JSON ACKs,
+  and requires status resolution after an ambiguous outcome. A local invented
+  phone simulation accepted text, media, and reaction commands only after the
+  durable boundary, then proved a lost ACK resolves to `sent` without a second
+  execution.
 - Prefer extending the existing authenticated TLS phone-control boundary and
   dedicated `pi-bmo` service. Add a separate native helper only if the verified
   phone interface cannot be called safely and reliably from Python 3.9.9.
@@ -227,14 +233,14 @@ last_verified: 2026-09-12
   The embedded audio attachment path also passed. The connected header status
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
-- Current complete kiosk relay suite: 141 tests and 34 subtests passed. Current
+- Current complete kiosk relay suite: 144 tests and 34 subtests passed. Current
   complete standalone phone suite: 39 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
   and audio interaction, touch selection, and playback cleanup passed.
 - Stage 12 physical incoming acceptance is complete.
-- Stage 13 outbound protocol/state focus: 13 tests and 13 subtests passed on
+- Stage 13 outbound protocol/client/state focus: 16 tests and 13 subtests passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
-  The matching Python 3.9 phone executor and invented-data end-to-end
-  simulation have not yet run.
+  The local invented phone simulation passed. The matching Python 3.9 phone
+  executor and cross-runtime invented-data simulation have not yet run.

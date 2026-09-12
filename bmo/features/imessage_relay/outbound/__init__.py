@@ -1,5 +1,13 @@
 """Authenticated outbound command contracts and kiosk-owned state."""
 
+from .client import (
+    HTTPOutboundTransport,
+    OutboundClientError,
+    OutboundCommandClient,
+    OutboundTransport,
+    OutboundTransportResponse,
+)
+
 from .protocol import (
     OUTBOUND_COMMAND_PATH,
     OUTBOUND_PROTOCOL_VERSION,
@@ -35,8 +43,11 @@ __all__ = [
     "OUTBOUND_PROTOCOL_VERSION",
     "OUTBOUND_SCHEMA_VERSION",
     "OUTBOUND_STATUS_PATH",
+    "HTTPOutboundTransport",
+    "OutboundClientError",
     "OutboundCommand",
     "OutboundCommandAck",
+    "OutboundCommandClient",
     "OutboundCommandRecord",
     "OutboundDestination",
     "OutboundMediaCommand",
@@ -47,6 +58,8 @@ __all__ = [
     "OutboundStateStore",
     "OutboundStateSummary",
     "OutboundTextCommand",
+    "OutboundTransport",
+    "OutboundTransportResponse",
     "decode_command_response",
     "decode_status_request",
     "decode_submit_request",

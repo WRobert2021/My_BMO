@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,8 +12,12 @@ import unittest
 
 from bmo.features.imessage_relay.outbound import (
     OUTBOUND_APPLICATION_ID,
+    OUTBOUND_COMMAND_PATH,
     OUTBOUND_SCHEMA_VERSION,
+    OUTBOUND_STATUS_PATH,
+    OutboundClientError,
     OutboundCommandAck,
+    OutboundCommandClient,
     OutboundDestination,
     OutboundMediaCommand,
     OutboundMediaReference,
@@ -21,6 +26,7 @@ from bmo.features.imessage_relay.outbound import (
     OutboundStateError,
     OutboundStateStore,
     OutboundTextCommand,
+    OutboundTransportResponse,
     decode_command_response,
     decode_status_request,
     decode_submit_request,
@@ -29,9 +35,12 @@ from bmo.features.imessage_relay.outbound import (
     encode_status_request,
     encode_submit_request,
 )
+from bmo.features.imessage_relay.phone_control import PhoneControlConfig
+from bmo.features.imessage_relay.receiver.auth import RequestAuthenticator
 
 
 CREATED_AT = "2026-09-12T12:34:56+00:00"
+SECRET = b"invented-stage13-outbound-secret-material"
 
 
 def destination(*, reply: bool = False) -> OutboundDestination:
@@ -48,6 +57,73 @@ def text_command(command_id: str = "command-1", text: str = "Invented hello"):
         created_at_utc=CREATED_AT,
         destination=destination(),
         text=text,
+    )
+
+
+class SimulatedPhoneTransport:
+    """Execute invented commands only and retain a phone-side ID ledger."""
+
+    def __init__(self, *, send_boundary=None) -> None:
+        self.authenticator = RequestAuthenticator(
+            key_id="invented-outbound-key",
+            shared_secret=SECRET,
+            clock=lambda: 2_000_000_000,
+        )
+        self.send_boundary = send_boundary
+        self.commands: dict[str, tuple[str, str]] = {}
+        self.executions: list[str] = []
+        self.lose_next_ack = False
+        self.closed = False
+
+    def send(self, *, body, headers, path):
+        self.authenticator.verify("POST", path, headers, body)
+        if path == OUTBOUND_COMMAND_PATH:
+            request_id, command = decode_submit_request(body)
+            digest = hashlib.sha256(encode_command(command)).hexdigest()
+            prior = self.commands.get(command.command_id)
+            if prior is not None and prior[0] != digest:
+                raise AssertionError("simulated phone accepted conflicting command ID")
+            if prior is None:
+                if self.send_boundary is not None:
+                    self.send_boundary(command.command_id)
+                self.commands[command.command_id] = (digest, "sent")
+                self.executions.append(command.command_id)
+                status = "accepted"
+            else:
+                status = "duplicate"
+            if self.lose_next_ack:
+                self.lose_next_ack = False
+                raise TimeoutError("invented lost ACK")
+            ack = OutboundCommandAck(command.command_id, status, "sent")
+            status_code = 202
+        elif path == OUTBOUND_STATUS_PATH:
+            request_id, command_id = decode_status_request(body)
+            prior = self.commands.get(command_id)
+            if prior is None:
+                ack = OutboundCommandAck(
+                    command_id, "status", "failed", "command_not_found"
+                )
+            else:
+                ack = OutboundCommandAck(command_id, "status", prior[1])
+            status_code = 200
+        else:
+            raise AssertionError("unexpected simulated phone path")
+        return OutboundTransportResponse(
+            status_code,
+            {"content-type": "application/json"},
+            encode_command_response(request_id=request_id, ack=ack),
+        )
+
+    def close(self):
+        self.closed = True
+
+
+def client_config() -> PhoneControlConfig:
+    return PhoneControlConfig(
+        endpoint="http://127.0.0.1:8080",
+        key_id="invented-outbound-key",
+        shared_secret=SECRET,
+        allow_insecure_loopback=True,
     )
 
 
@@ -212,6 +288,131 @@ class OutboundProtocolTests(unittest.TestCase):
             OutboundCommandAck("command-1", "status", "uncertain", "ack_timeout"),
             OutboundCommandAck("command-1", "status", "uncertain", "ack_timeout"),
         )
+
+
+class OutboundClientSimulationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.store = OutboundStateStore(self.root / "outbound.db")
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.temporary_directory.cleanup()
+
+    def test_all_command_kinds_are_durable_before_invented_execution(self) -> None:
+        def assert_durable_boundary(command_id: str) -> None:
+            record = self.store.get(command_id)
+            self.assertIsNotNone(record)
+            self.assertEqual(record.state, "executing")
+            self.assertEqual(record.attempt_count, 1)
+
+        transport = SimulatedPhoneTransport(send_boundary=assert_durable_boundary)
+        identifiers = iter(
+            (
+                "text-request", "text-nonce",
+                "media-request", "media-nonce",
+                "reaction-request", "reaction-nonce",
+            )
+        )
+        client = OutboundCommandClient(
+            client_config(),
+            self.store,
+            transport=transport,
+            clock=lambda: 2_000_000_000,
+            identifier_factory=lambda: next(identifiers),
+        )
+        commands = (
+            text_command("text-command"),
+            OutboundMediaCommand(
+                "media-command",
+                CREATED_AT,
+                destination(),
+                (
+                    OutboundMediaReference(
+                        "blob-1",
+                        "invented.jpg",
+                        "photo",
+                        "image/jpeg",
+                        100,
+                        "a" * 64,
+                    ),
+                ),
+            ),
+            OutboundReactionCommand(
+                "reaction-command",
+                CREATED_AT,
+                destination(reply=True),
+                "message-invented-1",
+                0,
+                "heart",
+                "add",
+            ),
+        )
+
+        for command in commands:
+            self.assertEqual(client.submit(command).state, "sent")
+        client.close()
+
+        self.assertEqual(
+            transport.executions,
+            ["text-command", "media-command", "reaction-command"],
+        )
+        self.assertTrue(transport.closed)
+        self.assertEqual(self.store.summary().sent_commands, 3)
+
+    def test_lost_ack_requires_status_and_does_not_execute_twice(self) -> None:
+        transport = SimulatedPhoneTransport()
+        transport.lose_next_ack = True
+        identifiers = iter(
+            ("submit-request", "submit-nonce", "status-request", "status-nonce")
+        )
+        client = OutboundCommandClient(
+            client_config(),
+            self.store,
+            transport=transport,
+            clock=lambda: 2_000_000_000,
+            identifier_factory=lambda: next(identifiers),
+        )
+        command = text_command()
+
+        with self.assertRaisesRegex(OutboundClientError, "phone_unreachable"):
+            client.submit(command)
+        self.assertEqual(self.store.get("command-1").state, "uncertain")
+        with self.assertRaisesRegex(OutboundClientError, "outbound_status_required"):
+            client.submit(command)
+        self.assertEqual(transport.executions, ["command-1"])
+
+        resolved = client.status("command-1")
+
+        self.assertEqual(resolved.state, "sent")
+        self.assertEqual(transport.executions, ["command-1"])
+
+    def test_invalid_response_is_uncertain_and_content_is_not_in_error(self) -> None:
+        class InvalidTransport:
+            def send(self, *, body, headers, path):
+                del body, headers, path
+                return OutboundTransportResponse(
+                    202, {"content-type": "text/plain"}, b"private response"
+                )
+
+            def close(self):
+                pass
+
+        client = OutboundCommandClient(
+            client_config(),
+            self.store,
+            transport=InvalidTransport(),
+            identifier_factory=iter(("request-1", "nonce-1")).__next__,
+        )
+
+        with self.assertRaises(OutboundClientError) as caught:
+            client.submit(text_command(text="never expose this text"))
+
+        self.assertEqual(caught.exception.code, "outbound_response_invalid")
+        self.assertNotIn("never expose this text", str(caught.exception))
+        self.assertNotIn("private response", str(caught.exception))
+        self.assertEqual(self.store.get("command-1").state, "uncertain")
 
 
 class OutboundStateTests(unittest.TestCase):

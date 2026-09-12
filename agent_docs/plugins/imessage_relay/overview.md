@@ -109,8 +109,10 @@ service availability. The selected implementation is a dependency-free Python
 `ctypes` bridge over the Objective-C runtime; neither a new compiler toolchain
 nor PyObjC is required. The kiosk now owns a strict path-free command schema
 and private durable outbox foundation. The matching phone executor, media
-staging, kiosk UI confirmation, and invented-data end-to-end simulation remain
-pending, and no physical outbound send has been performed.
+staging and kiosk UI confirmation remain pending. A local invented-command
+simulation covers authentication, execution ordering, and lost-ACK recovery;
+the cross-runtime Python 3.9 simulation is still pending. No physical outbound
+send has been performed.
 
 ## Safety and lifecycle
 
