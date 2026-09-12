@@ -90,6 +90,11 @@ may arrive within one receipt-clock tick. The two-second refresh reads local
 state only. The message model changes only when feed content changes and
 preserves a non-top scroll position.
 
+Each feed item also retains its stable message ID, chat ID, and participant IDs
+for Stage 13 reply/reaction preparation. They are inert metadata in the current
+incoming-only Qt surface: viewing or selecting an item cannot enqueue or send
+an outbound command.
+
 Each completed attachment is rendered as a touch-sized inline preview rather
 than a generic button. Photos show the actual local image and open when the
 preview is pressed. Videos use a compact play tile, and audio retains a labeled

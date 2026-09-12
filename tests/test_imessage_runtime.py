@@ -340,6 +340,9 @@ class IMessageRuntimeReceiverTests(unittest.TestCase):
         self.assertEqual(len(feed), 1)
         self.assertEqual(feed[0].sender, "invented-runtime-handle")
         self.assertEqual(feed[0].text, "invented runtime text")
+        self.assertEqual(feed[0].message_id, "invented-runtime-message")
+        self.assertEqual(feed[0].chat_id, "invented-runtime-chat")
+        self.assertEqual(feed[0].participant_ids, ("invented-runtime-handle",))
         self.assertIsNone(status.last_reconciliation)
 
     def test_feed_renders_same_receipt_batch_in_source_order(self) -> None:

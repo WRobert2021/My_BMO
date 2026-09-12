@@ -1,5 +1,11 @@
 """Authenticated outbound command contracts and kiosk-owned state."""
 
+from .confirmation import (
+    DEFAULT_CONFIRMATION_TIMEOUT_SECONDS,
+    OutboundConfirmation,
+    OutboundConfirmationError,
+    OutboundConfirmationGate,
+)
 from .client import (
     HTTPOutboundTransport,
     OutboundClientError,
@@ -52,6 +58,7 @@ from .state import (
 )
 
 __all__ = [
+    "DEFAULT_CONFIRMATION_TIMEOUT_SECONDS",
     "OUTBOUND_COMMAND_PATH",
     "MAX_OUTBOUND_MEDIA_CHUNK_BYTES",
     "OUTBOUND_MEDIA_CHUNK_PATH_PREFIX",
@@ -62,6 +69,9 @@ __all__ = [
     "OUTBOUND_STATUS_PATH",
     "HTTPOutboundTransport",
     "OutboundClientError",
+    "OutboundConfirmation",
+    "OutboundConfirmationError",
+    "OutboundConfirmationGate",
     "OutboundCommand",
     "OutboundCommandAck",
     "OutboundCommandClient",

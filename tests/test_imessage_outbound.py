@@ -21,6 +21,8 @@ from bmo.features.imessage_relay.outbound import (
     OutboundClientError,
     OutboundCommandAck,
     OutboundCommandClient,
+    OutboundConfirmationError,
+    OutboundConfirmationGate,
     OutboundDestination,
     OutboundMediaCommand,
     OutboundMediaChunkAck,
@@ -402,6 +404,99 @@ class OutboundProtocolTests(unittest.TestCase):
             OutboundCommandAck("command-1", "status", "uncertain", "ack_timeout"),
             OutboundCommandAck("command-1", "status", "uncertain", "ack_timeout"),
         )
+
+
+class OutboundConfirmationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.now = 100.0
+        self.gate = OutboundConfirmationGate(
+            timeout_seconds=30,
+            clock=lambda: self.now,
+            token_factory=lambda: "confirmation123",
+        )
+
+    def test_exact_confirmation_is_one_shot_and_does_not_submit(self) -> None:
+        command = text_command()
+
+        prompt = self.gate.prepare(command)
+
+        self.assertEqual(prompt.confirmation_id, "confirmation123")
+        self.assertEqual(prompt.command_id, command.command_id)
+        self.assertEqual(prompt.kind, "text")
+        self.assertEqual(prompt.recipient_ids, ("+15555550100",))
+        self.assertEqual(prompt.text, "Invented hello")
+        self.assertEqual(prompt.media_names, ())
+        self.assertFalse(prompt.is_reply)
+        self.assertEqual(prompt.expires_in_seconds, 30)
+        with self.assertRaisesRegex(
+            OutboundConfirmationError, "confirmation_mismatch"
+        ):
+            self.gate.confirm("different")
+        self.assertIs(self.gate.confirm("confirmation123"), command)
+        with self.assertRaisesRegex(
+            OutboundConfirmationError, "confirmation_missing"
+        ):
+            self.gate.confirm("confirmation123")
+
+    def test_pending_command_must_be_cancelled_or_expire_before_replacement(self) -> None:
+        self.gate.prepare(text_command("command-1"))
+        with self.assertRaisesRegex(
+            OutboundConfirmationError, "confirmation_already_pending"
+        ):
+            self.gate.prepare(text_command("command-2"))
+        self.gate.cancel("confirmation123")
+        self.assertIsNone(self.gate.pending())
+
+        self.gate.prepare(text_command("command-2"))
+        self.now = 131.0
+        with self.assertRaisesRegex(
+            OutboundConfirmationError, "confirmation_expired"
+        ):
+            self.gate.confirm("confirmation123")
+        self.assertIsNone(self.gate.pending())
+
+    def test_prompt_summarizes_media_reaction_and_reply_context(self) -> None:
+        media = OutboundMediaReference(
+            blob_id="blob-1",
+            transfer_name="invented.jpg",
+            media_category="photo",
+            mime_type="image/jpeg",
+            expected_bytes=8,
+            sha256=hashlib.sha256(b"invented").hexdigest(),
+        )
+        media_command = OutboundMediaCommand(
+            command_id="media-command",
+            created_at_utc=CREATED_AT,
+            destination=destination(reply=True),
+            media=(media,),
+            text="Invented caption",
+        )
+        media_prompt = self.gate.prepare(media_command)
+        self.assertTrue(media_prompt.is_reply)
+        self.assertEqual(media_prompt.media_names, ("invented.jpg",))
+        self.assertEqual(media_prompt.text, "Invented caption")
+        self.gate.cancel(media_prompt.confirmation_id)
+
+        reaction = OutboundReactionCommand(
+            command_id="reaction-command",
+            created_at_utc=CREATED_AT,
+            destination=destination(reply=True),
+            target_message_id="message-invented-1",
+            target_part=0,
+            reaction_kind="heart",
+            operation="add",
+        )
+        reaction_prompt = self.gate.prepare(reaction)
+        self.assertEqual(reaction_prompt.reaction_kind, "heart")
+        self.assertEqual(reaction_prompt.reaction_operation, "add")
+
+    def test_close_forgets_private_draft_and_blocks_reuse(self) -> None:
+        self.gate.prepare(text_command())
+        self.gate.close()
+        with self.assertRaisesRegex(
+            OutboundConfirmationError, "confirmation_gate_closed"
+        ):
+            self.gate.pending()
 
 
 class OutboundClientSimulationTests(unittest.TestCase):

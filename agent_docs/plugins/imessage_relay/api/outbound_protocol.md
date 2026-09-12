@@ -90,9 +90,25 @@ invocation, `sent` means that interface accepted it, `failed` is terminal, and
 Terminal commands do not retry automatically. Status resolution precedes any
 operator decision about an uncertain command.
 
+## Kiosk confirmation boundary
+
+`OutboundConfirmationGate` is a resource-free, in-memory boundary between a
+prepared command and the durable/network client. It holds at most one command,
+returns the exact recipients and kind-specific content needed for a visible
+confirmation, and releases that command only once when the matching opaque
+confirmation ID is supplied before its bounded expiry. A mismatched, expired,
+reused, cancelled, or post-close confirmation cannot produce a command.
+
+Preparing, inspecting, cancelling, expiring, or closing a confirmation never
+opens the outbox, contacts the phone, or invokes a send. Draft content is not
+persisted by this boundary. The future Qt action must call the authenticated
+client only with the command returned by a successful confirmation.
+
 ## Current availability
 
-The canonical model, kiosk outbox, authenticated kiosk client, and bounded
-resumable media uploader are implemented and tested with invented data. No
-client is wired into the UI, the matching phone endpoints are not yet
-implemented, and no physical outbound send has occurred.
+The canonical model, kiosk outbox, authenticated kiosk client, bounded
+resumable media uploader, and one-shot in-memory confirmation gate are
+implemented and tested with invented data. Incoming feed items now retain the
+stable message, chat, and participant identifiers needed to prepare an
+explicit reply or reaction. No client is wired into the UI, the matching phone
+endpoints are not yet implemented, and no physical outbound send has occurred.

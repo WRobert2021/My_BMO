@@ -85,9 +85,8 @@ installed and working. Physical `kqueue` delivery now passes text bursts,
 stable scrolling, photo/video, reaction add/remove, and kiosk-offline recovery.
 Source-time/newest-first presentation, per-delivery TLS connection reuse, and
 SVG reaction replacement/removal have also passed after physical deployment.
-Configurable media publication/opening and the compact status UI are locally
-accepted but still need the kiosk sync and physical open/status check before
-the incoming acceptance matrix can close.
+Configurable media publication/opening and the compact status UI passed their
+physical kiosk checks, completing the incoming acceptance matrix.
 
 The abandoned Stage 12 SSHFS source manager, kiosk polling worker, persistent
 phone-login configurator, and snapshot publisher are removed from active code.
@@ -109,11 +108,13 @@ service availability. The selected implementation is a dependency-free Python
 `ctypes` bridge over the Objective-C runtime; neither a new compiler toolchain
 nor PyObjC is required. The kiosk now owns a strict path-free command schema,
 private durable outbox, authenticated client, and bounded resumable media
-uploader. The matching phone executor/staging store and kiosk UI confirmation
-remain pending. A local invented-command simulation covers authentication,
-execution ordering, chunk resumption, and lost-ACK recovery; the cross-runtime
-Python 3.9 simulation is still pending. No physical outbound send has been
-performed.
+uploader. A resource-free in-memory gate now holds one prepared command for an
+exact, expiring, one-shot confirmation, and incoming feed items retain stable
+reply/reaction context. The matching phone executor/staging store and visible
+kiosk composer/confirmation remain pending. A local invented-command
+simulation covers authentication, execution ordering, chunk resumption,
+lost-ACK recovery, and confirmation rejection; the cross-runtime Python 3.9
+simulation is still pending. No physical outbound send has been performed.
 
 ## Safety and lifecycle
 

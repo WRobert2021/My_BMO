@@ -108,6 +108,9 @@ class IncomingFeedItem:
     text: str
     attachments: tuple[PublishedAttachment, ...]
     reactions: tuple[ReactionBadge, ...] = ()
+    message_id: str = ""
+    chat_id: str = ""
+    participant_ids: tuple[str, ...] = ()
 
 
 def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
@@ -375,6 +378,17 @@ class RelayRuntimeService:
                 if not text:
                     text = "" if attachments else "Message"
                 message_id = event.get("message_id")
+                chat_id = event.get("chat_id")
+                raw_participants = event.get("participant_ids")
+                participant_ids = (
+                    tuple(
+                        participant
+                        for participant in raw_participants
+                        if isinstance(participant, str) and participant
+                    )
+                    if isinstance(raw_participants, list)
+                    else ()
+                )
                 reactions = _aggregate_reaction_badges(
                     active_reactions.get(message_id, {}).values()
                     if isinstance(message_id, str)
@@ -392,6 +406,9 @@ class RelayRuntimeService:
                         text=text[:2_000],
                         attachments=attachments,
                         reactions=reactions,
+                        message_id=message_id if isinstance(message_id, str) else "",
+                        chat_id=chat_id if isinstance(chat_id, str) else "",
+                        participant_ids=participant_ids,
                     )
                 )
                 if len(items) >= limit:

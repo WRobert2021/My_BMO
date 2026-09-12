@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
 current_stage: 13
-current_chapter: Authenticated outbound protocol and durable command state
+current_chapter: Phone executor and cross-runtime invented-data simulation
 state: in_progress
-next_action: Mirror the frozen command contract and durable duplicate-prevention state in the standalone Python 3.9 phone runtime, implement the no-send Objective-C adapter boundary, then run an invented-data end-to-end command simulation. Do not perform a physical send without a separate confirmation.
+next_action: In the standalone Python 3.9 phone runtime, mirror the frozen command/media contracts and durable duplicate-prevention state, implement the no-send Objective-C adapter boundary, and run a cross-runtime invented-data simulation. Do not perform a physical send without a separate confirmation.
 last_verified: 2026-09-12
 
 ## Stage index
@@ -76,6 +76,14 @@ last_verified: 2026-09-12
   validates a regular non-symlink source against the path-free command digest,
   sends at most 64 KiB per chunk, accepts only the exact durable offset, and
   resumes after a lost chunk ACK without starting the Apple send early.
+- The kiosk now has a resource-free confirmation gate that holds at most one
+  command in memory, exposes exact recipients and kind-specific content for a
+  visible prompt, expires after a bounded interval, and releases the command
+  only once for the exact opaque token. Preparing, inspecting, cancelling, or
+  closing this gate cannot open durable state, contact the phone, or send.
+- Incoming feed entries retain stable message, chat, and participant IDs. This
+  supplies explicit reply/reaction context without granting send authority or
+  changing the current incoming-only Qt surface.
 - Prefer extending the existing authenticated TLS phone-control boundary and
   dedicated `pi-bmo` service. Add a separate native helper only if the verified
   phone interface cannot be called safely and reliably from Python 3.9.9.
@@ -237,14 +245,14 @@ last_verified: 2026-09-12
   The embedded audio attachment path also passed. The connected header status
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
-- Current complete kiosk relay suite: 147 tests and 34 subtests passed. Current
+- Current complete kiosk relay suite: 151 tests and 34 subtests passed. Current
   complete standalone phone suite: 39 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
   and audio interaction, touch selection, and playback cleanup passed.
 - Stage 12 physical incoming acceptance is complete.
-- Stage 13 outbound protocol/client/state focus: 19 tests and 13 subtests passed on
+- Stage 13 outbound protocol/client/state focus: 23 tests and 13 subtests passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
   The local invented phone simulation passed. The matching Python 3.9 phone
   executor and cross-runtime invented-data simulation have not yet run.

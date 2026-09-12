@@ -70,6 +70,19 @@ The kiosk UI must show the resolved contact or explicit address, content kind,
 and attachment count before queuing. Sending is never triggered by merely
 opening a message, attachment, or notification.
 
+The kiosk confirmation gate holds at most one prepared command in memory for a
+bounded time. It displays exact recipients plus text, media names, or reaction
+operation as applicable. Only the exact, unexpired opaque confirmation token
+can release the command once; mismatch, expiry, cancellation, reuse, or view
+cleanup fails closed. Preparing or confirming at this boundary does not itself
+open durable state or contact the phone. The later Qt controller is responsible
+for passing the released command to the authenticated client.
+
+Incoming feed items retain their stable message ID, chat ID, and participant
+IDs so a reply or reaction can bind to the selected receipt rather than the
+foreground conversation. These identifiers are kiosk receipt metadata and do
+not grant send authority by themselves.
+
 ## Media staging
 
 The command JSON contains blob ID, leaf transfer name, category, MIME type,
@@ -110,9 +123,10 @@ media with the rest of relay-owned data while retaining Apple Messages data.
 command model. `bmo.features.imessage_relay.outbound.state` owns the private
 kiosk outbox, `bmo.features.imessage_relay.outbound.client` owns signed
 submission and status resolution, and `bmo.features.imessage_relay.outbound.media`
-owns verified bounded upload. A local invented phone simulation proves
+owns verified bounded upload. `bmo.features.imessage_relay.outbound.confirmation`
+owns the resource-free one-shot user gate. A local invented phone simulation proves
 durable-before-network ordering, all three command kinds, resumable chunk
-transfer, and lost-ACK recovery without duplicate execution. The matching
-Python 3.9 phone handler, durable phone execution ledger and staging store,
-user confirmation UI, and cross-runtime simulation are the next chapter and
-are not yet deployed.
+transfer, lost-ACK recovery without duplicate execution, and confirmation
+expiry/reuse rejection. The matching Python 3.9 phone handler, durable phone
+execution ledger and staging store, visible confirmation UI, and cross-runtime
+simulation are the next chapter and are not yet deployed.
