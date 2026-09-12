@@ -84,7 +84,11 @@ authorizes deletion of kiosk history.
 - Apple's Messages database, WAL/SHM, attachment tree, metadata, reactions,
   read state, chats, permissions, and process state are read-only.
 - Never issue INSERT/UPDATE/DELETE, DDL, checkpoint, journal-mode mutation,
-  VACUUM, message sending, reaction changes, or attachment modifications.
+  VACUUM, or attachment modifications against Apple's Messages storage.
+- Stage 12 observation never sends or changes Messages. Stage 13 may request a
+  send or reaction only through the separately owned authenticated outbound
+  executor and verified Apple service interface; it never obtains database
+  write authority.
 - Use SQLite URI `mode=ro`, `PRAGMA query_only=ON`, and one read transaction.
   Do not use `immutable=1` for a changing WAL database.
 - Phone writable state is limited to private configuration, cursor/backlog,
@@ -118,10 +122,26 @@ the exact relay ACL, deletes the `pi-bmo` service identity, removes only
 relay-owned paths, and retains Apple Messages data plus the `mobile`
 administrator account.
 
-## Deferred outbound direction
+## Stage 13 outbound direction
 
-Stage 13 may extend the same authenticated bridge with kiosk-originated text,
-photo/video, and reaction commands only after incoming acceptance. It must
-define replay-safe request IDs, recipient selection, delivery states, user
-confirmation, and an evidence-backed Messages sending interface. Direct Apple
-database writes remain prohibited.
+Stage 13 extends the authenticated kiosk-to-phone bridge with a separately
+routed outbound command surface. The kiosk commits a canonical command to its
+private outbox before network use. The phone must durably reserve the stable
+command ID before invoking Apple, so a retry can return the prior state instead
+of sending twice. A lost response leaves the kiosk state `uncertain`; only an
+exact status query may resolve it.
+
+Every destination carries canonical explicit recipients. Replies additionally
+carry the exact chat and source-message identity. Media commands carry only
+bounded blob metadata and digests on the command wire; neither side accepts a
+filesystem path from its peer. Reactions bind to a stable source-message ID and
+part index. UI confirmation must display the destination and content kind
+before a command is queued.
+
+Read-only phone discovery selected a dependency-free Python `ctypes` adapter
+over the Objective-C runtime and `IMAutomationMessageSend`. The phone's dyld
+shared cache resolves Foundation, IMCore, IMFoundation, IMSharedUtilities,
+ChatKit, IDS, and libobjc. Under the deployed `pi-bmo` identity, no-send
+initialization reports iMessage enabled, service availability, text and media
+capability, and successful sender construction. Direct Apple database writes
+remain prohibited.

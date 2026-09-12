@@ -131,6 +131,9 @@ def write_receiver_config(root: Path) -> Path:
                 "max_clock_skew_seconds": 300,
                 "max_request_bytes": 2 * 1024 * 1024,
                 "request_timeout_seconds": 2,
+                "photo_directory": str(root / "Pictures"),
+                "audio_directory": str(root / "Music"),
+                "video_directory": str(root / "Videos"),
             }
         ),
         encoding="utf-8",

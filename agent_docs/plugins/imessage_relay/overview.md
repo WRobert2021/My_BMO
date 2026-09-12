@@ -5,7 +5,7 @@ plugin_type: feature/service
 entrypoint: bmo.features.imessage_relay (opt-in)
 status: experimental
 progress: progress.md
-tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_media_library.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_phone_control.py, tests/test_imessage_notifications.py]
+tests: [tests/test_imessage_parser.py, tests/test_imessage_state.py, tests/test_imessage_receiver.py, tests/test_imessage_relay_e2e.py, tests/test_imessage_reconciliation.py, tests/test_imessage_attachments.py, tests/test_imessage_media_library.py, tests/test_imessage_live_validation.py, tests/test_imessage_live_delivery.py, tests/test_imessage_runtime.py, tests/test_imessage_phone_control.py, tests/test_imessage_notifications.py, tests/test_imessage_outbound.py]
 ---
 
 # Plugin: iMessage Relay
@@ -17,9 +17,9 @@ jailbroken iPhone to the kiosk with explicit durable kiosk ACKs and stable-ID
 idempotency. Normal production flow is event-driven phone-to-kiosk push. The
 kiosk must not mount, copy, or poll Apple's Messages database.
 
-Stage 12 owns incoming delivery. Stage 13 will separately plan authenticated
-outbound text replies, photo/video sends, and reactions. Direct Messages
-database writes are prohibited in every stage.
+Stage 12 owns incoming delivery. Stage 13 owns authenticated outbound text,
+photo/video, and reaction commands through Apple's sending service. Direct
+Messages database writes are prohibited in every stage.
 
 ## Current ownership
 
@@ -32,6 +32,7 @@ database writes are prohibited in every stage.
 | read-only notification count API | `bmo/features/imessage_relay/notifications.py` |
 | kiosk lifecycle and private feed | `bmo/features/imessage_relay/feature.py` |
 | Qt relay view | `bmo/qt/views/imessage_relay.py`, `bmo/qt/qml/IMessageRelayView.qml` |
+| Stage 13 outbound wire model and durable kiosk command state | `bmo/features/imessage_relay/outbound/` |
 | Stage 8/9 manual validation tools | `bmo/features/imessage_relay/tools/` |
 | phone observer/backlog/sender/service | standalone sibling `phone_relay` project, Python 3.9 compatible; physical CPython 3.9.9 |
 
@@ -101,6 +102,16 @@ state, read-only source handling, sender, control listener, and explicit
 service lifecycle. All phone modules import and test under local CPython 3.9.6;
 the physical phone provides CPython 3.9.9 for deployment verification.
 
+Stage 13 discovery has verified, without sending, that the deployed `pi-bmo`
+identity can load the dyld-cache messaging frameworks, construct
+`IMAutomationMessageSend`, and report text, photo, video, audio, and iMessage
+service availability. The selected implementation is a dependency-free Python
+`ctypes` bridge over the Objective-C runtime; neither a new compiler toolchain
+nor PyObjC is required. The kiosk now owns a strict path-free command schema
+and private durable outbox foundation. The matching phone executor, media
+staging, kiosk UI confirmation, and invented-data end-to-end simulation remain
+pending, and no physical outbound send has been performed.
+
 ## Safety and lifecycle
 
 Apple's database, WAL/SHM, attachments, metadata, and Messages process state are
@@ -123,5 +134,6 @@ worker/transport, receiver socket/thread, and store.
 
 Read `progress.md` for current state, `architecture.md` for boundaries,
 `roadmap.md` for stage gates, `components/production_incoming.md` for the
-corrected Stage 12 design, `api/receiver_protocol.md` for the implemented wire
-contract, and `api/notifications.md` for the future badge-facing count API.
+corrected Stage 12 design, `components/production_outbound.md` for Stage 13,
+`api/receiver_protocol.md` and `api/outbound_protocol.md` for the wire
+contracts, and `api/notifications.md` for the future badge-facing count API.

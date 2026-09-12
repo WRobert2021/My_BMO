@@ -146,15 +146,17 @@ Prove Apple state unchanged and stop before any outbound Messages action.
 
 ## Stage 13 planning gate
 
-Stage 13 is planned but not authorized to begin. After Stage 12 incoming
-activation is accepted, document the verified phone-side sending interface and
+After Stage 12 incoming activation is accepted and Stage 13 is explicitly
+authorized, first document the verified phone-side sending interface and
 evaluate whether the separate iPhone Python 3.9.9 environment is sufficient or
 a narrow native bridge is required. Define authenticated and replay-protected
 command contracts, stable outgoing request IDs, duplicate prevention, text
 replies, photo/video staging, reactions bound to source-message identities,
 delivery states, UI confirmation, failure isolation, cleanup, and phone
-resource use before implementation. Direct database writes, implicit recipient
-selection, silent duplicate sends, and credential embedding remain prohibited.
+resource use before implementation. A physical send requires a separate
+confirmation after invented-data simulation passes. Direct database writes,
+implicit recipient selection, silent duplicate sends, and credential embedding
+remain prohibited.
 
 ## Stage 14 polish gate
 

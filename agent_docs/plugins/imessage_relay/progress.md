@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
-current_stage: 12
-current_chapter: Physical incoming acceptance complete
-state: complete
-next_action: Stop at the Stage 12 gate. Begin Stage 13 outbound planning only after explicit authorization; Stage 14 polish is queued after Stage 13 acceptance.
+current_stage: 13
+current_chapter: Authenticated outbound protocol and durable command state
+state: in_progress
+next_action: Mirror the frozen command contract and durable duplicate-prevention state in the standalone Python 3.9 phone runtime, implement the no-send Objective-C adapter boundary, then run an invented-data end-to-end command simulation. Do not perform a physical send without a separate confirmation.
 last_verified: 2026-09-12
 
 ## Stage index
@@ -16,8 +16,68 @@ last_verified: 2026-09-12
 | 10 | complete | opt-in kiosk receiver/UI lifecycle accepted |
 | 11 | complete | plugin package consolidation and full physical suite accepted |
 | 12 | complete | event-driven incoming phone push, kiosk presentation, maintenance, and physical acceptance passed |
-| 13 | not started | outbound text, media, and reactions remain unauthorized |
+| 13 | in progress | phone discovery passed; kiosk protocol/outbox foundation implemented |
 | 14 | planned | post-main-stage media controls, speech, relay address book, and kiosk-only deletion/retrieval polish |
+
+## Current Stage 13 decisions
+
+- Stage 13 was explicitly authorized on 2026-09-12. Discovery and local
+  simulation may begin; no physical message send is implied by that planning
+  authorization.
+- Direct writes to Apple's Messages database remain prohibited. The first gate
+  is a bounded, read-only inventory of the phone's installed messaging tools,
+  private-framework surface, Objective-C/Python bridge availability, compiler,
+  and code-signing tools.
+- The first physical inventory found no compiler, Mach-O inspection or signing
+  tools, existing messaging CLI, Cycript/Frida bridge, or Python `objc` and
+  `Foundation` modules. `/Applications/MobileSMS.app/MobileSMS` is present.
+  Direct filesystem checks for messaging frameworks were negative, which is
+  inconclusive on modern iOS because system images may exist only in the dyld
+  shared cache. A subsequent no-load `dlopen_preflight` confirmed that IMCore,
+  IMFoundation, IMSharedUtilities, ChatKit, IDS, Foundation, and libobjc are all
+  resolvable from the phone's shared cache. A disposable process then loaded
+  the non-UI IMCore dependency chain and found the relevant
+  `IMAutomationMessageSend`, `IMChat`, `IMChatRegistry`, `IMMessage`,
+  `IMFileTransfer`, and associated-message classes without opening Apple data
+  or sending anything.
+- The development Mac has Apple Clang 17 and `codesign`, but only Command Line
+  Tools: no iPhoneOS SDK was found and `ldid` is absent. The phone also has no
+  compiler or `ldid`, so a native helper would require an explicitly approved
+  toolchain addition. Selector-level discovery comes first because a
+  dependency-free `ctypes` adapter may avoid that new dependency surface.
+- Targeted selector inspection found a high-level
+  `IMAutomationMessageSend` surface accepting message text, destination ID,
+  file paths, group ID, service, timeout, thread identifier, and an `NSError`
+  result. It also exposes message construction and attachment staging helpers.
+  `IMChat` exposes `sendMessage:` plus message-acknowledgment methods suitable
+  for reactions. These signatures make a narrow Python `ctypes` adapter the
+  preferred candidate. The no-send initialization check passed under the
+  actual `pi-bmo` service identity (UID 1002/GID 1001): iMessage and the send
+  service were available, text/photo/video/audio capability was reported, and
+  `IMAutomationMessageSend` constructed successfully. MMS reported disabled.
+  No send was performed. Stage 13 version 1 is iMessage-only and will not
+  silently fall back to SMS/MMS, so that MMS result is not a blocker.
+- The outbound architecture is now frozen on a dependency-free Python 3.9
+  `ctypes` adapter; no native helper, compiler, signing tool, or PyObjC package
+  is required for the first implementation.
+- The kiosk foundation now defines strict canonical text, photo/video, and
+  reaction commands; explicit canonical recipients and reply context;
+  path-free media references; exact request/response identity; and a private
+  durable SQLite outbox. Enqueue is idempotent by command ID and digest,
+  attempts enter `executing`, ambiguous transport outcomes become `uncertain`,
+  and `sent`/`failed` states cannot silently regress or retry.
+- Prefer extending the existing authenticated TLS phone-control boundary and
+  dedicated `pi-bmo` service. Add a separate native helper only if the verified
+  phone interface cannot be called safely and reliably from Python 3.9.9.
+- Outbound commands require stable kiosk request IDs, durable phone-side
+  duplicate prevention before execution, explicit recipient or reply-target
+  selection, bounded media staging, exact result states, and content-free
+  diagnostics.
+- The initial implementation order is text reply, new text with an explicit
+  recipient, photo/video, then reactions tied to stable source-message
+  identities. Every kind must pass invented-data simulation before a separately
+  confirmed physical send.
+- Stage 14 remains queued and is not part of Stage 13 implementation.
 
 ## Current Stage 12 decisions
 
@@ -167,11 +227,14 @@ last_verified: 2026-09-12
   The embedded audio attachment path also passed. The connected header status
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
-- Current complete kiosk relay suite: 130 tests and 21 subtests passed. Current
+- Current complete kiosk relay suite: 141 tests and 34 subtests passed. Current
   complete standalone phone suite: 39 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
   and audio interaction, touch selection, and playback cleanup passed.
-- Stage 12 physical incoming acceptance is complete. Stage 13 outbound text,
-  media, and reaction work has not begun.
+- Stage 12 physical incoming acceptance is complete.
+- Stage 13 outbound protocol/state focus: 13 tests and 13 subtests passed on
+  Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
+  The matching Python 3.9 phone executor and invented-data end-to-end
+  simulation have not yet run.

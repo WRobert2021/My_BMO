@@ -54,8 +54,10 @@ or status changes. Evidence and history are opt-in.
 | authorized live delivery validation | [components/live_delivery_validation.md](plugins/imessage_relay/components/live_delivery_validation.md) |
 | optional BMO runtime service, status UI, reconciliation controls | [components/runtime_integration.md](plugins/imessage_relay/components/runtime_integration.md) |
 | production incoming phone push, backlog/retry latch, kiosk resume, migration cleanup | [components/production_incoming.md](plugins/imessage_relay/components/production_incoming.md) |
+| production outbound commands, private-framework adapter, duplicate prevention, send states | [components/production_outbound.md](plugins/imessage_relay/components/production_outbound.md) |
 | Stage 11 package layout and root cleanup | [components/package_cleanup.md](plugins/imessage_relay/components/package_cleanup.md) |
 | HTTP/HMAC wire contract | [api/receiver_protocol.md](plugins/imessage_relay/api/receiver_protocol.md) |
+| outbound text/media/reaction command contract | [api/outbound_protocol.md](plugins/imessage_relay/api/outbound_protocol.md) |
 | notification badge message count | [api/notifications.md](plugins/imessage_relay/api/notifications.md) |
 | Apple Messages schema evidence only | [evidence/messages_schema.md](plugins/imessage_relay/evidence/messages_schema.md) |
 | completed-stage detail or legacy contradictions | [history](plugins/imessage_relay/history/) |
