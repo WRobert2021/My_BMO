@@ -72,6 +72,10 @@ last_verified: 2026-09-12
   phone simulation accepted text, media, and reaction commands only after the
   durable boundary, then proved a lost ACK resolves to `sent` without a second
   execution.
+- Photo/video staging uses separate signed session and chunk paths. The kiosk
+  validates a regular non-symlink source against the path-free command digest,
+  sends at most 64 KiB per chunk, accepts only the exact durable offset, and
+  resumes after a lost chunk ACK without starting the Apple send early.
 - Prefer extending the existing authenticated TLS phone-control boundary and
   dedicated `pi-bmo` service. Add a separate native helper only if the verified
   phone interface cannot be called safely and reliably from Python 3.9.9.
@@ -233,14 +237,14 @@ last_verified: 2026-09-12
   The embedded audio attachment path also passed. The connected header status
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
-- Current complete kiosk relay suite: 144 tests and 34 subtests passed. Current
+- Current complete kiosk relay suite: 147 tests and 34 subtests passed. Current
   complete standalone phone suite: 39 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
   and audio interaction, touch selection, and playback cleanup passed.
 - Stage 12 physical incoming acceptance is complete.
-- Stage 13 outbound protocol/client/state focus: 16 tests and 13 subtests passed on
+- Stage 13 outbound protocol/client/state focus: 19 tests and 13 subtests passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
   The local invented phone simulation passed. The matching Python 3.9 phone
   executor and cross-runtime invented-data simulation have not yet run.

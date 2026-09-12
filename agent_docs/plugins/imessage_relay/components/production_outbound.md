@@ -74,10 +74,13 @@ opening a message, attachment, or notification.
 
 The command JSON contains blob ID, leaf transfer name, category, MIME type,
 byte count, and SHA-256 digest. It never contains a kiosk or phone path. Media
-bytes use a separate bounded authenticated upload flow into a private
-relay-owned staging directory. The phone verifies length and digest, rejects
-links and non-regular files, supplies only its own validated staging path to
-Apple, and cleans staging after a terminal result.
+bytes use a separate bounded authenticated session/chunk flow into a private
+relay-owned staging directory. The kiosk verifies a regular non-symlink source
+against the command metadata and streams at most 64 KiB per request. Sessions
+resume at the phone's exact durable offset after interruption. The phone must
+verify the final length and digest, reject links and non-regular files, supply
+only its own validated staging path to Apple, and clean staging after a
+terminal result.
 
 Stage 13 covers photo and video sends. Incoming audio remains supported, but
 outbound audio is not claimed unless a later verified product decision adds it.
@@ -105,9 +108,11 @@ media with the rest of relay-owned data while retaining Apple Messages data.
 
 `bmo.features.imessage_relay.outbound.protocol` owns the canonical path-free
 command model. `bmo.features.imessage_relay.outbound.state` owns the private
-kiosk outbox, and `bmo.features.imessage_relay.outbound.client` owns signed
-submission and status resolution. A local invented phone simulation proves
-durable-before-network ordering, all three command kinds, and lost-ACK recovery
-without duplicate execution. The matching Python 3.9 phone handler, durable
-phone execution ledger, media upload path, user confirmation UI, and
-cross-runtime simulation are the next chapter and are not yet deployed.
+kiosk outbox, `bmo.features.imessage_relay.outbound.client` owns signed
+submission and status resolution, and `bmo.features.imessage_relay.outbound.media`
+owns verified bounded upload. A local invented phone simulation proves
+durable-before-network ordering, all three command kinds, resumable chunk
+transfer, and lost-ACK recovery without duplicate execution. The matching
+Python 3.9 phone handler, durable phone execution ledger and staging store,
+user confirmation UI, and cross-runtime simulation are the next chapter and
+are not yet deployed.

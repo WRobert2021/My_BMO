@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,8 @@ import unittest
 from bmo.features.imessage_relay.outbound import (
     OUTBOUND_APPLICATION_ID,
     OUTBOUND_COMMAND_PATH,
+    OUTBOUND_MEDIA_CHUNK_PATH_PREFIX,
+    OUTBOUND_MEDIA_SESSION_PATH,
     OUTBOUND_SCHEMA_VERSION,
     OUTBOUND_STATUS_PATH,
     OutboundClientError,
@@ -20,7 +23,9 @@ from bmo.features.imessage_relay.outbound import (
     OutboundCommandClient,
     OutboundDestination,
     OutboundMediaCommand,
+    OutboundMediaChunkAck,
     OutboundMediaReference,
+    OutboundMediaSessionAck,
     OutboundProtocolError,
     OutboundReactionCommand,
     OutboundStateError,
@@ -28,12 +33,20 @@ from bmo.features.imessage_relay.outbound import (
     OutboundTextCommand,
     OutboundTransportResponse,
     decode_command_response,
+    decode_media_chunk_path,
+    decode_media_chunk_response,
+    decode_media_session_request,
+    decode_media_session_response,
     decode_status_request,
     decode_submit_request,
     encode_command,
     encode_command_response,
+    encode_media_chunk_response,
+    encode_media_session_request,
+    encode_media_session_response,
     encode_status_request,
     encode_submit_request,
+    media_chunk_path,
 )
 from bmo.features.imessage_relay.phone_control import PhoneControlConfig
 from bmo.features.imessage_relay.receiver.auth import RequestAuthenticator
@@ -71,12 +84,16 @@ class SimulatedPhoneTransport:
         )
         self.send_boundary = send_boundary
         self.commands: dict[str, tuple[str, str]] = {}
+        self.uploads: dict[str, tuple[object, bytearray]] = {}
+        self.chunk_sizes: list[int] = []
         self.executions: list[str] = []
         self.lose_next_ack = False
+        self.lose_next_chunk_ack = False
         self.closed = False
 
     def send(self, *, body, headers, path):
-        self.authenticator.verify("POST", path, headers, body)
+        method = "PUT" if path.startswith(OUTBOUND_MEDIA_CHUNK_PATH_PREFIX) else "POST"
+        self.authenticator.verify(method, path, headers, body)
         if path == OUTBOUND_COMMAND_PATH:
             request_id, command = decode_submit_request(body)
             digest = hashlib.sha256(encode_command(command)).hexdigest()
@@ -96,6 +113,7 @@ class SimulatedPhoneTransport:
                 raise TimeoutError("invented lost ACK")
             ack = OutboundCommandAck(command.command_id, status, "sent")
             status_code = 202
+            response_body = encode_command_response(request_id=request_id, ack=ack)
         elif path == OUTBOUND_STATUS_PATH:
             request_id, command_id = decode_status_request(body)
             prior = self.commands.get(command_id)
@@ -106,13 +124,58 @@ class SimulatedPhoneTransport:
             else:
                 ack = OutboundCommandAck(command_id, "status", prior[1])
             status_code = 200
+            response_body = encode_command_response(request_id=request_id, ack=ack)
+        elif path == OUTBOUND_MEDIA_SESSION_PATH:
+            request_id, command_id, media = decode_media_session_request(body)
+            upload_id = "upload-" + media.blob_id
+            prior = self.uploads.get(upload_id)
+            if prior is None:
+                content = bytearray()
+                self.uploads[upload_id] = (media, content)
+            else:
+                prior_media, content = prior
+                if prior_media != media:
+                    raise AssertionError("simulated phone accepted conflicting media")
+            status = "complete" if len(content) == media.expected_bytes else "ready"
+            ack = OutboundMediaSessionAck(
+                command_id, media.blob_id, upload_id, len(content), status
+            )
+            status_code = 200 if prior is not None else 201
+            response_body = encode_media_session_response(
+                request_id=request_id, ack=ack
+            )
+        elif path.startswith(OUTBOUND_MEDIA_CHUNK_PATH_PREFIX):
+            upload_id, offset, request_id = decode_media_chunk_path(path)
+            media, content = self.uploads[upload_id]
+            if len(content) != offset:
+                raise AssertionError("simulated phone accepted wrong media offset")
+            content.extend(body)
+            self.chunk_sizes.append(len(body))
+            if len(content) > media.expected_bytes:
+                raise AssertionError("simulated phone accepted oversized media")
+            status = "complete" if len(content) == media.expected_bytes else "partial"
+            if status == "complete":
+                self.assert_digest(media, content)
+            if self.lose_next_chunk_ack:
+                self.lose_next_chunk_ack = False
+                raise TimeoutError("invented lost chunk ACK")
+            ack = OutboundMediaChunkAck(upload_id, len(content), status)
+            status_code = 200
+            response_body = encode_media_chunk_response(
+                request_id=request_id, ack=ack
+            )
         else:
             raise AssertionError("unexpected simulated phone path")
         return OutboundTransportResponse(
             status_code,
             {"content-type": "application/json"},
-            encode_command_response(request_id=request_id, ack=ack),
+            response_body,
         )
+
+    @staticmethod
+    def assert_digest(media, content):
+        if hashlib.sha256(content).hexdigest() != media.sha256:
+            raise AssertionError("simulated phone accepted wrong media digest")
 
     def close(self):
         self.closed = True
@@ -279,6 +342,57 @@ class OutboundProtocolTests(unittest.TestCase):
                 expected_command_id="command-1",
             )
 
+    def test_media_session_and_chunk_contracts_require_exact_identity(self) -> None:
+        media = OutboundMediaReference(
+            "blob-1", "invented.jpg", "photo", "image/jpeg", 10, "a" * 64
+        )
+        request = encode_media_session_request(
+            request_id="session-request",
+            command_id="command-1",
+            media=media,
+        )
+        self.assertEqual(
+            decode_media_session_request(request),
+            ("session-request", "command-1", media),
+        )
+        session_ack = OutboundMediaSessionAck(
+            "command-1", "blob-1", "upload-1", 0, "ready"
+        )
+        response = encode_media_session_response(
+            request_id="session-request", ack=session_ack
+        )
+        self.assertEqual(
+            decode_media_session_response(
+                response,
+                expected_request_id="session-request",
+                expected_command_id="command-1",
+                expected_blob_id="blob-1",
+            ),
+            session_ack,
+        )
+
+        path = media_chunk_path(
+            upload_id="upload-1", offset=0, request_id="chunk-request"
+        )
+        self.assertEqual(
+            decode_media_chunk_path(path), ("upload-1", 0, "chunk-request")
+        )
+        with self.assertRaises(OutboundProtocolError):
+            decode_media_chunk_path(path + "/unexpected")
+
+        chunk_ack = OutboundMediaChunkAck("upload-1", 10, "complete")
+        chunk_response = encode_media_chunk_response(
+            request_id="chunk-request", ack=chunk_ack
+        )
+        self.assertEqual(
+            decode_media_chunk_response(
+                chunk_response,
+                expected_request_id="chunk-request",
+                expected_upload_id="upload-1",
+            ),
+            chunk_ack,
+        )
+
     def test_failure_ack_requires_bounded_error_and_success_forbids_it(self) -> None:
         with self.assertRaises(OutboundProtocolError):
             OutboundCommandAck("command-1", "accepted", "failed")
@@ -301,6 +415,9 @@ class OutboundClientSimulationTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def test_all_command_kinds_are_durable_before_invented_execution(self) -> None:
+        media_bytes = b"invented photo bytes" * 10
+        media_path = self.root / "invented.jpg"
+        media_path.write_bytes(media_bytes)
         def assert_durable_boundary(command_id: str) -> None:
             record = self.store.get(command_id)
             self.assertIsNotNone(record)
@@ -311,6 +428,8 @@ class OutboundClientSimulationTests(unittest.TestCase):
         identifiers = iter(
             (
                 "text-request", "text-nonce",
+                "session-request", "session-nonce",
+                "chunk-request", "chunk-nonce",
                 "media-request", "media-nonce",
                 "reaction-request", "reaction-nonce",
             )
@@ -334,8 +453,8 @@ class OutboundClientSimulationTests(unittest.TestCase):
                         "invented.jpg",
                         "photo",
                         "image/jpeg",
-                        100,
-                        "a" * 64,
+                        len(media_bytes),
+                        hashlib.sha256(media_bytes).hexdigest(),
                     ),
                 ),
             ),
@@ -350,8 +469,14 @@ class OutboundClientSimulationTests(unittest.TestCase):
             ),
         )
 
-        for command in commands:
-            self.assertEqual(client.submit(command).state, "sent")
+        self.assertEqual(client.submit(commands[0]).state, "sent")
+        self.assertEqual(
+            client.submit(
+                commands[1], media_sources={"blob-1": media_path}
+            ).state,
+            "sent",
+        )
+        self.assertEqual(client.submit(commands[2]).state, "sent")
         client.close()
 
         self.assertEqual(
@@ -360,6 +485,7 @@ class OutboundClientSimulationTests(unittest.TestCase):
         )
         self.assertTrue(transport.closed)
         self.assertEqual(self.store.summary().sent_commands, 3)
+        self.assertEqual(bytes(transport.uploads["upload-blob-1"][1]), media_bytes)
 
     def test_lost_ack_requires_status_and_does_not_execute_twice(self) -> None:
         transport = SimulatedPhoneTransport()
@@ -413,6 +539,99 @@ class OutboundClientSimulationTests(unittest.TestCase):
         self.assertNotIn("never expose this text", str(caught.exception))
         self.assertNotIn("private response", str(caught.exception))
         self.assertEqual(self.store.get("command-1").state, "uncertain")
+
+    def test_media_upload_resumes_after_lost_chunk_ack(self) -> None:
+        media_bytes = b"x" * (64 * 1024 + 123)
+        media_path = self.root / "invented-video.mp4"
+        media_path.write_bytes(media_bytes)
+        command = OutboundMediaCommand(
+            "media-command",
+            CREATED_AT,
+            destination(),
+            (
+                OutboundMediaReference(
+                    "blob-video",
+                    "invented-video.mp4",
+                    "video",
+                    "video/mp4",
+                    len(media_bytes),
+                    hashlib.sha256(media_bytes).hexdigest(),
+                ),
+            ),
+        )
+        transport = SimulatedPhoneTransport()
+        transport.lose_next_chunk_ack = True
+        identifiers = (f"invented-{value}" for value in itertools.count())
+        client = OutboundCommandClient(
+            client_config(),
+            self.store,
+            transport=transport,
+            clock=lambda: 2_000_000_000,
+            identifier_factory=identifiers.__next__,
+        )
+
+        with self.assertRaisesRegex(OutboundClientError, "phone_unreachable"):
+            client.submit(
+                command, media_sources={"blob-video": media_path}
+            )
+        self.assertEqual(self.store.get("media-command").state, "queued")
+        self.assertEqual(transport.executions, [])
+
+        result = client.submit(
+            command, media_sources={"blob-video": media_path}
+        )
+
+        self.assertEqual(result.state, "sent")
+        self.assertEqual(transport.executions, ["media-command"])
+        self.assertEqual(
+            bytes(transport.uploads["upload-blob-video"][1]), media_bytes
+        )
+        self.assertTrue(all(size <= 64 * 1024 for size in transport.chunk_sizes))
+
+    def test_media_sources_are_exact_and_safe(self) -> None:
+        media_bytes = b"invented"
+        source = self.root / "invented.jpg"
+        source.write_bytes(media_bytes)
+        command = OutboundMediaCommand(
+            "media-command",
+            CREATED_AT,
+            destination(),
+            (
+                OutboundMediaReference(
+                    "blob-1",
+                    "invented.jpg",
+                    "photo",
+                    "image/jpeg",
+                    len(media_bytes),
+                    hashlib.sha256(media_bytes).hexdigest(),
+                ),
+            ),
+        )
+        transport = SimulatedPhoneTransport()
+        identifiers = (f"invented-{value}" for value in itertools.count())
+        client = OutboundCommandClient(
+            client_config(),
+            self.store,
+            transport=transport,
+            identifier_factory=identifiers.__next__,
+        )
+
+        with self.assertRaisesRegex(
+            OutboundClientError, "outbound_media_sources_required"
+        ):
+            client.submit(command)
+        with self.assertRaisesRegex(
+            OutboundClientError, "outbound_media_sources_invalid"
+        ):
+            client.submit(command, media_sources={"wrong-blob": source})
+
+        link = self.root / "link.jpg"
+        link.symlink_to(source)
+        with self.assertRaisesRegex(
+            OutboundClientError, "outbound_media_source_invalid"
+        ):
+            client.submit(command, media_sources={"blob-1": link})
+        self.assertEqual(transport.executions, [])
 
 
 class OutboundStateTests(unittest.TestCase):

@@ -15,7 +15,10 @@ OUTBOUND_PROTOCOL_VERSION = 1
 OUTBOUND_COMMAND_SCHEMA_VERSION = 1
 OUTBOUND_COMMAND_PATH = "/v1/outbound/commands"
 OUTBOUND_STATUS_PATH = "/v1/outbound/status"
+OUTBOUND_MEDIA_SESSION_PATH = "/v1/outbound/media-sessions"
+OUTBOUND_MEDIA_CHUNK_PATH_PREFIX = "/v1/outbound/media-chunks/"
 MAX_OUTBOUND_REQUEST_BYTES = 64 * 1024
+MAX_OUTBOUND_MEDIA_CHUNK_BYTES = 64 * 1024
 MAX_TEXT_BYTES = 32 * 1024
 MAX_RECIPIENTS = 32
 MAX_MEDIA_ITEMS = 10
@@ -206,6 +209,36 @@ class OutboundCommandAck:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class OutboundMediaSessionAck:
+    command_id: str
+    blob_id: str
+    upload_id: str
+    next_offset: int
+    status: str
+
+    def __post_init__(self) -> None:
+        _token(self.command_id, "command ID")
+        _token(self.blob_id, "blob ID")
+        _token(self.upload_id, "upload ID")
+        _offset(self.next_offset)
+        if self.status not in {"ready", "complete"}:
+            raise OutboundProtocolError("outbound media session status is invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class OutboundMediaChunkAck:
+    upload_id: str
+    next_offset: int
+    status: str
+
+    def __post_init__(self) -> None:
+        _token(self.upload_id, "upload ID")
+        _offset(self.next_offset)
+        if self.status not in {"partial", "complete"}:
+            raise OutboundProtocolError("outbound media chunk status is invalid")
+
+
 def encode_submit_request(*, request_id: str, command: OutboundCommand) -> bytes:
     """Encode one canonical command submission without filesystem paths."""
 
@@ -268,6 +301,156 @@ def decode_status_request(body: bytes) -> tuple[str, str]:
     return (
         _token(value.get("request_id"), "request ID"),
         _token(value.get("command_id"), "command ID"),
+    )
+
+
+def encode_media_session_request(
+    *,
+    request_id: str,
+    command_id: str,
+    media: OutboundMediaReference,
+) -> bytes:
+    if not isinstance(media, OutboundMediaReference):
+        raise TypeError("media must be an OutboundMediaReference")
+    return _canonical_json(
+        {
+            "blob": _media_mapping(media),
+            "command_id": _token(command_id, "command ID"),
+            "protocol_version": OUTBOUND_PROTOCOL_VERSION,
+            "request_id": _token(request_id, "request ID"),
+        }
+    )
+
+
+def decode_media_session_request(
+    body: bytes,
+) -> tuple[str, str, OutboundMediaReference]:
+    value = _decode_object(body)
+    if set(value) != {"blob", "command_id", "protocol_version", "request_id"}:
+        raise OutboundProtocolError("outbound media session fields are invalid")
+    if value.get("protocol_version") != OUTBOUND_PROTOCOL_VERSION:
+        raise OutboundProtocolError("outbound protocol version is unsupported")
+    return (
+        _token(value.get("request_id"), "request ID"),
+        _token(value.get("command_id"), "command ID"),
+        _media_from_mapping(value.get("blob")),
+    )
+
+
+def encode_media_session_response(
+    *, request_id: str, ack: OutboundMediaSessionAck
+) -> bytes:
+    if not isinstance(ack, OutboundMediaSessionAck):
+        raise TypeError("ack must be an OutboundMediaSessionAck")
+    return _canonical_json(
+        {
+            "blob_id": ack.blob_id,
+            "command_id": ack.command_id,
+            "next_offset": ack.next_offset,
+            "protocol_version": OUTBOUND_PROTOCOL_VERSION,
+            "request_id": _token(request_id, "request ID"),
+            "result": "ack",
+            "status": ack.status,
+            "upload_id": ack.upload_id,
+        }
+    )
+
+
+def decode_media_session_response(
+    body: bytes,
+    *,
+    expected_request_id: str,
+    expected_command_id: str,
+    expected_blob_id: str,
+) -> OutboundMediaSessionAck:
+    value = _decode_object(body)
+    fields = {
+        "blob_id", "command_id", "next_offset", "protocol_version",
+        "request_id", "result", "status", "upload_id",
+    }
+    if set(value) != fields or (
+        value.get("protocol_version") != OUTBOUND_PROTOCOL_VERSION
+        or value.get("request_id") != _token(expected_request_id, "request ID")
+        or value.get("command_id") != _token(expected_command_id, "command ID")
+        or value.get("blob_id") != _token(expected_blob_id, "blob ID")
+        or value.get("result") != "ack"
+    ):
+        raise OutboundProtocolError("outbound media session response is invalid")
+    return OutboundMediaSessionAck(
+        command_id=expected_command_id,
+        blob_id=expected_blob_id,
+        upload_id=value.get("upload_id"),  # type: ignore[arg-type]
+        next_offset=value.get("next_offset"),  # type: ignore[arg-type]
+        status=value.get("status"),  # type: ignore[arg-type]
+    )
+
+
+def media_chunk_path(*, upload_id: str, offset: int, request_id: str) -> str:
+    return (
+        f"{OUTBOUND_MEDIA_CHUNK_PATH_PREFIX}{_token(upload_id, 'upload ID')}/"
+        f"{_offset(offset)}/{_token(request_id, 'request ID')}"
+    )
+
+
+def decode_media_chunk_path(path: str) -> tuple[str, int, str]:
+    if not isinstance(path, str) or not path.startswith(
+        OUTBOUND_MEDIA_CHUNK_PATH_PREFIX
+    ):
+        raise OutboundProtocolError("outbound media chunk path is invalid")
+    components = path[len(OUTBOUND_MEDIA_CHUNK_PATH_PREFIX):].split("/")
+    if len(components) != 3:
+        raise OutboundProtocolError("outbound media chunk path is invalid")
+    upload_id, offset_text, request_id = components
+    try:
+        offset = int(offset_text)
+    except ValueError as exc:
+        raise OutboundProtocolError("outbound media chunk offset is invalid") from exc
+    if str(offset) != offset_text:
+        raise OutboundProtocolError("outbound media chunk offset is invalid")
+    return _token(upload_id, "upload ID"), _offset(offset), _token(
+        request_id, "request ID"
+    )
+
+
+def encode_media_chunk_response(
+    *, request_id: str, ack: OutboundMediaChunkAck
+) -> bytes:
+    if not isinstance(ack, OutboundMediaChunkAck):
+        raise TypeError("ack must be an OutboundMediaChunkAck")
+    return _canonical_json(
+        {
+            "next_offset": ack.next_offset,
+            "protocol_version": OUTBOUND_PROTOCOL_VERSION,
+            "request_id": _token(request_id, "request ID"),
+            "result": "ack",
+            "status": ack.status,
+            "upload_id": ack.upload_id,
+        }
+    )
+
+
+def decode_media_chunk_response(
+    body: bytes,
+    *,
+    expected_request_id: str,
+    expected_upload_id: str,
+) -> OutboundMediaChunkAck:
+    value = _decode_object(body)
+    fields = {
+        "next_offset", "protocol_version", "request_id", "result", "status",
+        "upload_id",
+    }
+    if set(value) != fields or (
+        value.get("protocol_version") != OUTBOUND_PROTOCOL_VERSION
+        or value.get("request_id") != _token(expected_request_id, "request ID")
+        or value.get("upload_id") != _token(expected_upload_id, "upload ID")
+        or value.get("result") != "ack"
+    ):
+        raise OutboundProtocolError("outbound media chunk response is invalid")
+    return OutboundMediaChunkAck(
+        upload_id=expected_upload_id,
+        next_offset=value.get("next_offset"),  # type: ignore[arg-type]
+        status=value.get("status"),  # type: ignore[arg-type]
     )
 
 
@@ -345,17 +528,7 @@ def command_to_mapping(command: OutboundCommand) -> dict[str, object]:
     if isinstance(command, OutboundTextCommand):
         value["text"] = command.text
     elif isinstance(command, OutboundMediaCommand):
-        value["media"] = [
-            {
-                "blob_id": item.blob_id,
-                "expected_bytes": item.expected_bytes,
-                "media_category": item.media_category,
-                "mime_type": item.mime_type,
-                "sha256": item.sha256,
-                "transfer_name": item.transfer_name,
-            }
-            for item in command.media
-        ]
+        value["media"] = [_media_mapping(item) for item in command.media]
         value["text"] = command.text
     else:
         value.update(
@@ -457,6 +630,17 @@ def _media_from_mapping(value: object) -> OutboundMediaReference:
     return OutboundMediaReference(**value)  # type: ignore[arg-type]
 
 
+def _media_mapping(media: OutboundMediaReference) -> dict[str, object]:
+    return {
+        "blob_id": media.blob_id,
+        "expected_bytes": media.expected_bytes,
+        "media_category": media.media_category,
+        "mime_type": media.mime_type,
+        "sha256": media.sha256,
+        "transfer_name": media.transfer_name,
+    }
+
+
 def _decode_object(body: bytes) -> dict[str, Any]:
     if not isinstance(body, bytes) or not body or len(body) > MAX_OUTBOUND_REQUEST_BYTES:
         raise OutboundProtocolError("outbound JSON body is invalid")
@@ -530,6 +714,16 @@ def _text(value: object, *, optional: bool) -> str | None:
     return value
 
 
+def _offset(value: object) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 0 <= value <= MAX_MEDIA_BYTES
+    ):
+        raise OutboundProtocolError("outbound media offset is invalid")
+    return value
+
+
 def _canonical_json(value: Mapping[str, object]) -> bytes:
     try:
         return json.dumps(
@@ -546,18 +740,23 @@ def _canonical_json(value: Mapping[str, object]) -> bytes:
 __all__ = [
     "MAX_MEDIA_BYTES",
     "MAX_MEDIA_ITEMS",
+    "MAX_OUTBOUND_MEDIA_CHUNK_BYTES",
     "MAX_OUTBOUND_REQUEST_BYTES",
     "MAX_RECIPIENTS",
     "MAX_TEXT_BYTES",
     "OUTBOUND_COMMAND_PATH",
     "OUTBOUND_COMMAND_SCHEMA_VERSION",
+    "OUTBOUND_MEDIA_CHUNK_PATH_PREFIX",
+    "OUTBOUND_MEDIA_SESSION_PATH",
     "OUTBOUND_PROTOCOL_VERSION",
     "OUTBOUND_STATUS_PATH",
     "OutboundCommand",
     "OutboundCommandAck",
     "OutboundDestination",
     "OutboundMediaCommand",
+    "OutboundMediaChunkAck",
     "OutboundMediaReference",
+    "OutboundMediaSessionAck",
     "OutboundProtocolError",
     "OutboundReactionCommand",
     "OutboundTextCommand",
@@ -565,9 +764,17 @@ __all__ = [
     "command_to_mapping",
     "decode_status_request",
     "decode_command_response",
+    "decode_media_chunk_path",
+    "decode_media_chunk_response",
+    "decode_media_session_request",
+    "decode_media_session_response",
     "decode_submit_request",
     "encode_command",
     "encode_command_response",
+    "encode_media_chunk_response",
+    "encode_media_session_request",
+    "encode_media_session_response",
     "encode_status_request",
     "encode_submit_request",
+    "media_chunk_path",
 ]

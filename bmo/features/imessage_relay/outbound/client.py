@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import http.client
 import ssl
 import time
+from pathlib import Path
 from typing import Callable, Mapping, Protocol
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -15,14 +16,18 @@ from ..receiver.auth import sign_request
 from .protocol import (
     MAX_OUTBOUND_REQUEST_BYTES,
     OUTBOUND_COMMAND_PATH,
+    OUTBOUND_MEDIA_CHUNK_PATH_PREFIX,
+    OUTBOUND_MEDIA_SESSION_PATH,
     OUTBOUND_STATUS_PATH,
     OutboundCommand,
+    OutboundMediaCommand,
     OutboundCommandAck,
     OutboundProtocolError,
     decode_command_response,
     encode_status_request,
     encode_submit_request,
 )
+from .media import OutboundMediaError, OutboundMediaUploader
 from .state import OutboundCommandRecord, OutboundStateError, OutboundStateStore
 
 
@@ -86,7 +91,11 @@ class HTTPOutboundTransport:
     ) -> OutboundTransportResponse:
         if self._closed:
             raise OutboundClientError("outbound_client_closed")
-        if path not in {OUTBOUND_COMMAND_PATH, OUTBOUND_STATUS_PATH}:
+        if path not in {
+            OUTBOUND_COMMAND_PATH,
+            OUTBOUND_STATUS_PATH,
+            OUTBOUND_MEDIA_SESSION_PATH,
+        } and not path.startswith(OUTBOUND_MEDIA_CHUNK_PATH_PREFIX):
             raise ValueError("outbound path is unsupported")
         if not isinstance(body, bytes) or len(body) > MAX_OUTBOUND_REQUEST_BYTES:
             raise ValueError("outbound request is invalid")
@@ -105,7 +114,10 @@ class HTTPOutboundTransport:
                 timeout=self._timeout_seconds,
             )
         try:
-            connection.request("POST", path, body=body, headers=dict(headers))
+            method = (
+                "PUT" if path.startswith(OUTBOUND_MEDIA_CHUNK_PATH_PREFIX) else "POST"
+            )
+            connection.request(method, path, body=body, headers=dict(headers))
             response = connection.getresponse()
             response_body = response.read(MAX_OUTBOUND_RESPONSE_BYTES + 1)
             if len(response_body) > MAX_OUTBOUND_RESPONSE_BYTES:
@@ -151,15 +163,35 @@ class OutboundCommandClient:
         )
         self._clock = clock
         self._identifier_factory = identifier_factory or (lambda: uuid4().hex)
+        self._media_uploader = OutboundMediaUploader(
+            config,
+            self._transport,
+            clock=clock,
+            identifier_factory=self._identifier_factory,
+        )
         self._closed = False
 
-    def submit(self, command: OutboundCommand) -> OutboundCommandRecord:
+    def submit(
+        self,
+        command: OutboundCommand,
+        *,
+        media_sources: Mapping[str, Path | str] | None = None,
+    ) -> OutboundCommandRecord:
         self._require_open()
         record = self._store.enqueue(command)
         if record.state in {"sent", "failed"}:
             return record
         if record.state in {"executing", "uncertain"}:
             raise OutboundClientError("outbound_status_required")
+        if isinstance(command, OutboundMediaCommand):
+            if media_sources is None:
+                raise OutboundClientError("outbound_media_sources_required")
+            try:
+                self._media_uploader.stage(command, media_sources)
+            except OutboundMediaError as exc:
+                raise OutboundClientError(exc.code) from exc
+        elif media_sources is not None:
+            raise OutboundClientError("outbound_media_sources_unexpected")
         request_id = self._identifier_factory()
         body = encode_submit_request(request_id=request_id, command=command)
         headers = self._headers(path=OUTBOUND_COMMAND_PATH, body=body)

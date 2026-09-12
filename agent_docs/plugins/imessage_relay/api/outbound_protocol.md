@@ -6,6 +6,9 @@ Stage 13 reserves two authenticated phone endpoints:
 
 - `POST /v1/outbound/commands` submits one canonical command.
 - `POST /v1/outbound/status` queries one stable command ID.
+- `POST /v1/outbound/media-sessions` creates or resumes one blob upload.
+- `PUT /v1/outbound/media-chunks/{upload_id}/{offset}/{request_id}` transfers
+  one authenticated chunk of at most 64 KiB.
 
 Requests use the receiver protocol's `IMESSAGE-RELAY-HMAC-V1` canonical
 signature headers and production TLS. Request bodies are strict UTF-8 JSON,
@@ -45,7 +48,13 @@ references. Each reference contains:
 - a lowercase SHA-256 digest.
 
 The metadata does not authorize a filesystem path. A separate authenticated
-upload contract will map the blob ID to phone-owned private staging.
+upload contract maps the blob ID to phone-owned private staging. The kiosk
+opens a regular non-symlink source read-only, verifies its exact byte count and
+SHA-256 digest, and never persists that local path. A session ACK returns an
+opaque upload ID plus its next durable offset and `ready` or `complete`.
+Chunk ACKs return the exact next durable offset and `partial` or `complete`.
+The final phone chunk must pass the declared whole-file digest before becoming
+complete. Repeating a session resumes from its durable offset.
 
 Reaction commands contain `target_message_id`, `target_part` from 0 through
 10,000, `reaction_kind`, and `operation`. Supported kinds are `heart`,
@@ -83,7 +92,7 @@ operator decision about an uncertain command.
 
 ## Current availability
 
-The canonical model, kiosk outbox, and authenticated kiosk client are
-implemented and tested with invented data. No client is wired into the UI, the
-matching phone endpoint is not yet implemented, and no physical outbound send
-has occurred.
+The canonical model, kiosk outbox, authenticated kiosk client, and bounded
+resumable media uploader are implemented and tested with invented data. No
+client is wired into the UI, the matching phone endpoints are not yet
+implemented, and no physical outbound send has occurred.

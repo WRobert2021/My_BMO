@@ -107,12 +107,13 @@ identity can load the dyld-cache messaging frameworks, construct
 `IMAutomationMessageSend`, and report text, photo, video, audio, and iMessage
 service availability. The selected implementation is a dependency-free Python
 `ctypes` bridge over the Objective-C runtime; neither a new compiler toolchain
-nor PyObjC is required. The kiosk now owns a strict path-free command schema
-and private durable outbox foundation. The matching phone executor, media
-staging and kiosk UI confirmation remain pending. A local invented-command
-simulation covers authentication, execution ordering, and lost-ACK recovery;
-the cross-runtime Python 3.9 simulation is still pending. No physical outbound
-send has been performed.
+nor PyObjC is required. The kiosk now owns a strict path-free command schema,
+private durable outbox, authenticated client, and bounded resumable media
+uploader. The matching phone executor/staging store and kiosk UI confirmation
+remain pending. A local invented-command simulation covers authentication,
+execution ordering, chunk resumption, and lost-ACK recovery; the cross-runtime
+Python 3.9 simulation is still pending. No physical outbound send has been
+performed.
 
 ## Safety and lifecycle
 
