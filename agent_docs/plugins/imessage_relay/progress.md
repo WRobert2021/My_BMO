@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
 current_stage: 13
-current_chapter: First physical text-send adapter gate
+current_chapter: First physical text-send validation gate
 state: awaiting_confirmation
-next_action: Obtain separate user confirmation naming the recipient and invented test text before implementing, deploying, or invoking the first physical text-send adapter. Do not send, deploy, or enable outbound from the current checkpoint.
+next_action: Obtain separate user confirmation naming the recipient and exact harmless test text before deploying, enabling, or invoking the guarded physical text adapter. Do not send, deploy, or enable outbound from the current checkpoint.
 last_verified: 2026-09-12
 
 ## Stage index
@@ -94,11 +94,16 @@ last_verified: 2026-09-12
   the declared byte count and SHA-256 before command reservation. Unsafe or
   exposed staging files fail closed. Terminal sent/failed commands remove their
   staged media.
-- The production phone executor remains deliberately disabled with
-  `apple_send_not_enabled`. Objective-C framework probing is explicit and
-  resource-free until called; the adapter's execute boundary returns
-  `physical_send_not_authorized`. Outbound state failure returns a bounded
-  unavailable response without stopping incoming delivery or phone control.
+- The running production phone service remains deliberately wired to the
+  disabled executor and returns `apple_send_not_enabled`. A separate guarded
+  `ctypes` adapter now implements only a new, single-recipient text send after
+  an explicit in-process enable flag. It verifies the exact observed selector
+  and Objective-C type encoding, passes the explicit `iMessage` service, maps
+  an entered call without a known result to `uncertain`, and rejects reply,
+  group, media, and reaction shapes before framework loading. No deployed
+  configuration can select this adapter yet. Outbound state failure still
+  returns a bounded unavailable response without stopping incoming delivery or
+  phone control.
 - A real loopback interoperability run passed invented text, photo, and
   reaction commands from the Python 3.13 kiosk client through the Python 3.9
   phone handler. Exactly three invented executor calls occurred and no Apple
@@ -265,7 +270,7 @@ last_verified: 2026-09-12
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
 - Current complete kiosk relay suite: 151 tests and 34 subtests passed. Current
-  complete standalone phone suite: 50 tests passed.
+  complete standalone phone suite: 53 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
@@ -274,8 +279,8 @@ last_verified: 2026-09-12
 - Stage 13 outbound protocol/client/state focus: 23 tests and 13 subtests passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
   The local invented phone simulation passed. The Python 3.9 phone suite now
-  passes 50 tests, including its durable command/media state, real HTTP route,
-  no-send adapter boundary, and incoming failure isolation. A separate real
+  passes 53 tests, including its durable command/media state, real HTTP route,
+  guarded text-adapter boundary, and incoming failure isolation. A separate real
   loopback run passed the shared Python 3.13 kiosk-to-Python 3.9 phone contract
   for invented text, photo, and reaction commands. Physical send remains
   unperformed and unauthorized by this checkpoint.

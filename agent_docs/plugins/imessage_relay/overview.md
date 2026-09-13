@@ -113,12 +113,16 @@ exact, expiring, one-shot confirmation, and incoming feed items retain stable
 reply/reaction context. The standalone phone runtime now mirrors the protocol,
 owns a durable duplicate-prevention ledger and verified private media staging,
 and routes outbound requests on its existing authenticated listener. Its
-production executor remains intentionally disabled. Invented-data simulations
-cover authentication, execution ordering, chunk resumption, crash recovery,
-lost-ACK recovery, confirmation rejection, and real Python 3.13-to-3.9 HTTP
-interoperability. The physical text adapter and visible kiosk
-composer/confirmation remain pending. No physical outbound send has been
-performed.
+running production service remains intentionally wired to the disabled
+executor. A separate guarded `ctypes` adapter now implements only a new,
+single-recipient iMessage text call after an explicit in-process enable gate;
+it verifies the exact Objective-C selector and type encoding and fails closed
+for reply, group, media, and reaction commands before framework loading.
+Invented-data simulations cover authentication, execution ordering, chunk
+resumption, crash recovery, lost-ACK recovery, confirmation rejection, adapter
+argument/failure behavior, and real Python 3.13-to-3.9 HTTP interoperability.
+Physical text-adapter validation and the visible kiosk composer/confirmation
+remain pending. No physical outbound send has been performed.
 
 ## Safety and lifecycle
 

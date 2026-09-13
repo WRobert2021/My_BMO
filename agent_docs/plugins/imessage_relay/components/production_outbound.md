@@ -128,13 +128,24 @@ owns the resource-free one-shot user gate. The standalone Python 3.9 phone
 runtime now mirrors the strict contract, routes the authenticated endpoints on
 its existing TLS listener, durably reserves commands, converts an interrupted
 execution to terminal `uncertain`, and owns private resumable media staging.
-Its production executor deliberately returns `apple_send_not_enabled`.
+Its running production service deliberately constructs the disabled executor
+and returns `apple_send_not_enabled`.
+
+The first Apple execution adapter is implemented behind a separate in-process
+enable flag that the service does not set. It loads Foundation, IMCore, and
+libobjc only after that gate; accepts only a new, single-recipient text
+command; requires the exact previously observed Objective-C selector and type
+encoding; supplies an empty file list and the explicit `iMessage` service; and
+maps an entered call without a known result to `uncertain`. Group text, reply
+context, media, and reactions are rejected before framework loading. Injected
+tests cover exact argument selection and failure mapping without loading an
+Apple framework.
 
 Local invented simulations prove durable-before-network ordering, all three
 command kinds, replay/conflict rejection, resumable chunk transfer, verified
 crash recovery, lost-ACK recovery without duplicate execution, confirmation
 expiry/reuse rejection, and real HTTP interoperability between the Python 3.13
 kiosk client and Python 3.9 phone handler. Outbound state failure is isolated
-from incoming phone delivery. The first physical text-send adapter validation
-and visible kiosk composer/confirmation are pending; no phone deployment or
+from incoming phone delivery. Physical validation of the guarded text adapter
+and the visible kiosk composer/confirmation are pending; no phone deployment or
 physical outbound send has occurred from this checkpoint.
