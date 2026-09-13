@@ -116,13 +116,23 @@ and routes outbound requests on its existing authenticated listener. Its
 running production service remains intentionally wired to the disabled
 executor. A separate guarded `ctypes` adapter now implements only a new,
 single-recipient iMessage text call after an explicit in-process enable gate;
-it verifies the exact Objective-C selector and type encoding and fails closed
-for reply, group, media, and reaction commands before framework loading.
+it verifies the narrow Objective-C selector and type encoding, requires
+nonempty sent-message evidence with no pending GUIDs, and fails closed for
+reply, group, media, and reaction commands before framework loading.
 Invented-data simulations cover authentication, execution ordering, chunk
 resumption, crash recovery, lost-ACK recovery, confirmation rejection, adapter
 argument/failure behavior, and real Python 3.13-to-3.9 HTTP interoperability.
-Physical text-adapter validation and the visible kiosk composer/confirmation
-remain pending. No physical outbound send has been performed.
+The first authorized physical call exposed a false acceptance assumption: a
+non-null private-API result produced neither an outgoing phone message nor
+recipient delivery. The corrected adapter no longer treats that return alone
+as success and passed a deployed no-send selector/ABI preflight. The Qt relay
+view now implements new-message and reply composition, exact recipient/text
+review, and one-shot confirm/cancel actions through an injected outbound
+coordinator. Reply context is resolved from stable received-feed IDs and
+submission runs outside the UI thread. Normal plugin registration does not yet
+create that controller, so outbound remains unavailable in production. A
+separately authorized corrected physical text call and production wiring remain
+pending.
 
 ## Safety and lifecycle
 

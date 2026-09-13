@@ -489,10 +489,12 @@ class IMessageRelayTool:
         *,
         app_factory: RelayAppFactory = _create_relay_app,
         menu_item: FeatureMenuItem = IMESSAGE_RELAY_MENU_ITEM,
+        outbound_controller: Any | None = None,
     ) -> None:
         self.service = service
         self.menu_item = menu_item
         self._app_factory = app_factory
+        self._outbound_controller = outbound_controller
         self._menu_ui: Any | None = None
 
     def execute(self, request: ToolRequest) -> ToolResult:
@@ -512,6 +514,17 @@ class IMessageRelayTool:
             context.on_close()
 
         try:
+            outbound = self._outbound_controller
+            outbound_callbacks = (
+                {
+                    "prepare_outbound_text": outbound.prepare_text,
+                    "confirm_outbound": outbound.confirm,
+                    "cancel_outbound": outbound.cancel,
+                    "outbound_status_provider": outbound.status,
+                }
+                if outbound is not None
+                else {}
+            )
             self._menu_ui = self._app_factory(
                 context.master,
                 status_provider=self.service.status,
@@ -519,6 +532,7 @@ class IMessageRelayTool:
                 reconcile_recent=self.service.reconcile_recent,
                 reconcile_month=self.service.reconcile_month,
                 on_close=handle_close,
+                **outbound_callbacks,
             )
         except Exception:
             self._menu_ui = None
@@ -529,6 +543,9 @@ class IMessageRelayTool:
         menu = self._menu_ui
         if menu is not None:
             menu.close()
+        outbound = self._outbound_controller
+        if outbound is not None:
+            outbound.close()
         self.service.close()
 
 

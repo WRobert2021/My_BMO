@@ -113,6 +113,21 @@ Item {
             anchors.margins: 12
             spacing: 6
 
+            RowLayout {
+                Layout.fillWidth: true
+                visible: viewModel.outboundAvailable === true
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    objectName: "relayNewMessageButton"
+                    text: "NEW MESSAGE"
+                    enabled: viewModel.outboundConfirmation === null
+                             || viewModel.outboundConfirmation === undefined
+                    onClicked: root.send("relay_new_message")
+                }
+            }
+
             ListView {
                 id: messageList
                 Layout.fillWidth: true
@@ -288,6 +303,17 @@ Item {
                                 }
                             }
                         }
+
+                        Button {
+                            objectName: "relayReplyButton"
+                            visible: viewModel.outboundAvailable === true
+                                     && String(messageCard.modelData.message_id || "") !== ""
+                            text: "REPLY"
+                            onClicked: root.send(
+                                "relay_reply",
+                                messageCard.modelData.message_id
+                            )
+                        }
                     }
 
                     Row {
@@ -345,6 +371,185 @@ Item {
                 color: "#b3261e"
                 font.bold: true
                 wrapMode: Text.Wrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: (viewModel.outboundMessage || "") !== ""
+                text: viewModel.outboundMessage || ""
+                color: viewModel.outboundState === "failed"
+                       || viewModel.outboundState === "uncertain"
+                    ? "#b3261e"
+                    : "#187a85"
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+
+    Rectangle {
+        id: composePanel
+        objectName: "relayComposePanel"
+        anchors.fill: parent
+        anchors.margins: 16
+        radius: 14
+        color: "#f7fcff"
+        border.color: "#5bc9c2"
+        border.width: 2
+        visible: viewModel.composer !== null
+                 && viewModel.composer !== undefined
+        z: 4
+
+        property var draft: viewModel.composer || {}
+        property bool replying: draft.mode === "reply"
+
+        onVisibleChanged: {
+            if (visible) {
+                recipientField.text = draft.recipient || ""
+                messageField.text = ""
+                messageField.forceActiveFocus()
+            }
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: composePanel.replying ? "REPLY" : "NEW MESSAGE"
+                color: "#102a5e"
+                font.pixelSize: 22
+                font.bold: true
+            }
+
+            TextField {
+                id: recipientField
+                objectName: "relayRecipientField"
+                Layout.fillWidth: true
+                placeholderText: "+15555550100"
+                text: composePanel.draft.recipient || ""
+                readOnly: composePanel.replying
+                selectByMouse: true
+            }
+
+            TextArea {
+                id: messageField
+                objectName: "relayMessageField"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                placeholderText: "Type a message"
+                wrapMode: TextEdit.Wrap
+                selectByMouse: true
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Button {
+                    text: "CANCEL"
+                    onClicked: root.send("relay_cancel_compose")
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    objectName: "relayReviewMessageButton"
+                    text: "REVIEW"
+                    onClicked: root.send(
+                        "relay_review_text",
+                        JSON.stringify({
+                            "recipient": recipientField.text,
+                            "text": messageField.text
+                        })
+                    )
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: confirmationPanel
+        objectName: "relayConfirmationPanel"
+        anchors.fill: parent
+        anchors.margins: 16
+        radius: 14
+        color: "#102a5e"
+        visible: viewModel.outboundConfirmation !== null
+                 && viewModel.outboundConfirmation !== undefined
+        z: 5
+
+        property var confirmation: viewModel.outboundConfirmation || {}
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 22
+            spacing: 12
+
+            Label {
+                Layout.fillWidth: true
+                text: "CONFIRM MESSAGE"
+                color: "#5bc9c2"
+                font.pixelSize: 22
+                font.bold: true
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "TO: " + (confirmationPanel.confirmation.recipient_ids || []).join(", ")
+                color: "white"
+                font.pixelSize: 15
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: 10
+                color: "#eef8ff"
+
+                Label {
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    text: confirmationPanel.confirmation.text || ""
+                    color: "#102a5e"
+                    font.pixelSize: 17
+                    wrapMode: Text.Wrap
+                    verticalAlignment: Text.AlignTop
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "Nothing is sent until you press SEND."
+                color: "#bde7ff"
+                font.pixelSize: 12
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Button {
+                    text: "CANCEL"
+                    onClicked: root.send(
+                        "relay_cancel_outbound",
+                        confirmationPanel.confirmation.confirmation_id
+                    )
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    objectName: "relayConfirmSendButton"
+                    text: "SEND"
+                    onClicked: root.send(
+                        "relay_confirm_outbound",
+                        confirmationPanel.confirmation.confirmation_id
+                    )
+                }
             }
         }
     }

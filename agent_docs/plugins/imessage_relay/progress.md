@@ -1,9 +1,9 @@
 # iMessage Relay Progress
 
 current_stage: 13
-current_chapter: First physical text-send validation gate
+current_chapter: Text composer complete; corrected physical validation gate
 state: awaiting_confirmation
-next_action: Obtain separate user confirmation naming the recipient and exact harmless test text before deploying, enabling, or invoking the guarded physical text adapter. Do not send, deploy, or enable outbound from the current checkpoint.
+next_action: Preserve the original test command as consumed and obtain separate user confirmation naming the recipient and exact harmless text before a second physical call through the corrected adapter. Do not attach the production phone executor or kiosk coordinator until that corrected physical call is accepted.
 last_verified: 2026-09-12
 
 ## Stage index
@@ -81,9 +81,16 @@ last_verified: 2026-09-12
   visible prompt, expires after a bounded interval, and releases the command
   only once for the exact opaque token. Preparing, inspecting, cancelling, or
   closing this gate cannot open durable state, contact the phone, or send.
+- The kiosk now also has a resource-owning text coordinator and a visible Qt
+  compose/reply surface. New messages require an explicit recipient; replies
+  resolve recipient, chat, and message IDs from the current received feed
+  instead of trusting QML input. Review shows exact recipient and text, and
+  only the matching one-shot confirmation can release background submission.
+  Normal plugin registration does not construct the coordinator yet, so the
+  deployed kiosk still cannot originate a message.
 - Incoming feed entries retain stable message, chat, and participant IDs. This
   supplies explicit reply/reaction context without granting send authority or
-  changing the current incoming-only Qt surface.
+  trusting mutable UI fields.
 - The standalone Python 3.9 runtime mirrors the frozen command and media
   contract on the existing authenticated listener. A private phone ledger
   reserves the canonical command before execution, rejects conflicting IDs,
@@ -97,10 +104,11 @@ last_verified: 2026-09-12
 - The running production phone service remains deliberately wired to the
   disabled executor and returns `apple_send_not_enabled`. A separate guarded
   `ctypes` adapter now implements only a new, single-recipient text send after
-  an explicit in-process enable flag. It verifies the exact observed selector
-  and Objective-C type encoding, passes the explicit `iMessage` service, maps
-  an entered call without a known result to `uncertain`, and rejects reply,
-  group, media, and reaction shapes before framework loading. No deployed
+  an explicit in-process enable flag. It verifies the narrow observed selector
+  and Objective-C type encoding, passes the explicit `iMessage` service,
+  requires nonempty `sentMessageInfo` with no pending GUIDs, maps an entered
+  call without that evidence to `uncertain`, and rejects reply, group, media,
+  and reaction shapes before framework loading. No deployed
   configuration can select this adapter yet. Outbound state failure still
   returns a bounded unavailable response without stopping incoming delivery or
   phone control.
@@ -108,6 +116,16 @@ last_verified: 2026-09-12
   reaction commands from the Python 3.13 kiosk client through the Python 3.9
   phone handler. Exactly three invented executor calls occurred and no Apple
   framework send method or physical phone was contacted.
+- The first separately authorized physical text call passed selector/ABI
+  preflight and returned a non-null Objective-C object with no `NSError`, but
+  no outgoing message appeared on the phone and nothing reached the recipient.
+  The phone ledger recorded `sent` under the former invalid assumption. That
+  command is treated as consumed and will not be retried. The adapter now uses
+  the narrower verified text selector and requires sent-message/pending-state
+  evidence; otherwise the durable result is `uncertain`. A second physical call
+  requires a new exact authorization. The corrected adapter was deployed for a
+  no-send preflight under the service identity; its exact selector and ABI
+  check passed and no send was performed.
 - Prefer extending the existing authenticated TLS phone-control boundary and
   dedicated `pi-bmo` service. Add a separate native helper only if the verified
   phone interface cannot be called safely and reliably from Python 3.9.9.
@@ -240,8 +258,8 @@ last_verified: 2026-09-12
   accepted its duplicate idempotently, and left one durable kiosk receipt.
 
 - Complete relay suite: 123 tests and 21 subtests passed.
-- Complete repository suite: 845 tests and 10,006 subtests passed in 22.77
-  seconds with exit status zero.
+- Complete repository suite: 872 tests, 2 skipped, and 10,019 subtests passed
+  in 20.89 seconds with exit status zero.
 - Python 3.9 AST/import checks, tracked example JSON parsing, and `git diff
   --check` passed. Physical kiosk and phone migration cleanup is complete. The
   phone preflight found CPython 3.9.9 and no Apple BSD `/bin/chmod`; user/group
@@ -269,18 +287,21 @@ last_verified: 2026-09-12
   The embedded audio attachment path also passed. The connected header status
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
-- Current complete kiosk relay suite: 151 tests and 34 subtests passed. Current
-  complete standalone phone suite: 53 tests passed.
+- Current complete kiosk relay suite: 157 tests, 2 skipped, and 34 subtests
+  passed. Current
+  complete standalone phone suite: 55 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
   and audio interaction, touch selection, and playback cleanup passed.
 - Stage 12 physical incoming acceptance is complete.
-- Stage 13 outbound protocol/client/state focus: 23 tests and 13 subtests passed on
+- Stage 13 outbound protocol/client/state/runtime/UI focus is included in the
+  complete kiosk relay suite and passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
   The local invented phone simulation passed. The Python 3.9 phone suite now
-  passes 53 tests, including its durable command/media state, real HTTP route,
+  passes 55 tests, including its durable command/media state, real HTTP route,
   guarded text-adapter boundary, and incoming failure isolation. A separate real
   loopback run passed the shared Python 3.13 kiosk-to-Python 3.9 phone contract
-  for invented text, photo, and reaction commands. Physical send remains
-  unperformed and unauthorized by this checkpoint.
+  for invented text, photo, and reaction commands. The first authorized send
+  produced no outgoing message and is retained as consumed; a corrected second
+  send remains separately gated.

@@ -6,10 +6,13 @@ import hashlib
 import itertools
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 import sqlite3
 import tempfile
+import threading
 import unittest
+from unittest.mock import Mock
 
 from bmo.features.imessage_relay.outbound import (
     OUTBOUND_APPLICATION_ID,
@@ -21,6 +24,7 @@ from bmo.features.imessage_relay.outbound import (
     OutboundClientError,
     OutboundCommandAck,
     OutboundCommandClient,
+    OutboundCommandRecord,
     OutboundConfirmationError,
     OutboundConfirmationGate,
     OutboundDestination,
@@ -33,6 +37,7 @@ from bmo.features.imessage_relay.outbound import (
     OutboundStateError,
     OutboundStateStore,
     OutboundTextCommand,
+    OutboundTextCoordinator,
     OutboundTransportResponse,
     decode_command_response,
     decode_media_chunk_path,
@@ -497,6 +502,81 @@ class OutboundConfirmationTests(unittest.TestCase):
             OutboundConfirmationError, "confirmation_gate_closed"
         ):
             self.gate.pending()
+
+
+class OutboundTextCoordinatorTests(unittest.TestCase):
+    def test_prepare_does_not_submit_and_exact_confirmation_runs_once(self) -> None:
+        completed = threading.Event()
+        client = Mock()
+        client.submit.return_value = OutboundCommandRecord(
+            command_id="command123",
+            command_kind="text",
+            command_json="{}",
+            command_digest="0" * 64,
+            state="sent",
+            attempt_count=1,
+            last_request_id="request123",
+            error_code=None,
+            created_at_ms=1,
+            updated_at_ms=2,
+        )
+        coordinator = OutboundTextCoordinator(
+            client,
+            confirmation_gate=OutboundConfirmationGate(
+                token_factory=lambda: "confirmation123"
+            ),
+            identifier_factory=lambda: "command123",
+            utc_now=lambda: datetime.fromisoformat(CREATED_AT),
+        )
+
+        confirmation = coordinator.prepare_text(
+            recipient_ids=("+15555550100",),
+            text="Invented hello",
+        )
+
+        client.submit.assert_not_called()
+        self.assertEqual(coordinator.status().state, "awaiting_confirmation")
+        with self.assertRaisesRegex(OutboundConfirmationError, "mismatch"):
+            coordinator.confirm("wrong")
+        self.assertTrue(coordinator.confirm(confirmation.confirmation_id, completed.set))
+        self.assertTrue(completed.wait(2))
+        client.submit.assert_called_once()
+        command = client.submit.call_args.args[0]
+        self.assertEqual(command.command_id, "command123")
+        self.assertEqual(command.destination.recipient_ids, ("+15555550100",))
+        self.assertEqual(coordinator.status().state, "sent")
+        coordinator.close()
+        client.close.assert_called_once_with()
+
+    def test_reply_context_and_failure_are_bounded(self) -> None:
+        completed = threading.Event()
+        client = Mock()
+        client.submit.side_effect = OutboundClientError("phone_unreachable")
+        coordinator = OutboundTextCoordinator(
+            client,
+            confirmation_gate=OutboundConfirmationGate(
+                token_factory=lambda: "confirmation123"
+            ),
+            identifier_factory=lambda: "command123",
+            utc_now=lambda: datetime.fromisoformat(CREATED_AT),
+        )
+        confirmation = coordinator.prepare_text(
+            recipient_ids=("+15555550100",),
+            text="Invented reply",
+            chat_id="chat-invented-1",
+            reply_to_message_id="message-invented-1",
+        )
+
+        self.assertTrue(coordinator.confirm(confirmation.confirmation_id, completed.set))
+        self.assertTrue(completed.wait(2))
+        command = client.submit.call_args.args[0]
+        self.assertEqual(
+            command.destination.reply_to_message_id,
+            "message-invented-1",
+        )
+        self.assertEqual(coordinator.status().state, "failed")
+        self.assertEqual(coordinator.status().error_code, "phone_unreachable")
+        coordinator.close()
 
 
 class OutboundClientSimulationTests(unittest.TestCase):

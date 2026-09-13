@@ -78,6 +78,14 @@ cleanup fails closed. Preparing or confirming at this boundary does not itself
 open durable state or contact the phone. The later Qt controller is responsible
 for passing the released command to the authenticated client.
 
+The Qt relay surface now provides a new-message composer and a per-message
+reply action. Reply context is looked up again from the current feed by stable
+message ID rather than accepted from QML. The review surface shows exact
+recipients and text before its separate send action becomes available. A
+resource-owning coordinator submits on a worker only after the exact one-shot
+confirmation. Normal plugin registration does not yet construct that
+coordinator, so this UI path cannot contact the phone.
+
 Incoming feed items retain their stable message ID, chat ID, and participant
 IDs so a reply or reaction can bind to the selected receipt rather than the
 foreground conversation. These identifiers are kiosk receipt metadata and do
@@ -124,7 +132,9 @@ command model. `bmo.features.imessage_relay.outbound.state` owns the private
 kiosk outbox, `bmo.features.imessage_relay.outbound.client` owns signed
 submission and status resolution, and `bmo.features.imessage_relay.outbound.media`
 owns verified bounded upload. `bmo.features.imessage_relay.outbound.confirmation`
-owns the resource-free one-shot user gate. The standalone Python 3.9 phone
+owns the resource-free one-shot user gate, and
+`bmo.features.imessage_relay.outbound.coordinator` owns confirmed background
+text submission. The standalone Python 3.9 phone
 runtime now mirrors the strict contract, routes the authenticated endpoints on
 its existing TLS listener, durably reserves commands, converts an interrupted
 execution to terminal `uncertain`, and owns private resumable media staging.
@@ -132,20 +142,29 @@ Its running production service deliberately constructs the disabled executor
 and returns `apple_send_not_enabled`.
 
 The first Apple execution adapter is implemented behind a separate in-process
-enable flag that the service does not set. It loads Foundation, IMCore, and
+enable flag that the service does not set and private configuration cannot
+select. It loads Foundation, IMCore, and
 libobjc only after that gate; accepts only a new, single-recipient text
-command; requires the exact previously observed Objective-C selector and type
+command; requires the narrow previously observed Objective-C selector and type
 encoding; supplies an empty file list and the explicit `iMessage` service; and
-maps an entered call without a known result to `uncertain`. Group text, reply
-context, media, and reactions are rejected before framework loading. Injected
-tests cover exact argument selection and failure mapping without loading an
-Apple framework.
+requires nonempty `sentMessageInfo` with no pending GUIDs before reporting
+acceptance. A non-null Objective-C return is not independently a success
+signal, and an entered call without the stronger evidence becomes `uncertain`.
+Group text, reply context, media, and reactions are rejected before framework
+loading. Injected tests cover exact argument selection, ABI arity, evidence
+classification, and failure mapping without loading an Apple framework.
 
 Local invented simulations prove durable-before-network ordering, all three
 command kinds, replay/conflict rejection, resumable chunk transfer, verified
 crash recovery, lost-ACK recovery without duplicate execution, confirmation
 expiry/reuse rejection, and real HTTP interoperability between the Python 3.13
 kiosk client and Python 3.9 phone handler. Outbound state failure is isolated
-from incoming phone delivery. Physical validation of the guarded text adapter
-and the visible kiosk composer/confirmation are pending; no phone deployment or
-physical outbound send has occurred from this checkpoint.
+from incoming phone delivery. The first authorized physical call returned an
+object without `NSError`, but it created no outgoing phone message and produced
+no recipient delivery. That exposed and removed the adapter's invalid non-null
+success assumption. The original test command remains duplicate-protected in
+the phone ledger and must not be retried. The corrected adapter then passed its
+deployed no-send selector/ABI preflight. A separately authorized second
+physical call remains pending. The visible kiosk composer/confirmation and
+injection-only coordinator are implemented and tested; production wiring waits
+for the physical gate.

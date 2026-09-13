@@ -14,6 +14,11 @@ from .client import (
     OutboundTransportResponse,
 )
 from .media import OutboundMediaError, OutboundMediaUploader
+from .coordinator import (
+    OutboundCoordinatorStatus,
+    OutboundTextCoordinator,
+    TextCommandClient,
+)
 
 from .protocol import (
     OUTBOUND_COMMAND_PATH,
@@ -69,6 +74,7 @@ __all__ = [
     "OUTBOUND_STATUS_PATH",
     "HTTPOutboundTransport",
     "OutboundClientError",
+    "OutboundCoordinatorStatus",
     "OutboundConfirmation",
     "OutboundConfirmationError",
     "OutboundConfirmationGate",
@@ -89,8 +95,10 @@ __all__ = [
     "OutboundStateStore",
     "OutboundStateSummary",
     "OutboundTextCommand",
+    "OutboundTextCoordinator",
     "OutboundTransport",
     "OutboundTransportResponse",
+    "TextCommandClient",
     "decode_command_response",
     "decode_media_chunk_path",
     "decode_media_chunk_response",

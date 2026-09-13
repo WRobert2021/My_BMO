@@ -30,6 +30,7 @@ from bmo.features.imessage_relay.receiver import (
     sign_request,
 )
 from bmo.features.imessage_relay.phone_control import PhoneControlRuntimeStatus
+from bmo.features.imessage_relay.outbound import OutboundConfirmation
 from bmo.features.imessage_relay.relay import (
     Direction,
     EventKind,
@@ -583,6 +584,11 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         self.assertIn('objectName: "relayPhotoViewer"', source)
         self.assertIn('objectName: "relayVideoViewer"', source)
         self.assertIn('objectName: "relayMediaPlayer"', source)
+        self.assertIn('objectName: "relayNewMessageButton"', source)
+        self.assertIn('objectName: "relayReplyButton"', source)
+        self.assertIn('objectName: "relayComposePanel"', source)
+        self.assertIn('objectName: "relayConfirmationPanel"', source)
+        self.assertIn('objectName: "relayConfirmSendButton"', source)
         self.assertIn('mediaViewer.mediaCategory === "photo"', source)
         self.assertIn('? (mediaViewer.selected.source || "")', source)
         self.assertIn("MediaPlayer {", source)
@@ -661,6 +667,9 @@ class IMessageRuntimeViewTests(unittest.TestCase):
                             },
                         ),
                         "reactions": ({"kind": "thumbs_up", "count": 1},),
+                        "message_id": "invented-message-id",
+                        "chat_id": "invented-chat-id",
+                        "participant_ids": ("+15555550100",),
                     },
                 ),
             )
@@ -712,6 +721,157 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         month.assert_not_called()
         closed.assert_called_once_with()
 
+    def test_qt_view_requires_exact_review_before_confirming_new_text(self) -> None:
+        host = Mock()
+        prepare = Mock(
+            return_value=OutboundConfirmation(
+                confirmation_id="confirmation123",
+                command_id="command123",
+                kind="text",
+                recipient_ids=("+15555550100",),
+                is_reply=False,
+                text="Invented outbound text",
+                media_names=(),
+                reaction_kind=None,
+                reaction_operation=None,
+                expires_in_seconds=120,
+            )
+        )
+        confirm = Mock(return_value=True)
+        cancel = Mock()
+        outbound_status = Mock(
+            return_value=type(
+                "Status",
+                (),
+                {"state": "idle", "error_code": None},
+            )()
+        )
+        view = QtIMessageRelayView(
+            host,
+            status_provider=self.status,
+            reconcile_recent=Mock(),
+            reconcile_month=Mock(),
+            on_close=Mock(),
+            prepare_outbound_text=prepare,
+            confirm_outbound=confirm,
+            cancel_outbound=cancel,
+            outbound_status_provider=outbound_status,
+        )
+
+        view.handle_action("relay_new_message", "")
+        self.assertEqual(view.payload()["composer"]["mode"], "new")
+        view.handle_action(
+            "relay_review_text",
+            json.dumps(
+                {
+                    "recipient": "+15555550100",
+                    "text": "Invented outbound text",
+                }
+            ),
+        )
+        confirmation = view.payload()["outboundConfirmation"]
+        self.assertEqual(confirmation["confirmation_id"], "confirmation123")
+        self.assertEqual(confirmation["text"], "Invented outbound text")
+        confirm.assert_not_called()
+
+        view.handle_action("relay_confirm_outbound", "wrong")
+        confirm.assert_not_called()
+        view.handle_action("relay_confirm_outbound", "confirmation123")
+
+        prepare.assert_called_once_with(
+            recipient_ids=("+15555550100",),
+            text="Invented outbound text",
+            chat_id=None,
+            reply_to_message_id=None,
+        )
+        confirm.assert_called_once()
+        outbound_status.return_value = type(
+            "Status",
+            (),
+            {"state": "sent", "error_code": None},
+        )()
+        self.assertEqual(view.payload()["outboundState"], "sent")
+        self.assertEqual(
+            view.payload()["outboundMessage"],
+            "Message accepted by the phone.",
+        )
+        self.assertIsNone(view.payload()["outboundConfirmation"])
+
+    def test_qt_view_resolves_reply_context_from_current_feed(self) -> None:
+        host = Mock()
+        prepare = Mock(
+            return_value=OutboundConfirmation(
+                confirmation_id="reply123",
+                command_id="reply-command",
+                kind="text",
+                recipient_ids=("+15555550100",),
+                is_reply=True,
+                text="Invented reply",
+                media_names=(),
+                reaction_kind=None,
+                reaction_operation=None,
+                expires_in_seconds=120,
+            )
+        )
+        view = QtIMessageRelayView(
+            host,
+            status_provider=self.status,
+            reconcile_recent=Mock(),
+            reconcile_month=Mock(),
+            on_close=Mock(),
+            feed_provider=lambda: (
+                {
+                    "kind": "message",
+                    "sender": "+15555550100",
+                    "timestamp": "2026-09-12T00:00:00+00:00",
+                    "text": "Invented incoming text",
+                    "attachments": (),
+                    "reactions": (),
+                    "message_id": "message123",
+                    "chat_id": "chat123",
+                    "participant_ids": ("+15555550100",),
+                },
+            ),
+            prepare_outbound_text=prepare,
+            confirm_outbound=Mock(),
+            cancel_outbound=Mock(),
+            outbound_status_provider=lambda: type(
+                "Status", (), {"state": "idle", "error_code": None}
+            )(),
+        )
+
+        view.payload()
+        view.handle_action("relay_reply", "message123")
+        composer = view.payload()["composer"]
+        self.assertEqual(composer["mode"], "reply")
+        self.assertEqual(composer["recipient"], "+15555550100")
+        view.handle_action(
+            "relay_review_text",
+            json.dumps({"recipient": "tampered", "text": "Invented reply"}),
+        )
+
+        prepare.assert_called_once_with(
+            recipient_ids=("+15555550100",),
+            text="Invented reply",
+            chat_id="chat123",
+            reply_to_message_id="message123",
+        )
+
+    def test_qt_view_without_outbound_callbacks_cannot_compose(self) -> None:
+        view = QtIMessageRelayView(
+            Mock(),
+            status_provider=self.status,
+            reconcile_recent=Mock(),
+            reconcile_month=Mock(),
+            on_close=Mock(),
+        )
+
+        self.assertFalse(view.payload()["outboundAvailable"])
+        view.handle_action("relay_new_message", "")
+
+        self.assertEqual(view.payload()["error"], "Outbound messaging is unavailable.")
+        self.assertIsNone(view.payload()["composer"])
+
     def test_tool_closes_view_before_service(self) -> None:
         service = Mock()
         menu = Mock()
@@ -723,6 +883,29 @@ class IMessageRuntimeViewTests(unittest.TestCase):
         tool.close()
 
         menu.close.assert_called_once_with()
+        service.close.assert_called_once_with()
+
+    def test_tool_passes_and_closes_an_explicit_outbound_controller(self) -> None:
+        service = Mock()
+        outbound = Mock()
+        menu = Mock()
+        factory = Mock(return_value=menu)
+        context = FeatureMenuContext(master=object(), on_close=Mock())
+        tool = IMessageRelayTool(
+            service,
+            app_factory=factory,
+            outbound_controller=outbound,
+        )
+
+        tool.open_menu(context)
+        supplied = factory.call_args.kwargs
+        self.assertIs(supplied["prepare_outbound_text"], outbound.prepare_text)
+        self.assertIs(supplied["confirm_outbound"], outbound.confirm)
+        self.assertIs(supplied["cancel_outbound"], outbound.cancel)
+        self.assertIs(supplied["outbound_status_provider"], outbound.status)
+        tool.close()
+
+        outbound.close.assert_called_once_with()
         service.close.assert_called_once_with()
 
 
