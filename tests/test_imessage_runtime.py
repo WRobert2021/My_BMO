@@ -12,7 +12,9 @@ import sqlite3
 import tempfile
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
+
+import bmo.features.imessage_relay.feature as relay_feature
 
 from bmo.features import FeatureMenuContext, ToolRegistry
 from bmo.features.imessage_relay import (
@@ -143,6 +145,52 @@ def write_receiver_config(root: Path) -> Path:
 
 
 class IMessageRuntimeRegistrationTests(unittest.TestCase):
+    def test_outbound_registration_is_explicit_and_failure_isolated(self) -> None:
+        disabled = RelayFeatureConfig(receiver_config_path=Path("receiver.json"))
+        with patch.object(
+            relay_feature, "load_phone_control_config"
+        ) as load_control:
+            self.assertIsNone(relay_feature._create_outbound_controller(disabled))
+        load_control.assert_not_called()
+
+        enabled = replace(
+            disabled,
+            outbound_enabled=True,
+            outbound_state_path=Path("private/outbound.db"),
+        )
+        store = Mock()
+        client = Mock()
+        coordinator = Mock()
+        with (
+            patch.object(
+                relay_feature,
+                "load_phone_control_config",
+                return_value=Mock(),
+            ),
+            patch.object(
+                relay_feature, "OutboundStateStore", return_value=store
+            ) as store_factory,
+            patch.object(
+                relay_feature, "OutboundCommandClient", return_value=client
+            ) as client_factory,
+            patch.object(
+                relay_feature, "OutboundTextCoordinator", return_value=coordinator
+            ),
+        ):
+            result = relay_feature._create_outbound_controller(enabled)
+
+        self.assertIs(result, coordinator)
+        store_factory.assert_called_once_with(Path("private/outbound.db"))
+        client_factory.assert_called_once_with(
+            ANY,
+            store,
+            owns_store=True,
+        )
+
+    def test_invalid_outbound_setting_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "outbound_enabled"):
+            relay_feature.load_feature_config({"outbound_enabled": "yes"})
+
     def test_feature_is_opt_in_and_disabled_entry_is_not_imported(self) -> None:
         self.assertNotIn("bmo.features.imessage_relay", DEFAULT_FEATURE_MODULES)
         config = {

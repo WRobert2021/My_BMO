@@ -589,6 +589,21 @@ class OutboundClientSimulationTests(unittest.TestCase):
         self.store.close()
         self.temporary_directory.cleanup()
 
+    def test_owned_store_closes_with_client(self) -> None:
+        transport = SimulatedPhoneTransport()
+        client = OutboundCommandClient(
+            client_config(),
+            self.store,
+            transport=transport,
+            owns_store=True,
+        )
+
+        client.close()
+
+        self.assertTrue(transport.closed)
+        with self.assertRaises(OutboundStateError):
+            self.store.summary()
+
     def test_all_command_kinds_are_durable_before_invented_execution(self) -> None:
         media_bytes = b"invented photo bytes" * 10
         media_path = self.root / "invented.jpg"

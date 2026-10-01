@@ -1,6 +1,7 @@
 """Opt-in BMO iMessage Relay feature and service plugin."""
 
 from .feature import (
+    DEFAULT_OUTBOUND_STATE_PATH,
     DEFAULT_PHONE_CONTROL_CONFIG_PATH,
     DEFAULT_RECEIVER_CONFIG_PATH,
     IMESSAGE_RELAY_MENU_ITEM,
@@ -20,6 +21,7 @@ from .notifications import (
 )
 
 __all__ = [
+    "DEFAULT_OUTBOUND_STATE_PATH",
     "DEFAULT_PHONE_CONTROL_CONFIG_PATH",
     "DEFAULT_RECEIVER_CONFIG_PATH",
     "IMESSAGE_RELAY_MENU_ITEM",

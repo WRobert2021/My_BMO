@@ -145,6 +145,7 @@ class OutboundCommandClient:
         transport: OutboundTransport | None = None,
         clock: Callable[[], float] = time.time,
         identifier_factory: Callable[[], str] | None = None,
+        owns_store: bool = False,
     ) -> None:
         if not isinstance(config, PhoneControlConfig):
             raise TypeError("config must be PhoneControlConfig")
@@ -163,6 +164,7 @@ class OutboundCommandClient:
         )
         self._clock = clock
         self._identifier_factory = identifier_factory or (lambda: uuid4().hex)
+        self._owns_store = owns_store
         self._media_uploader = OutboundMediaUploader(
             config,
             self._transport,
@@ -247,6 +249,8 @@ class OutboundCommandClient:
             return
         self._closed = True
         self._transport.close()
+        if self._owns_store:
+            self._store.close()
 
     def _headers(self, *, path: str, body: bytes) -> dict[str, str]:
         nonce = self._identifier_factory()

@@ -110,6 +110,8 @@
       "module": "bmo.features.imessage_relay",
       "enabled": false,
       "settings": {
+        "outbound_enabled": false,
+        "outbound_state_path": "config/private/imessage_outbound.db",
         "phone_control_config_path": "config/imessage_phone_control.json",
         "receiver_config_path": "config/imessage_receiver.json",
         "reconciliation_recent_days": 7

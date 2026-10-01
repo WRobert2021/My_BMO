@@ -35,6 +35,12 @@ from .phone_control import (
     PhoneControlCoordinator,
     load_phone_control_config,
 )
+from .outbound import (
+    OutboundCommandClient,
+    OutboundStateError,
+    OutboundStateStore,
+    OutboundTextCoordinator,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -45,6 +51,7 @@ IMESSAGE_RELAY_MENU_ITEM = FeatureMenuItem(
 )
 DEFAULT_RECEIVER_CONFIG_PATH = Path("config/imessage_receiver.json")
 DEFAULT_PHONE_CONTROL_CONFIG_PATH = Path("config/imessage_phone_control.json")
+DEFAULT_OUTBOUND_STATE_PATH = Path("config/private/imessage_outbound.db")
 DEFAULT_RECENT_DAYS = 7
 MAX_RECENT_DAYS = 31
 
@@ -72,6 +79,8 @@ class RelayFeatureConfig:
     receiver_config_path: Path
     phone_control_config_path: Path = DEFAULT_PHONE_CONTROL_CONFIG_PATH
     reconciliation_recent_days: int = DEFAULT_RECENT_DAYS
+    outbound_enabled: bool = False
+    outbound_state_path: Path = DEFAULT_OUTBOUND_STATE_PATH
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,10 +146,20 @@ def load_feature_config(settings: Mapping[str, Any]) -> RelayFeatureConfig:
         raise ValueError(
             "iMessage Relay reconciliation_recent_days must be from 1 through 31"
         )
+    outbound_enabled = settings.get("outbound_enabled", False)
+    if not isinstance(outbound_enabled, bool):
+        raise ValueError("iMessage Relay outbound_enabled must be true or false")
+    outbound_state_path = _path_setting(
+        settings,
+        "outbound_state_path",
+        DEFAULT_OUTBOUND_STATE_PATH,
+    )
     return RelayFeatureConfig(
         receiver_config_path=receiver_path,
         phone_control_config_path=phone_control_path,
         reconciliation_recent_days=recent_days,
+        outbound_enabled=outbound_enabled,
+        outbound_state_path=outbound_state_path,
     )
 
 
@@ -579,7 +598,39 @@ class _MetadataTool:
 def register(registry: Any, settings: Mapping[str, Any]) -> None:
     """Register and start the explicitly enabled kiosk receiver."""
 
-    registry.register(IMessageRelayTool(RelayRuntimeService(load_feature_config(settings))))
+    config = load_feature_config(settings)
+    service = RelayRuntimeService(config)
+    outbound = _create_outbound_controller(config)
+    registry.register(
+        IMessageRelayTool(service, outbound_controller=outbound)
+    )
+
+
+def _create_outbound_controller(
+    config: RelayFeatureConfig,
+) -> OutboundTextCoordinator | None:
+    """Create the opt-in sender without coupling it to receiver startup."""
+
+    if not config.outbound_enabled:
+        return None
+    store: OutboundStateStore | None = None
+    try:
+        control_config = load_phone_control_config(config.phone_control_config_path)
+        store = OutboundStateStore(config.outbound_state_path)
+        client = OutboundCommandClient(
+            control_config,
+            store,
+            owns_store=True,
+        )
+        return OutboundTextCoordinator(client)
+    except (PhoneControlConfigError, OutboundStateError, OSError, ssl.SSLError):
+        if store is not None:
+            store.close()
+        return None
+    except Exception:
+        if store is not None:
+            store.close()
+        return None
 
 
 def register_metadata(registry: Any, settings: Mapping[str, Any]) -> None:
@@ -666,6 +717,7 @@ def _close_partial_receiver(
 
 
 __all__ = [
+    "DEFAULT_OUTBOUND_STATE_PATH",
     "DEFAULT_PHONE_CONTROL_CONFIG_PATH",
     "DEFAULT_RECEIVER_CONFIG_PATH",
     "IMESSAGE_RELAY_MENU_ITEM",

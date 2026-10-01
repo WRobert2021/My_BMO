@@ -1,10 +1,10 @@
 # iMessage Relay Progress
 
 current_stage: 13
-current_chapter: Text composer complete; corrected physical validation gate
-state: awaiting_confirmation
-next_action: Preserve the original test command as consumed and obtain separate user confirmation naming the recipient and exact harmless text before a second physical call through the corrected adapter. Do not attach the production phone executor or kiosk coordinator until that corrected physical call is accepted.
-last_verified: 2026-09-12
+current_chapter: Local SpringBoard sender implementation gate
+state: awaiting_native_bridge_integration_and_deployment_authorization
+next_action: Review the local SpringBoard package and Python bridge, then separately authorize production launcher integration and a content-free phone deployment/preflight. Do not deploy or send a physical message under the current authorization.
+last_verified: 2026-09-14
 
 ## Stage index
 
@@ -21,9 +21,217 @@ last_verified: 2026-09-12
 
 ## Current Stage 13 decisions
 
+- Standalone Python processes are retired as the Apple execution boundary.
+  Repeated physical preflights connected to IMDaemon but could not expose a
+  usable active iMessage account under `pi-bmo`, root-to-mobile setuid, or a
+  direct `mobile` login. Further capability-number variants are not a useful
+  next step.
+- The selected boundary is a rootless Theos helper injected only into
+  SpringBoard. It hooks the modern `processCapabilities` contract, retains the
+  observed legacy `_capabilities` fallback, and exposes a fixed Unix-domain
+  socket rather than a network listener or shell.
+- The socket directory is owned by `mobile:pi-bmo` with mode `2710`; the socket
+  is mode `0660`. The helper additionally verifies `LOCAL_PEERCRED` and accepts
+  only the exact resolved `pi-bmo` UID.
+- Version 1 accepts only content-free preflight and new single-recipient text.
+  Group, reply, media, and reaction commands are rejected before Apple
+  execution. The authenticated phone service still owns durable command
+  reservation and duplicate prevention.
+- SpringBoard returns a generated GUID after one `sendMessage:` invocation.
+  The `pi-bmo` relay reports `sent` only after a bounded, read-only SQLite query
+  finds that exact GUID with `is_from_me = 1`. Transport loss, malformed
+  results, missing evidence, and exceptions after entering the send call are
+  terminal `uncertain` and never automatically retry.
+- Theos and `ldid` are installed only on the development Mac. A rootless
+  `arm64`/`arm64e` package builds successfully from the standalone phone
+  project. No kiosk or phone runtime dependency changed.
+- The native package and Python socket executor are local only. They are not
+  connected to the production launcher, deployed to the phone, injected into
+  SpringBoard, or physically exercised. Incoming relay behavior is unchanged.
+- Production launcher integration, deployment, SpringBoard restart/injection,
+  content-free physical preflight, and every physical message remain separate
+  authorization gates.
+
+## Stage 13 investigation history (superseded)
+
+- Repeated `apple_imessage_account_unavailable` results now identify a process
+  identity boundary: IMDaemon and account-monitor setup succeeded, but iOS did
+  not expose a sendable iMessage account to restricted `pi-bmo`.
+- The approved launcher hook keeps the main relay as `pi-bmo` and can opt into
+  one anonymous-socket broker permanently dropped to verified built-in UID/GID
+  501 (`mobile`). The broker has no listener or shell and accepts only an
+  authenticated, durably reserved, new single-recipient text command. Group,
+  reply, media, and reaction shapes fail before Apple execution.
+- Broker creation failure selects the disabled executor and preserves incoming
+  startup. Ambiguity after an entered send remains terminal `uncertain` and is
+  never automatically retried.
+- Kiosk registration now creates its durable outbound client and confirmation
+  coordinator only when `outbound_enabled` is explicitly true. Its private
+  outbox defaults to `config/private/imessage_outbound.db`; failure degrades to
+  incoming-only.
+- The tracked phone launchd and sudoers examples still omit the opt-in broker
+  flag. No phone deployment or physical send occurred in this implementation
+  pass. The content-free `outbound-mobile-preflight` is the next physical gate.
+- The first `outbound-mobile-preflight` still returned
+  `apple_imessage_account_unavailable`. It was not a genuine mobile-context
+  test: the maintenance command started Python through `sudo` and only later
+  changed its UID/GID to 501. The result proves that setuid alone does not
+  recreate the iOS process context used for messaging account visibility.
+- The maintenance action now launches a content-free preflight directly from
+  the authenticated `mobile` shell without sudo. It verifies real/effective
+  UID/GID 501 before importing the Apple runtime. Installed package source must
+  be readable, but private configuration, keys, secrets, and state remain
+  inaccessible to `mobile` through that path.
+- The first direct invocation failed before importing code because the service
+  application root was mode `0751`; Python must enumerate its import root to
+  discover the package. The corrected root mode is `0755`, while package source
+  stays read-only and private configuration/state retain `0700`/`0600`.
+- The genuine direct-mobile run then reached IMCore but still returned
+  `apple_imessage_account_unavailable`. Review against the modern IMCore
+  capability contract found the implementation still supplied legacy `17159`.
+  The disposable helper now installs iOS 16+ `processCapabilities` value
+  `4485895` before daemon connection, while retaining the legacy method only as
+  compatibility fallback. The next content-free preflight tests this correction.
+- The standalone phone suite passes 93 tests; the focused kiosk
+  outbound/runtime suite passes 45 tests and 13 subtests. The complete BMO
+  suite passes 875 tests with 2 skipped and 10,019 subtests.
+
 - Stage 13 was explicitly authorized on 2026-09-12. Discovery and local
   simulation may begin; no physical message send is implied by that planning
   authorization.
+- A second exact single-message physical test was separately authorized and
+  executed once on 2026-09-12 after the corrected adapter's no-send preflight.
+  It returned terminal `uncertain` with
+  `apple_acceptance_unverified`; no outgoing phone message appeared and the
+  recipient received nothing. Its fixed command ID is consumed. It did not
+  authorize a persistent production enable switch or any additional message.
+- The refined adapter was deployed on 2026-09-13. Its no-send preflight passed
+  under the phone service identity after initializing the shared sending
+  utilities and constructing the automation sender. No send was performed, and
+  the normal phone relay was restarted and verified running.
+- A third exact single-message physical test was separately authorized on
+  2026-09-13. It permits one call through a new fixed command ID only; it does
+  not permit reuse of either consumed command, an automatic retry, persistent
+  production enablement, or any additional message.
+- The first manual invocation for that authorization failed while constructing
+  the command because its generated timestamp included fractional seconds. The
+  strict protocol rejected it before command reservation, nonce consumption,
+  or Apple-adapter entry, so no send was attempted and the authorization
+  remains unused. The abandoned invocation ID will not be reused; the corrected
+  invocation formats canonical UTC seconds and uses a new fixed ID.
+- The corrected third invocation entered the refined Apple adapter exactly once
+  and ended `uncertain` with `apple_sent_evidence_empty`. No outgoing phone
+  message appeared and the recipient received nothing. Its durable command ID
+  is consumed and must not be retried. The normal incoming phone relay was
+  restarted and verified running.
+- A no-send live selector inspection verified both daemon singleton selectors;
+  `connectToDaemon`, its launch variants, `isConnected`, and the older
+  `_capabilities` method with exact 32-bit ABI. `processCapabilities` is absent.
+  The phone also exposes the required chat registry, account, handle, message,
+  `canSendMessage:`, and `sendMessage:` selectors with their exact encodings.
+  No daemon connection or send was performed. The next probe will test the
+  unmodified service identity's daemon connection before any capability
+  override is considered.
+- The disposable baseline daemon probe reported native capabilities `512`;
+  `connectToDaemon` returned true and `isConnected` became true under the
+  deployed `pi-bmo` service identity. No Apple data was accessed and no send
+  was performed. Native `512` was sufficient for the automation-sender probe,
+  so no override was justified for that path. The local guarded adapter now
+  validates this exact live ABI, establishes and boundedly verifies the native
+  daemon connection before constructing the sender, and maps pre-send
+  connection failure to a bounded definite error. Its full 58-test Python 3.9
+  suite passed before deployment.
+- The daemon-connected adapter was deployed and passed its no-send readiness
+  preflight under `pi-bmo`: shared sending utilities initialized, the native
+  IMDaemon connection succeeded, and the automation sender constructed without
+  a recipient or send invocation. The normal phone relay was restarted and
+  verified running. A new physical call requires separate exact authorization.
+- A fourth exact single-message physical test was separately authorized on
+  2026-09-13 for the daemon-connected adapter. It permits one execution through
+  a fresh fixed command ID only and does not authorize retries, capability
+  overrides, persistent production enablement, or any additional message.
+- The fourth call established the native IMDaemon connection and entered
+  `IMAutomationMessageSend` exactly once, but ended `uncertain` with
+  `apple_sent_evidence_empty`. No outgoing phone message appeared and the
+  recipient received nothing. Its durable command ID is consumed. This rules
+  out the automation sender as the Stage 13 execution path. The normal incoming
+  phone relay was restarted and verified running.
+- The direct IMCore no-send readiness probe connected to IMDaemon and
+  constructed an in-memory message, but native capability `512` exposed no
+  active iMessage account or existing test chat, so `canSendMessage:` could not
+  authorize the object. `sendMessage:` was not invoked. This confirms that
+  daemon connectivity alone is insufficient and that any elevated capability
+  must be isolated to a disposable, already-authenticated command process; the
+  long-running network relay must retain its native capability set.
+- The first direct-helper design proposed temporarily replacing the private
+  `_capabilities` method to report IMDaemon capability `17159`. That unsupported
+  process boundary received a separate implementation-only approval; the
+  approval did not authorize deployment or a physical message.
+- The user gave that exact implementation-only approval on 2026-09-13 while
+  explicitly withholding phone deployment, phone execution, production
+  enablement, and any physical message. The standalone phone project now has a
+  disposable direct-IMCore helper and an injected local test suite. No phone
+  was contacted.
+- The long-running service still constructs `DisabledOutboundExecutor` and does
+  not import or select the helper. The parent adapter also defaults disabled
+  and checks that gate before inspecting a command or starting a child. The
+  child accepts one canonical new single-recipient text command over standard
+  input; group, reply, media, and reaction shapes fail before framework use.
+- The current child does not replace Objective-C methods. It requests capability
+  `17159` directly through the verified
+  `connectToDaemonWithLaunch:capabilities:blockUntilConnected:` selector for
+  its own daemon connection. Preflight verifies only daemon/account readiness
+  and never constructs a recipient, chat, or message. Execution remains
+  unapproved and disconnected from production.
+- A child timeout or malformed/mismatched result is never success. Once the
+  send boundary may have been entered it becomes terminal `uncertain`. A direct
+  send can become `sent` only if a bounded read-only query finds the exact
+  generated message GUID with `is_from_me = 1`; the helper never writes or
+  copies Apple's database.
+- Nineteen focused direct-helper tests and the complete 80-test standalone phone
+  suite passed locally on Python 3.9.6. The pre-existing loopback HTTP tests
+  required local socket permission and passed when run with it. The relevant
+  kiosk outbound/runtime/end-to-end set also passed with 49 tests and 15
+  subtests. No Apple framework was loaded and no phone was contacted.
+- A dedicated `outbound-preflight` maintenance action is ready for the
+  authorized deployment. It uses the existing root-to-`pi-bmo` privilege-drop
+  launcher, accepts only the exact installed configuration path, emits the
+  helper's content-free result, and does not stop, restart, or reconfigure the
+  incoming relay. It has no execution mode and cannot submit a message.
+- The first authorized phone preflight failed safely with
+  `apple_capability_override_failed` before account lookup. A more precise
+  runtime-class probe then showed `apple_daemon_identity_changed`: initializing
+  Apple's sending utilities replaces the shared daemon-controller singleton.
+  Neither attempt accepted a recipient, constructed a message, or entered the
+  send path.
+- Two revised method-replacement preflights progressed through capability
+  observation and daemon connection but ended safely at
+  `apple_imessage_account_unavailable`. Neither accepted a recipient,
+  constructed a message, or entered the send path.
+- Code review found the remaining flaw: sending-utility initialization could
+  connect the daemon with native capability `512` before the local method was
+  replaced, and observing the replacement afterward did not renegotiate that
+  daemon session. The replacement design is retired.
+- The first explicit-connection revision skipped sending-utility initialization,
+  called the live capability-bearing daemon selector with `17159`, and still
+  returned `apple_imessage_account_unavailable`. This proves explicit daemon
+  negotiation alone does not initialize the account monitor. It reached no
+  recipient, message, or send boundary.
+- The current local revision explicitly connects with `17159` before account
+  monitor initialization, initializes the shared sending utilities, then
+  resolves the daemon controller again and reconnects it with `17159` if the
+  initializer replaced the singleton. It waits at most five seconds for daemon
+  connection and active-account readiness. It does not use `_capabilities`, the
+  legacy zero-argument connection method, or Objective-C method replacement.
+  The complete 80-test Python 3.9.6 suite passes.
+- That revised physical preflight still returned
+  `apple_imessage_account_unavailable`. It therefore proved that explicit
+  capability negotiation plus account-monitor initialization does not make
+  `activeIMessageAccount` visible to the dedicated `pi-bmo` process. The run
+  reached no recipient, chat, message, or send boundary. The next diagnostic is
+  a single content-free inventory of alternate account-controller presence and
+  collection counts; it will distinguish an overly narrow selector from a
+  service-identity or entitlement boundary before further implementation.
 - Direct writes to Apple's Messages database remain prohibited. The first gate
   is a bounded, read-only inventory of the phone's installed messaging tools,
   private-framework surface, Objective-C/Python bridge availability, compiler,
@@ -101,14 +309,17 @@ last_verified: 2026-09-12
   the declared byte count and SHA-256 before command reservation. Unsafe or
   exposed staging files fail closed. Terminal sent/failed commands remove their
   staged media.
-- The running production phone service remains deliberately wired to the
-  disabled executor and returns `apple_send_not_enabled`. A separate guarded
+- The default production phone invocation remains deliberately wired to the
+  disabled executor and returns `apple_send_not_enabled`. The exact approved
+  launcher hook can instead inject the mobile broker. A separate guarded
   `ctypes` adapter now implements only a new, single-recipient text send after
   an explicit in-process enable flag. It verifies the narrow observed selector
-  and Objective-C type encoding, passes the explicit `iMessage` service,
-  requires nonempty `sentMessageInfo` with no pending GUIDs, maps an entered
-  call without that evidence to `uncertain`, and rejects reply, group, media,
-  and reaction shapes before framework loading. No deployed
+  and Objective-C type encoding, initializes and checks the shared sending
+  utilities, passes the explicit `iMessage` service, and pumps the Foundation
+  run loop for at most five seconds while waiting for nonempty
+  `sentMessageInfo` with no pending GUIDs. An entered call without that
+  evidence maps to a precise terminal `uncertain` code. Reply, group, media,
+  and reaction shapes are rejected before framework loading. No deployed
   configuration can select this adapter yet. Outbound state failure still
   returns a bounded unavailable response without stopping incoming delivery or
   phone control.
@@ -120,12 +331,19 @@ last_verified: 2026-09-12
   preflight and returned a non-null Objective-C object with no `NSError`, but
   no outgoing message appeared on the phone and nothing reached the recipient.
   The phone ledger recorded `sent` under the former invalid assumption. That
-  command is treated as consumed and will not be retried. The adapter now uses
-  the narrower verified text selector and requires sent-message/pending-state
-  evidence; otherwise the durable result is `uncertain`. A second physical call
-  requires a new exact authorization. The corrected adapter was deployed for a
-  no-send preflight under the service identity; its exact selector and ABI
-  check passed and no send was performed.
+  command is treated as consumed and will not be retried. The first correction
+  used the narrower verified text selector and required immediate
+  sent-message/pending-state evidence. Its deployed no-send selector/ABI
+  preflight passed, but the second separately authorized call returned
+  `uncertain`; it likewise created no outgoing phone message and no recipient
+  delivery, and its command is consumed. The local adapter now initializes the
+  shared sending utilities and waits boundedly for asynchronous evidence. Its
+  deployed no-send readiness preflight passed under the service identity; it
+  was then physically exercised once and returned empty sent evidence without
+  creating an outgoing message. Existing iOS IMCore implementation evidence
+  indicates a separate authenticated `imagent` connection and process
+  capability boundary is required before chat sends work. That boundary must
+  be inspected and simulated before another exact physical authorization.
 - Prefer extending the existing authenticated TLS phone-control boundary and
   dedicated `pi-bmo` service. Add a separate native helper only if the verified
   phone interface cannot be called safely and reliably from Python 3.9.9.
@@ -242,6 +460,12 @@ last_verified: 2026-09-12
 
 ## Verification status
 
+- Current local native checkpoint: 104 standalone phone tests passed; the
+  rootless Theos package built successfully for both `arm64` and `arm64e` with
+  `ldid`. Package inspection found only the SpringBoard-filtered dylib, filter
+  plist, and bounded install/remove scripts. No phone was contacted and no
+  message was sent.
+
 - Kiosk Stage 12 control/configuration and lifecycle focus: 19 tests passed.
 - Standalone CPython 3.9.6 compatibility suite: 39 tests passed, including strict
   private configuration, cursor/backlog restart, the resume-only retry latch,
@@ -287,9 +511,9 @@ last_verified: 2026-09-12
   The embedded audio attachment path also passed. The connected header status
   dot is green; its unavailable/red state remains covered by automated UI
   tests.
-- Current complete kiosk relay suite: 157 tests, 2 skipped, and 34 subtests
+- Current complete kiosk relay suite: 160 tests, 2 skipped, and 34 subtests
   passed. Current
-  complete standalone phone suite: 55 tests passed.
+  complete standalone phone suite: 104 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
@@ -299,7 +523,7 @@ last_verified: 2026-09-12
   complete kiosk relay suite and passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
   The local invented phone simulation passed. The Python 3.9 phone suite now
-  passes 55 tests, including its durable command/media state, real HTTP route,
+  passes 104 tests, including its durable command/media state, real HTTP route,
   guarded text-adapter boundary, and incoming failure isolation. A separate real
   loopback run passed the shared Python 3.13 kiosk-to-Python 3.9 phone contract
   for invented text, photo, and reaction commands. The first authorized send

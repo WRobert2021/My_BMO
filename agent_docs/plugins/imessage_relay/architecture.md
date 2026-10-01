@@ -138,10 +138,13 @@ filesystem path from its peer. Reactions bind to a stable source-message ID and
 part index. UI confirmation must display the destination and content kind
 before a command is queued.
 
-Read-only phone discovery selected a dependency-free Python `ctypes` adapter
-over the Objective-C runtime and `IMAutomationMessageSend`. The phone's dyld
-shared cache resolves Foundation, IMCore, IMFoundation, IMSharedUtilities,
-ChatKit, IDS, and libobjc. Under the deployed `pi-bmo` identity, no-send
-initialization reports iMessage enabled, service availability, text and media
-capability, and successful sender construction. Direct Apple database writes
-remain prohibited.
+Read-only phone discovery proved that standalone Python can load the messaging
+frameworks and connect to IMDaemon but cannot obtain SpringBoard's usable
+iMessage account context. The selected execution boundary is therefore a
+rootless native helper injected only into SpringBoard. It accepts only a
+peer-credential-verified local request from `pi-bmo`; the long-running network
+relay, authentication, durable reservation, and duplicate prevention remain in
+the restricted service. Version 1 permits only a new single-recipient text
+command. The helper returns a generated GUID, and the relay records `sent` only
+after a bounded read-only query confirms that exact outgoing GUID. Direct Apple
+database writes remain prohibited.

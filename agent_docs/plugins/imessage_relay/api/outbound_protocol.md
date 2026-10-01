@@ -107,8 +107,13 @@ client only with the command returned by a successful confirmation.
 ## Current availability
 
 The canonical model, kiosk outbox, authenticated kiosk client, bounded
-resumable media uploader, and one-shot in-memory confirmation gate are
-implemented and tested with invented data. Incoming feed items now retain the
-stable message, chat, and participant identifiers needed to prepare an
-explicit reply or reaction. No client is wired into the UI, the matching phone
-endpoints are not yet implemented, and no physical outbound send has occurred.
+resumable media uploader, one-shot in-memory confirmation gate, and matching
+phone endpoints are implemented and tested with invented data. Incoming feed
+items retain the stable message, chat, and participant identifiers needed to
+prepare an explicit reply or reaction. Enabled plugin registration wires the
+text client into the UI only when `outbound_enabled` is true. A local
+SpringBoard-injected helper and strict `pi-bmo` Unix-socket client now implement
+the selected single-recipient text boundary, including exact outgoing-GUID
+evidence. They are not connected to the production launcher or deployed; the
+running phone service therefore remains unable to send. No successful physical
+outbound send has occurred.
