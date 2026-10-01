@@ -1,10 +1,10 @@
 # iMessage Relay Progress
 
 current_stage: 13
-current_chapter: Local SpringBoard sender implementation gate
-state: awaiting_native_bridge_integration_and_deployment_authorization
-next_action: Review the local SpringBoard package and Python bridge, then separately authorize production launcher integration and a content-free phone deployment/preflight. Do not deploy or send a physical message under the current authorization.
-last_verified: 2026-09-14
+current_chapter: first SpringBoard physical text gate
+state: production_phone_path_ready_kiosk_gate_pending
+next_action: Enable the kiosk gate with the private-safe configurator, restart BMO, then consume the one authorized text through the UI exactly once and record its physical result.
+last_verified: 2026-10-01
 
 ## Stage index
 
@@ -31,8 +31,9 @@ last_verified: 2026-09-14
   observed legacy `_capabilities` fallback, and exposes a fixed Unix-domain
   socket rather than a network listener or shell.
 - The socket directory is owned by `mobile:pi-bmo` with mode `2710`; the socket
-  is mode `0660`. The helper additionally verifies `LOCAL_PEERCRED` and accepts
-  only the exact resolved `pi-bmo` UID.
+  is mode `0660`. A trusted installer-created, mode-`0000` identity marker
+  carries the Procursus-only service UID/GID into SpringBoard, and the helper
+  verifies `LOCAL_PEERCRED` against that exact numeric identity.
 - Version 1 accepts only content-free preflight and new single-recipient text.
   Group, reply, media, and reaction commands are rejected before Apple
   execution. The authenticated phone service still owns durable command
@@ -45,12 +46,33 @@ last_verified: 2026-09-14
 - Theos and `ldid` are installed only on the development Mac. A rootless
   `arm64`/`arm64e` package builds successfully from the standalone phone
   project. No kiosk or phone runtime dependency changed.
-- The native package and Python socket executor are local only. They are not
-  connected to the production launcher, deployed to the phone, injected into
-  SpringBoard, or physically exercised. Incoming relay behavior is unchanged.
-- Production launcher integration, deployment, SpringBoard restart/injection,
-  content-free physical preflight, and every physical message remain separate
-  authorization gates.
+- The Python socket executor is integrated behind the exact
+  `--enable-springboard-outbound` launcher tuple. Construction and content-free
+  preflight happen only after the launcher permanently drops to `pi-bmo`;
+  failure selects the disabled executor so incoming delivery still starts.
+- The maintenance command exposes only `springboard-preflight`, which runs the
+  exact helper readiness check as `pi-bmo` and emits bounded content-free JSON.
+  Retired standalone-process preflight commands are no longer exposed.
+- The tracked launchd and sudoers definitions now select the exact
+  `--enable-springboard-outbound` tuple. Kiosk `outbound_enabled` and the
+  one-shot UI confirmation remain independent gates.
+- Native package `0.1.5` and the production launchd/sudoers definitions are
+  installed. Its strengthened content-free physical preflight returned
+  `{"error_code":null,"state":"ready"}`, and the production phone relay was
+  verified running. No recipient or message was constructed or sent during
+  this gate. Version `0.1.5` adds selector-level readiness, constructs IMCore
+  text as attributed text, and treats the validated E.164/email destination as
+  canonical.
+- Initial physical deployment exposed and fixed two native integration defects:
+  Apple's user database could not resolve the Procursus-only account, and the
+  fully resolved rootless bootstrap path exceeded Darwin's Unix-socket path
+  limit. The installed helper now uses the trusted numeric marker and the short
+  `/var/jb/...` socket address. The content-free `bridge.status` marker reached
+  `listening`.
+- Production activation and one exact physical text have now received a
+  single explicit authorization. The recipient and content are intentionally
+  not recorded in repository documentation. That authorization permits no
+  automatic retry or additional message.
 
 ## Stage 13 investigation history (superseded)
 
@@ -460,7 +482,7 @@ last_verified: 2026-09-14
 
 ## Verification status
 
-- Current local native checkpoint: 104 standalone phone tests passed; the
+- Current local native checkpoint: 103 standalone phone tests passed; the
   rootless Theos package built successfully for both `arm64` and `arm64e` with
   `ldid`. Package inspection found only the SpringBoard-filtered dylib, filter
   plist, and bounded install/remove scripts. No phone was contacted and no
@@ -513,7 +535,7 @@ last_verified: 2026-09-14
   tests.
 - Current complete kiosk relay suite: 160 tests, 2 skipped, and 34 subtests
   passed. Current
-  complete standalone phone suite: 104 tests passed.
+  complete standalone phone suite: 103 tests passed.
 - Contained-media implementation verification: the relay/hosted-QML/setup
   acceptance set passed 181 tests and 56 subtests; the Qt Multimedia QML
   component instantiated against its FFmpeg backend. Physical Pi photo, video,
@@ -523,7 +545,7 @@ last_verified: 2026-09-14
   complete kiosk relay suite and passed on
   Python 3.13.12. Physical discovery under `pi-bmo` passed without sending.
   The local invented phone simulation passed. The Python 3.9 phone suite now
-  passes 104 tests, including its durable command/media state, real HTTP route,
+  passes 103 tests, including its durable command/media state, real HTTP route,
   guarded text-adapter boundary, and incoming failure isolation. A separate real
   loopback run passed the shared Python 3.13 kiosk-to-Python 3.9 phone contract
   for invented text, photo, and reaction commands. The first authorized send

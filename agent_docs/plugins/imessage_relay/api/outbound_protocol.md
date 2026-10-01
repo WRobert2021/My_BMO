@@ -114,6 +114,10 @@ prepare an explicit reply or reaction. Enabled plugin registration wires the
 text client into the UI only when `outbound_enabled` is true. A local
 SpringBoard-injected helper and strict `pi-bmo` Unix-socket client now implement
 the selected single-recipient text boundary, including exact outgoing-GUID
-evidence. They are not connected to the production launcher or deployed; the
-running phone service therefore remains unable to send. No successful physical
-outbound send has occurred.
+evidence. The executor is connected only to an exact opt-in launcher tuple. The
+tracked production launchd/sudoers definitions select it. Native package
+`0.1.5` and those definitions are installed; the strengthened content-free
+SpringBoard preflight returned `ready`, accepted no recipient or content, and
+performed no send. The production phone relay was then verified running.
+Kiosk enablement and exact one-shot UI confirmation remain separate. No
+successful physical outbound send has occurred.

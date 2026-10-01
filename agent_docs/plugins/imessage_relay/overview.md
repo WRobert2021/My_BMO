@@ -114,8 +114,12 @@ only into SpringBoard. It exposes one local Unix-domain socket to the verified
 text request, and returns the generated message GUID. The Python relay requires
 bounded read-only evidence for that exact outgoing GUID before recording
 `sent`; ambiguity is terminal `uncertain`. The local helper package builds for
-`arm64` and `arm64e`, but it is not wired into the production launcher,
-deployed, injected, or physically exercised.
+`arm64` and `arm64e`. Its socket executor is wired behind an exact opt-in
+launcher tuple, and the tracked production launchd/sudoers definitions select
+that tuple. Native package `0.1.5` and those launch definitions are installed;
+its strengthened content-free SpringBoard preflight passed and the production
+phone relay is running. No recipient or message was constructed during that
+gate. The kiosk and per-message gates remain independent.
 
 The kiosk now owns a strict path-free command schema,
 private durable outbox, authenticated client, and bounded resumable media
@@ -162,9 +166,10 @@ review, and one-shot confirm/cancel actions through an injected outbound
 coordinator. Reply context is resolved from stable received-feed IDs and
 submission runs outside the UI thread. Normal plugin registration creates that
 controller only with explicit `outbound_enabled: true`; otherwise outbound
-remains unavailable. Native bridge integration and a later separately
-authorized content-free deployment/preflight remain pending. A physical text
-call requires another separate exact authorization.
+remains unavailable. The private-safe `configure_outbound` tool changes only
+that field, refuses non-private or ambiguous configuration, and never prints
+configuration contents. Native package `0.1.5`, launch definition deployment,
+and one authorized UI send are the remaining physical gate.
 
 ### Historical Stage 13 investigation (superseded)
 

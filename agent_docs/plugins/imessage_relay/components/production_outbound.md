@@ -89,6 +89,18 @@ confirmation. Normal plugin registration constructs that coordinator only
 when `outbound_enabled` is explicitly true; otherwise this UI path cannot
 contact the phone.
 
+The operator changes that gate without displaying the private feature file:
+
+```sh
+venv/bin/python -B -m \
+  bmo.features.imessage_relay.tools.configure_outbound enable
+```
+
+The tool requires the relay feature itself to be enabled, rejects symlinks,
+non-private modes, wrong ownership, malformed JSON, and missing or duplicate
+relay entries, then atomically changes only `outbound_enabled`. `disable` uses
+the same path and contract.
+
 Incoming feed items retain their stable message ID, chat ID, and participant
 IDs so a reply or reaction can bind to the selected receipt rather than the
 foreground conversation. These identifiers are kiosk receipt metadata and do
@@ -141,8 +153,8 @@ text submission. The standalone Python 3.9 phone
 runtime now mirrors the strict contract, routes the authenticated endpoints on
 its existing TLS listener, durably reserves commands, converts an interrupted
 execution to terminal `uncertain`, and owns private resumable media staging.
-Its default production invocation deliberately constructs the disabled
-executor and returns `apple_send_not_enabled`.
+Its launcher defaults to the disabled executor and returns
+`apple_send_not_enabled` unless the exact production opt-in tuple is present.
 
 The local `phone_relay.springboard_outbound` executor accepts only a new
 single-recipient text command, exchanges strict length-framed canonical JSON at
@@ -154,9 +166,24 @@ invokes `sendMessage:` at most once. The relay then queries Apple's database
 read-only for the exact returned GUID and `is_from_me = 1`. Any ambiguous
 post-invocation outcome remains terminal `uncertain`.
 
-The package builds locally for `arm64` and `arm64e`. It is not connected to the
-production launcher, deployed, injected, or physically exercised. Those are
-separate gates; incoming service behavior remains unchanged.
+The package builds locally for `arm64` and `arm64e`. The executor is connected
+only to the exact `--enable-springboard-outbound` launcher tuple and performs a
+content-free readiness check after the permanent `pi-bmo` privilege drop.
+Bridge failure selects the disabled executor so incoming service behavior is
+unchanged. The tracked launchd/sudoers definitions now select the flag. The maintenance command's
+exact `springboard-preflight` action cannot submit a recipient or message.
+Native package `0.1.5` and the opt-in production launch definitions are
+installed; its strengthened preflight returned `ready` and the phone relay was
+verified running. No recipient or message was constructed. Its socket authenticates
+the exact numeric service identity through an installer-owned marker because
+Apple's user database cannot resolve the Procursus-only account, and it uses
+the short `/var/jb/...` address to stay within Darwin's socket-path limit. The
+account readiness check is bounded to five seconds and accepts only a sendable
+iMessage account from the active, logged-in, connected, or operational account
+sets. Version `0.1.5` adds exact selector readiness and creates Apple message
+text as `NSAttributedString` with an already-canonical destination. The kiosk
+gate can be changed only through the private-safe configurator or an equivalent
+manual edit; every physical message remains separately confirmed.
 
 ### Retired standalone-process investigation
 

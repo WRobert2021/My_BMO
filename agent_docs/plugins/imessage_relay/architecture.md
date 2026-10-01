@@ -144,7 +144,10 @@ iMessage account context. The selected execution boundary is therefore a
 rootless native helper injected only into SpringBoard. It accepts only a
 peer-credential-verified local request from `pi-bmo`; the long-running network
 relay, authentication, durable reservation, and duplicate prevention remain in
-the restricted service. Version 1 permits only a new single-recipient text
+the restricted service. A trusted installer-created identity marker bridges
+the Procursus-only numeric service identity into SpringBoard, and the fixed
+socket address uses the short `/var/jb` rootless path to remain within Darwin's
+Unix-socket limit. Version 1 permits only a new single-recipient text
 command. The helper returns a generated GUID, and the relay records `sent` only
 after a bounded read-only query confirms that exact outgoing GUID. Direct Apple
 database writes remain prohibited.
